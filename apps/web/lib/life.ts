@@ -184,3 +184,58 @@ export async function generateTravelPlan(payload: TravelPlanRequest): Promise<Tr
   });
   return res.data;
 }
+
+export interface GrowthPhase {
+  name: string;
+  days: string;
+  tasks: string[];
+}
+
+export interface GrowthDay {
+  day: number;
+  tasks: string[];
+}
+
+export interface GrowthPlanResponse {
+  id: string;
+  aiContentId: string;
+  title?: string | null;
+  summary?: string | null;
+  phases: GrowthPhase[];
+  dailyPlan: GrowthDay[];
+  milestones: string[];
+  tips: string[];
+}
+
+export interface GenerateTasksResponse {
+  createdCount: number;
+  taskIds: string[];
+}
+
+export async function generateGrowthPlan(payload: {
+  goalId?: string;
+  targetDescription: string;
+  currentStatus?: string;
+  availableTime?: string;
+  difficulty?: string;
+}): Promise<GrowthPlanResponse> {
+  const res = await apiFetch<{ data: GrowthPlanResponse }>("/ai/growth-plan", {
+    method: "POST",
+    body: JSON.stringify({
+      goal_id: payload.goalId,
+      target_description: payload.targetDescription,
+      current_status: payload.currentStatus,
+      available_time: payload.availableTime,
+      difficulty: payload.difficulty,
+    }),
+  });
+  return res.data;
+}
+
+export async function generateGrowthTasks(aiContentId: string): Promise<GenerateTasksResponse> {
+  const res = await apiFetch<{ data: GenerateTasksResponse }>(
+    `/ai/growth-plan/${aiContentId}/generate-tasks`,
+    { method: "POST" },
+  );
+  return res.data;
+}

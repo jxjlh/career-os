@@ -90,6 +90,12 @@ export default function LifeGoalDetailPage() {
               </Button>
             </Link>
           )}
+          <Link href={`/life/goals/${goalId}/growth`}>
+            <Button variant="outline">
+              <Sparkles className="h-4 w-4" />
+              {data.category === "travel" ? "AI 成长规划" : "🤖 AI 成长规划"}
+            </Button>
+          </Link>
         </div>
       </Card>
 
