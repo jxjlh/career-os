@@ -2,7 +2,9 @@
 BEGIN;
 DROP TABLE IF EXISTS public.learning_resources CASCADE;
 DROP TABLE IF EXISTS public.limit_configs CASCADE;
+DROP TABLE IF EXISTS public.permissions CASCADE;
 DROP TABLE IF EXISTS public.profiles CASCADE;
+DROP TABLE IF EXISTS public.roles CASCADE;
 DROP TABLE IF EXISTS public.skills CASCADE;
 DROP TABLE IF EXISTS public.ai_chats CASCADE;
 DROP TABLE IF EXISTS public.audit_logs CASCADE;
@@ -17,12 +19,15 @@ DROP TABLE IF EXISTS public.okrs CASCADE;
 DROP TABLE IF EXISTS public.projects CASCADE;
 DROP TABLE IF EXISTS public.resumes CASCADE;
 DROP TABLE IF EXISTS public.roadmaps CASCADE;
+DROP TABLE IF EXISTS public.role_permissions CASCADE;
 DROP TABLE IF EXISTS public.salary_plans CASCADE;
 DROP TABLE IF EXISTS public.search_queries CASCADE;
+DROP TABLE IF EXISTS public.settings CASCADE;
 DROP TABLE IF EXISTS public.study_sessions CASCADE;
 DROP TABLE IF EXISTS public.tags CASCADE;
 DROP TABLE IF EXISTS public.user_limits CASCADE;
 DROP TABLE IF EXISTS public.user_resource_states CASCADE;
+DROP TABLE IF EXISTS public.user_roles CASCADE;
 DROP TABLE IF EXISTS public.user_skills CASCADE;
 DROP TABLE IF EXISTS public.weekly_plans CASCADE;
 DROP TABLE IF EXISTS public.ai_messages CASCADE;
@@ -69,8 +74,8 @@ CREATE TABLE learning_resources (
 )
 
 ;
-CREATE INDEX ix_learning_resources_provider ON learning_resources (provider);
 CREATE INDEX ix_learning_resources_resource_type ON learning_resources (resource_type);
+CREATE INDEX ix_learning_resources_provider ON learning_resources (provider);
 
 
 CREATE TABLE limit_configs (
@@ -81,6 +86,18 @@ CREATE TABLE limit_configs (
 	updated_at TIMESTAMP WITH TIME ZONE, 
 	PRIMARY KEY (id), 
 	UNIQUE (config_key)
+)
+
+;
+
+
+CREATE TABLE permissions (
+	id VARCHAR(36) NOT NULL, 
+	code VARCHAR(120) NOT NULL, 
+	description TEXT, 
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (code)
 )
 
 ;
@@ -111,6 +128,18 @@ CREATE TABLE profiles (
 CREATE UNIQUE INDEX ix_profiles_email ON profiles (email);
 
 
+CREATE TABLE roles (
+	id VARCHAR(36) NOT NULL, 
+	name VARCHAR(80) NOT NULL, 
+	description TEXT, 
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (name)
+)
+
+;
+
+
 CREATE TABLE skills (
 	id VARCHAR(36) NOT NULL, 
 	name VARCHAR(120) NOT NULL, 
@@ -124,8 +153,8 @@ CREATE TABLE skills (
 )
 
 ;
-CREATE INDEX ix_skills_category ON skills (category);
 CREATE UNIQUE INDEX ix_skills_name ON skills (name);
+CREATE INDEX ix_skills_category ON skills (category);
 
 
 CREATE TABLE ai_chats (
@@ -157,8 +186,8 @@ CREATE TABLE audit_logs (
 )
 
 ;
-CREATE INDEX ix_audit_logs_user_id ON audit_logs (user_id);
 CREATE INDEX ix_audit_logs_created_at ON audit_logs (created_at);
+CREATE INDEX ix_audit_logs_user_id ON audit_logs (user_id);
 
 
 CREATE TABLE background_jobs (
@@ -256,9 +285,9 @@ CREATE TABLE learning_history (
 )
 
 ;
+CREATE INDEX ix_learning_history_user_id ON learning_history (user_id);
 CREATE INDEX ix_learning_history_action ON learning_history (action);
 CREATE INDEX ix_learning_history_occurred_at ON learning_history (occurred_at);
-CREATE INDEX ix_learning_history_user_id ON learning_history (user_id);
 
 
 CREATE TABLE learning_history_aggregates (
@@ -370,6 +399,22 @@ CREATE TABLE roadmaps (
 CREATE INDEX ix_roadmaps_user_id ON roadmaps (user_id);
 
 
+CREATE TABLE role_permissions (
+	id VARCHAR(36) NOT NULL, 
+	role_id VARCHAR(36) NOT NULL, 
+	permission_id VARCHAR(36) NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_role_permissions_pair UNIQUE (role_id, permission_id), 
+	FOREIGN KEY(role_id) REFERENCES roles (id) ON DELETE CASCADE, 
+	FOREIGN KEY(permission_id) REFERENCES permissions (id) ON DELETE CASCADE
+)
+
+;
+CREATE INDEX ix_role_permissions_permission_id ON role_permissions (permission_id);
+CREATE INDEX ix_role_permissions_role_id ON role_permissions (role_id);
+
+
 CREATE TABLE salary_plans (
 	id VARCHAR(36) NOT NULL, 
 	user_id VARCHAR(36) NOT NULL, 
@@ -406,6 +451,22 @@ CREATE TABLE search_queries (
 
 ;
 CREATE INDEX ix_search_queries_user_id ON search_queries (user_id);
+
+
+CREATE TABLE settings (
+	id VARCHAR(36) NOT NULL, 
+	user_id VARCHAR(36), 
+	settings_key VARCHAR(120) NOT NULL, 
+	settings_value JSON NOT NULL, 
+	description TEXT, 
+	updated_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_settings_user_key UNIQUE (user_id, settings_key), 
+	FOREIGN KEY(user_id) REFERENCES profiles (id) ON DELETE CASCADE
+)
+
+;
+CREATE INDEX ix_settings_user_id ON settings (user_id);
 
 
 CREATE TABLE study_sessions (
@@ -485,6 +546,22 @@ CREATE INDEX ix_user_resource_states_resource_id ON user_resource_states (resour
 CREATE INDEX ix_user_resource_states_user_id ON user_resource_states (user_id);
 
 
+CREATE TABLE user_roles (
+	id VARCHAR(36) NOT NULL, 
+	user_id VARCHAR(36) NOT NULL, 
+	role_id VARCHAR(36) NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_user_roles_pair UNIQUE (user_id, role_id), 
+	FOREIGN KEY(user_id) REFERENCES profiles (id) ON DELETE CASCADE, 
+	FOREIGN KEY(role_id) REFERENCES roles (id) ON DELETE CASCADE
+)
+
+;
+CREATE INDEX ix_user_roles_user_id ON user_roles (user_id);
+CREATE INDEX ix_user_roles_role_id ON user_roles (role_id);
+
+
 CREATE TABLE user_skills (
 	id VARCHAR(36) NOT NULL, 
 	user_id VARCHAR(36) NOT NULL, 
@@ -500,8 +577,8 @@ CREATE TABLE user_skills (
 )
 
 ;
-CREATE INDEX ix_user_skills_user_id ON user_skills (user_id);
 CREATE INDEX ix_user_skills_skill_id ON user_skills (skill_id);
+CREATE INDEX ix_user_skills_user_id ON user_skills (user_id);
 
 
 CREATE TABLE weekly_plans (
@@ -686,8 +763,8 @@ CREATE TABLE project_files (
 )
 
 ;
-CREATE INDEX ix_project_files_user_id ON project_files (user_id);
 CREATE INDEX ix_project_files_project_id ON project_files (project_id);
+CREATE INDEX ix_project_files_user_id ON project_files (user_id);
 
 
 CREATE TABLE resume_versions (
@@ -768,8 +845,8 @@ CREATE TABLE interview_feedback (
 )
 
 ;
-CREATE INDEX ix_interview_feedback_user_id ON interview_feedback (user_id);
 CREATE INDEX ix_interview_feedback_session_id ON interview_feedback (session_id);
+CREATE INDEX ix_interview_feedback_user_id ON interview_feedback (user_id);
 
 
 CREATE TABLE interview_questions (
@@ -789,8 +866,8 @@ CREATE TABLE interview_questions (
 )
 
 ;
-CREATE INDEX ix_interview_questions_user_id ON interview_questions (user_id);
 CREATE INDEX ix_interview_questions_session_id ON interview_questions (session_id);
+CREATE INDEX ix_interview_questions_user_id ON interview_questions (user_id);
 
 
 CREATE TABLE interview_answers (
@@ -862,7 +939,8 @@ begin
     'jobs', 'job_analyses', 'salary_plans', 'interviews', 'interview_sessions',
     'interview_questions', 'interview_answers', 'interview_feedback',
     'resumes', 'resume_versions', 'ai_chats', 'ai_messages',
-    'weekly_plans', 'plan_tasks', 'user_limits'
+    'weekly_plans', 'plan_tasks', 'user_limits',
+    'roles', 'permissions', 'user_roles', 'role_permissions', 'settings'
   ] loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('create policy "own_select_%s" on public.%I for select using (auth.uid() = user_id);', t, t);
@@ -938,3 +1016,20 @@ values
   (gen_random_uuid(), 'resumes_per_day', '{"value": 3}', '简历生成每日限额'),
   (gen_random_uuid(), 'storage_bytes_limit', '{"value": 524288000}', '存储空间限额')
 on conflict (config_key) do update set config_value = excluded.config_value, description = excluded.description;
+
+-- 6. Seed roles and permissions
+insert into public.roles (id, name, description)
+values
+  (gen_random_uuid(), 'owner', '项目所有者'),
+  (gen_random_uuid(), 'member', '普通成员')
+on conflict (name) do nothing;
+
+insert into public.permissions (id, code, description)
+values
+  (gen_random_uuid(), 'profile:read', '读取个人资料'),
+  (gen_random_uuid(), 'profile:write', '编辑个人资料'),
+  (gen_random_uuid(), 'learning:read', '读取学习数据'),
+  (gen_random_uuid(), 'learning:write', '写入学习数据'),
+  (gen_random_uuid(), 'ai:use', '使用 AI 功能'),
+  (gen_random_uuid(), 'search:use', '使用搜索功能')
+on conflict (code) do nothing;

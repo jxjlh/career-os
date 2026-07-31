@@ -15,7 +15,14 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@career-os/shared": ["../../packages/shared/src/index.ts"],
+      "@career-os/utils": ["../../packages/utils/src/index.ts"],
+      "@career-os/ui": ["../../packages/ui/src/index.ts"],
+      "@career-os/auth": ["../../packages/auth/src/index.ts"],
+      "@career-os/ai": ["../../packages/ai/src/index.ts"],
+      "@career-os/search": ["../../packages/search/src/index.ts"],
+      "@career-os/database": ["../../packages/database/src/index.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

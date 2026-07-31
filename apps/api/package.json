@@ -1,0 +1,12 @@
+{
+  "name": "@career-os/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "uv run uvicorn app.main:app --reload --port 8000",
+    "typecheck": "uv run ruff check app tests",
+    "lint": "uv run ruff check app tests",
+    "test": "uv run pytest -q",
+    "build": "uv run python -m compileall -q app"
+  }
+}

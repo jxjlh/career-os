@@ -28,6 +28,9 @@ import { useMemo, useState } from "react";
 
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/components/ui";
+import { Breadcrumb } from "@/components/breadcrumb";
+import { CommandPalette } from "@/components/command-palette";
+import { NotificationBell } from "@/components/notification-bell";
 
 type NavItem = {
   key: string;
@@ -41,6 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { locale, setLocale, t } = useI18n();
   const { resolvedTheme, setTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
 
   const nav: NavItem[] = useMemo(
     () => [
@@ -131,6 +135,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="ml-auto flex items-center gap-1">
             <button
+              className="hidden h-9 w-9 items-center justify-center rounded-[6px] text-muted hover:bg-surface-muted lg:flex"
+              onClick={() => setCommandOpen(true)}
+              aria-label="Command palette"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+            <NotificationBell />
+            <button
               className="flex h-9 w-9 items-center justify-center rounded-[6px] text-muted hover:bg-surface-muted"
               onClick={() => setLocale(locale === "zh-CN" ? "en" : "zh-CN")}
               aria-label={t("common.language")}
@@ -178,8 +190,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        <main className="mx-auto w-full max-w-[1440px] flex-1 p-4 pb-24 sm:p-6 lg:pb-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1440px] flex-1 p-4 pb-24 sm:p-6 lg:pb-8">
+          <Breadcrumb />
+          {children}
+        </main>
       </div>
+
+      <CommandPalette open={commandOpen} onClose={() => setCommandOpen(false)} />
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex h-16 items-center justify-around border-t border-border bg-surface/95 backdrop-blur lg:hidden">
         {[

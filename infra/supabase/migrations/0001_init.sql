@@ -47,7 +47,8 @@ begin
     'jobs', 'job_analyses', 'salary_plans', 'interviews', 'interview_sessions',
     'interview_questions', 'interview_answers', 'interview_feedback',
     'resumes', 'resume_versions', 'ai_chats', 'ai_messages',
-    'weekly_plans', 'plan_tasks', 'user_limits'
+    'weekly_plans', 'plan_tasks', 'user_limits',
+    'roles', 'permissions', 'user_roles', 'role_permissions', 'settings'
   ] loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('create policy "own_select_%s" on public.%I for select using (auth.uid() = user_id);', t, t);
@@ -123,3 +124,20 @@ values
   (gen_random_uuid(), 'resumes_per_day', '{"value": 3}', '简历生成每日限额'),
   (gen_random_uuid(), 'storage_bytes_limit', '{"value": 524288000}', '存储空间限额')
 on conflict (config_key) do update set config_value = excluded.config_value, description = excluded.description;
+
+-- 6. Seed roles and permissions
+insert into public.roles (id, name, description)
+values
+  (gen_random_uuid(), 'owner', '项目所有者'),
+  (gen_random_uuid(), 'member', '普通成员')
+on conflict (name) do nothing;
+
+insert into public.permissions (id, code, description)
+values
+  (gen_random_uuid(), 'profile:read', '读取个人资料'),
+  (gen_random_uuid(), 'profile:write', '编辑个人资料'),
+  (gen_random_uuid(), 'learning:read', '读取学习数据'),
+  (gen_random_uuid(), 'learning:write', '写入学习数据'),
+  (gen_random_uuid(), 'ai:use', '使用 AI 功能'),
+  (gen_random_uuid(), 'search:use', '使用搜索功能')
+on conflict (code) do nothing;

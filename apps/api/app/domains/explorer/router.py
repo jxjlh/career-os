@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import time
 from datetime import datetime
@@ -54,13 +55,16 @@ def resource_dict(resource: LearningResource, state: str = "discovered") -> dict
 
 async def run_search_job(job_id: str, query: str, limit: int, language: str) -> None:
     started = time.monotonic()
+    providers = get_search_providers()
+    responses = await asyncio.gather(
+        *(provider.search(query, limit=limit, language=language) for provider in providers),
+        return_exceptions=True,
+    )
     collected: list[dict] = []
-    for provider in get_search_providers():
-        try:
-            items = await provider.search(query, limit=limit, language=language)
-            collected.extend(items)
-        except Exception:
+    for response in responses:
+        if isinstance(response, Exception):
             continue
+        collected.extend(response)
 
     db = SessionLocal()
     try:

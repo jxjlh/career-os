@@ -1,13 +1,10 @@
 "use client";
 
 import { cva, type VariantProps } from "class-variance-authority";
-import { clsx } from "clsx";
 import { motion } from "framer-motion";
-import { twMerge } from "tailwind-merge";
+import { cn } from "@career-os/utils";
 
-export function cn(...inputs: Parameters<typeof clsx>) {
-  return twMerge(clsx(inputs));
-}
+export { cn };
 
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 rounded-[6px] text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50",

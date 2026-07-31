@@ -41,11 +41,22 @@ Learn -> Practice -> Build -> Interview -> Job -> Promotion -> Repeat
 ```text
 apps/web        Next.js 前端
 apps/api        FastAPI 后端
+packages/       ui / auth / database / ai / search / shared / utils
 docs/           产品 / 架构 / 数据库 / API / UI 设计
 infra/          Supabase SQL、Docker
 .github/workflows/ci.yml
 render.yaml     Render 蓝图
 docker-compose.yml
+turbo.json      TurboRepo 任务编排
+```
+
+Monorepo 使用 TurboRepo + npm workspaces：
+
+```bash
+npm run dev        # 同时启动 web 与 api
+npm run build      # 全工作区构建
+npm run typecheck  # 全工作区类型检查
+npm run test       # 全工作区测试
 ```
 
 ## 本地开发
