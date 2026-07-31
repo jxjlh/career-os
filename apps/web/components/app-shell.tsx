@@ -5,6 +5,7 @@ import {
   BookOpen,
   Briefcase,
   CalendarDays,
+  Compass,
   FileText,
   GraduationCap,
   Home,
@@ -49,6 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const nav: NavItem[] = useMemo(
     () => [
       { key: "dashboard", href: "/dashboard", icon: Home, group: "overview" },
+      { key: "life", href: "/life", icon: Compass, group: "overview" },
       { key: "roadmap", href: "/roadmap", icon: Workflow, group: "growth" },
       { key: "skills", href: "/skills", icon: Target, group: "growth" },
       { key: "planner", href: "/planner", icon: CalendarDays, group: "growth" },

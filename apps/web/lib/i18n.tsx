@@ -7,6 +7,7 @@ export type Locale = "zh-CN" | "en";
 const zh = {
   nav: {
     dashboard: "首页",
+    life: "人生",
     roadmap: "职业路线",
     skills: "技能矩阵",
     explore: "学习搜索",
@@ -199,6 +200,7 @@ type Dictionary = typeof zh;
 const en: Dictionary = {
   nav: {
     dashboard: "Dashboard",
+    life: "Life",
     roadmap: "Roadmap",
     skills: "Skill Matrix",
     explore: "Explore",

@@ -9,6 +9,7 @@ import { useI18n } from "@/lib/i18n";
 
 const LINKS = [
   ["/dashboard", "nav.dashboard"],
+  ["/life", "nav.life"],
   ["/roadmap", "nav.roadmap"],
   ["/skills", "nav.skills"],
   ["/explore", "nav.explore"],
