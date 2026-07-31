@@ -143,3 +143,44 @@ export async function getRecordMediaUrl(path: string): Promise<string | null> {
   const { data } = await supabase.storage.from("life-records").createSignedUrl(path, 3600);
   return data?.signedUrl ?? null;
 }
+
+export interface TravelPlanRequest {
+  goalId?: string;
+  destination: string;
+  days: number;
+  budget?: string;
+  people?: string;
+  interests: string[];
+}
+
+export interface TravelDay {
+  day: number;
+  title: string;
+  activities: string[];
+}
+
+export interface TravelPlanResponse {
+  id: string;
+  aiContentId: string;
+  title?: string | null;
+  summary?: string | null;
+  bestTime?: string | null;
+  route: TravelDay[];
+  preparation: string[];
+  tips: string[];
+}
+
+export async function generateTravelPlan(payload: TravelPlanRequest): Promise<TravelPlanResponse> {
+  const res = await apiFetch<{ data: TravelPlanResponse }>("/ai/travel-plan", {
+    method: "POST",
+    body: JSON.stringify({
+      goal_id: payload.goalId,
+      destination: payload.destination,
+      days: payload.days,
+      budget: payload.budget,
+      people: payload.people,
+      interests: payload.interests,
+    }),
+  });
+  return res.data;
+}

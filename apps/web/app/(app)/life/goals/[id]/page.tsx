@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Check, Loader2, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 
@@ -81,6 +82,14 @@ export default function LifeGoalDetailPage() {
             <Camera className="h-4 w-4" />
             记录这一刻
           </Button>
+          {data.category === "travel" && (
+            <Link href={`/life/goals/${goalId}/ai`}>
+              <Button variant="outline">
+                <Sparkles className="h-4 w-4" />
+                AI 生成旅行攻略
+              </Button>
+            </Link>
+          )}
         </div>
       </Card>
 
