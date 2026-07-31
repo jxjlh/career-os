@@ -7,9 +7,17 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import Profile
 from app.domains.life.schemas import LifeGoalCreate, LifeGoalUpdate
-from app.domains.life.service import LifeGoalService
+from app.domains.life.service import LifeDashboardService, LifeGoalService
 
 router = APIRouter(tags=["life"])
+
+
+@router.get("/life/dashboard")
+def life_dashboard(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return {"data": LifeDashboardService(db).get(current_user.id)}
 
 
 @router.get("/life/goals")

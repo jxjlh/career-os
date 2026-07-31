@@ -1,1 +1,1 @@
-from app.db.models import LifeGoal  # noqa: F401
+from app.db.models import LifeGoal, UserLevel  # noqa: F401

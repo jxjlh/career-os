@@ -1,5 +1,5 @@
 from app.core.repository import BaseRepository
-from app.db.models import LifeGoal
+from app.db.models import LifeGoal, UserLevel
 
 
 class LifeGoalRepository(BaseRepository[LifeGoal]):
@@ -23,3 +23,18 @@ class LifeGoalRepository(BaseRepository[LifeGoal]):
         self.db.commit()
         self.db.refresh(goal)
         return goal
+
+
+class UserLevelRepository(BaseRepository[UserLevel]):
+    def __init__(self, db):
+        super().__init__(db, UserLevel)
+
+    def get_by_user(self, user_id: str) -> UserLevel | None:
+        return self.db.query(UserLevel).filter(UserLevel.user_id == user_id).first()
+
+    def create(self, user_id: str) -> UserLevel:
+        level = UserLevel(user_id=user_id, experience=0, level=1)
+        self.db.add(level)
+        self.db.commit()
+        self.db.refresh(level)
+        return level
