@@ -6,10 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY apps/api/pyproject.toml apps/api/uv.lock ./
-COPY apps/api/app ./app
-COPY apps/api/migrations ./migrations
-COPY apps/api/alembic.ini ./alembic.ini
+# 注意：此 Dockerfile 构建上下文必须为 apps/api 子目录（Render rootDir=apps/api）
+# 本地构建：cd apps/api && docker build .  或  docker build -f apps/api/Dockerfile apps/api
+COPY pyproject.toml uv.lock ./
+COPY app ./app
+COPY migrations ./migrations
+COPY alembic.ini ./alembic.ini
 
 # 安装含 dev 组（提供 alembic，用于容器启动时自动迁移）
 RUN uv sync --frozen
