@@ -6,7 +6,7 @@ import Link from "next/link";
 export function AiEntryCard() {
   return (
     <Link
-      href="/life/ai"
+      href="/life/assistant"
       className="block rounded-[12px] border border-border bg-gradient-to-br from-ai/10 to-blue-500/10 p-4 transition-colors hover:border-ai/40"
     >
       <div className="flex items-center gap-3">
@@ -14,8 +14,8 @@ export function AiEntryCard() {
           <Sparkles className="h-5 w-5" />
         </span>
         <div>
-          <p className="text-sm font-semibold">AI 人生助手</p>
-          <p className="text-[13px] text-muted">帮我规划下一步人生目标</p>
+          <p className="text-sm font-semibold">🤖 今日人生助手</p>
+          <p className="text-[13px] text-muted">每天为你梳理最重要的一件事</p>
         </div>
       </div>
     </Link>

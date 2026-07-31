@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Images, RefreshCw } from "lucide-react";
+import { BarChart3, Images, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 import { AiEntryCard } from "@/components/life/ai-entry-card";
@@ -62,13 +62,22 @@ export default function LifePage() {
     <div className="mx-auto max-w-5xl space-y-4">
       <LifeHeader nickname={nickname} avatar={avatar} level={data.level} />
 
-      <Link href="/life/records" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
-        <span className="flex items-center gap-2 text-sm font-medium">
-          <Images className="h-4 w-4 text-primary" />
-          我的人生记录
-        </span>
-        <span className="text-xs text-muted">查看时间轴 →</span>
-      </Link>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Link href="/life/records" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <Images className="h-4 w-4 text-primary" />
+            我的人生记录
+          </span>
+          <span className="text-xs text-muted">时间轴 →</span>
+        </Link>
+        <Link href="/life/review" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <BarChart3 className="h-4 w-4 text-primary" />
+            年度人生总结
+          </span>
+          <span className="text-xs text-muted">年度回顾 →</span>
+        </Link>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <LifeLevelCard

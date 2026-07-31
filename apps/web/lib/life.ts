@@ -171,7 +171,7 @@ export interface TravelPlanResponse {
 }
 
 export async function generateTravelPlan(payload: TravelPlanRequest): Promise<TravelPlanResponse> {
-  const res = await apiFetch<{ data: TravelPlanResponse }>("/ai/travel-plan", {
+  return apiFetch<TravelPlanResponse>("/ai/travel-plan", {
     method: "POST",
     body: JSON.stringify({
       goal_id: payload.goalId,
@@ -182,7 +182,6 @@ export async function generateTravelPlan(payload: TravelPlanRequest): Promise<Tr
       interests: payload.interests,
     }),
   });
-  return res.data;
 }
 
 export interface GrowthPhase {
@@ -219,7 +218,7 @@ export async function generateGrowthPlan(payload: {
   availableTime?: string;
   difficulty?: string;
 }): Promise<GrowthPlanResponse> {
-  const res = await apiFetch<{ data: GrowthPlanResponse }>("/ai/growth-plan", {
+  return apiFetch<GrowthPlanResponse>("/ai/growth-plan", {
     method: "POST",
     body: JSON.stringify({
       goal_id: payload.goalId,
@@ -229,13 +228,48 @@ export async function generateGrowthPlan(payload: {
       difficulty: payload.difficulty,
     }),
   });
-  return res.data;
 }
 
 export async function generateGrowthTasks(aiContentId: string): Promise<GenerateTasksResponse> {
-  const res = await apiFetch<{ data: GenerateTasksResponse }>(
-    `/ai/growth-plan/${aiContentId}/generate-tasks`,
-    { method: "POST" },
-  );
-  return res.data;
+  return apiFetch<GenerateTasksResponse>(`/ai/growth-plan/${aiContentId}/generate-tasks`, {
+    method: "POST",
+  });
+}
+
+export interface LifeAssistantResponse {
+  greeting?: string | null;
+  focusGoal?: { title?: string; progress?: string; reason?: string } | null;
+  todayTasks: Array<{ id: string; title: string; priority: string }>;
+  progress: { completedTasks: number; totalTasks: number; level: number; xp: number };
+  suggestions: string[];
+  motivation?: string | null;
+  dailySummary?: string | null;
+}
+
+export async function getDailyAssistant(): Promise<LifeAssistantResponse> {
+  return apiFetch<LifeAssistantResponse>("/ai/assistant/daily");
+}
+
+export interface YearReviewResponse {
+  id: string;
+  aiContentId: string;
+  year: number;
+  title?: string | null;
+  summary?: string | null;
+  highlights: string[];
+  growth: Record<string, number>;
+  versions: { normal?: string; moments?: string; xiaohongshu?: string };
+  createdAt?: string | null;
+}
+
+export async function generateYearReview(year?: number): Promise<YearReviewResponse> {
+  return apiFetch<YearReviewResponse>("/ai/year-summary", {
+    method: "POST",
+    body: JSON.stringify({ year }),
+  });
+}
+
+export async function getYearReview(year?: number): Promise<YearReviewResponse> {
+  const query = year ? `?year=${year}` : "";
+  return apiFetch<YearReviewResponse>(`/ai/year-summary${query}`);
 }
