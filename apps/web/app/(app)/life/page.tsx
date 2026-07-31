@@ -1,11 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Camera, Images, ListChecks, MapPin, RefreshCw } from "lucide-react";
+import { BarChart3, Camera, Images, ListChecks, MapPin, RefreshCw, Users } from "lucide-react";
 import Link from "next/link";
 
 import { DailyAssistantCard } from "@/components/life/assistant/daily-assistant-card";
 import { CheckinStreakCard } from "@/components/life/checkin-streak-card";
+import { SocialOverviewCard } from "@/components/life/social/social-overview-card";
 import { LifeCategoryCard } from "@/components/life/life-category-card";
 import { LifeHeader } from "@/components/life/life-header";
 import { LifeLevelCard } from "@/components/life/life-level-card";
@@ -68,7 +69,17 @@ export default function LifePage() {
       {/* Sprint 7: 连续打卡卡 */}
       <CheckinStreakCard />
 
+      {/* Sprint 8: 人生社交概览 */}
+      <SocialOverviewCard />
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Link href="/life/social" className="flex items-center justify-between rounded-[12px] border border-border bg-gradient-to-br from-indigo-500/10 to-pink-500/5 p-4 transition-colors hover:border-primary/40">
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <Users className="h-4 w-4 text-primary" />
+            人生社交
+          </span>
+          <span className="text-xs text-muted">分享成长 →</span>
+        </Link>
         <Link href="/life/camera" className="flex items-center justify-between rounded-[12px] border border-border bg-gradient-to-br from-rose-500/10 to-orange-500/5 p-4 transition-colors hover:border-primary/40">
           <span className="flex items-center gap-2 text-sm font-medium">
             <Camera className="h-4 w-4 text-primary" />

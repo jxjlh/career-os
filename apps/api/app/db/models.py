@@ -891,3 +891,116 @@ class CheckinStreak(Base):
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), onupdate=datetime.utcnow
     )
+
+
+# ── Sprint 8 Life Social ────────────────────────────────────────────
+class Friend(Base):
+    """已建立的好友关系. (user_id, friend_id) 唯一; 双向写入两条记录便于双向查询."""
+
+    __tablename__ = "friends"
+    __table_args__ = (
+        UniqueConstraint("user_id", "friend_id", name="uq_friends_pair"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    friend_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active | blocked
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class FriendRequest(Base):
+    """好友申请: from_user → to_user, pending/accepted/rejected."""
+
+    __tablename__ = "friend_requests"
+    __table_args__ = (
+        UniqueConstraint("from_user", "to_user", name="uq_friend_requests_pair"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    from_user: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    to_user: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    message: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending/accepted/rejected
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class SharedGoal(Base):
+    """共同目标: 将一个 Life Goal 共享给好友, 协作完成 (一起旅行/读书/跑步/考研)."""
+
+    __tablename__ = "shared_goals"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    life_goal_id: Mapped[str] = mapped_column(
+        ForeignKey("life_goals.id", ondelete="CASCADE"), index=True
+    )
+    owner_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    visibility: Mapped[str] = mapped_column(String(16), default="friends")  # public/friends/private/link
+    share_code: Mapped[str | None] = mapped_column(String(32), index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class GoalMember(Base):
+    """共同目标成员: 每个加入的用户及其角色 (owner/member)."""
+
+    __tablename__ = "goal_members"
+    __table_args__ = (
+        UniqueConstraint("shared_goal_id", "user_id", name="uq_goal_members_pair"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    shared_goal_id: Mapped[str] = mapped_column(
+        ForeignKey("shared_goals.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(16), default="member")  # owner/member
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class SocialPost(Base):
+    """人生动态: 可关联 LifeRecord/BucketItem, 含图片/视频/文字/定位, 带可见性."""
+
+    __tablename__ = "social_posts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    life_record_id: Mapped[str | None] = mapped_column(
+        ForeignKey("life_records.id", ondelete="SET NULL"), index=True
+    )
+    bucket_item_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bucket_items.id", ondelete="SET NULL"), index=True
+    )
+    content: Mapped[str | None] = mapped_column(Text)
+    photos: Mapped[list[str]] = mapped_column(JSON, default=list)
+    videos: Mapped[list[str]] = mapped_column(JSON, default=list)
+    visibility: Mapped[str] = mapped_column(String(16), default="friends")  # public/friends/private/link
+    likes_count: Mapped[int] = mapped_column(Integer, default=0)
+    comments_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+class Like(Base):
+    """点赞: (user_id, post_id) 唯一, 重复点赞幂等 (toggle)."""
+
+    __tablename__ = "likes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "post_id", name="uq_likes_user_post"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    post_id: Mapped[str] = mapped_column(ForeignKey("social_posts.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class Comment(Base):
+    """评论: 对动态的回复."""
+
+    __tablename__ = "comments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    post_id: Mapped[str] = mapped_column(ForeignKey("social_posts.id", ondelete="CASCADE"), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)

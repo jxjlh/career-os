@@ -6,10 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.db.models import AIContent, GoalTask
 from app.domains.ai.prompts.bucket_recommendation import BUCKET_RECOMMENDATION_PROMPT
+from app.domains.ai.prompts.friend_recommendation import FRIEND_RECOMMENDATION_PROMPT
 from app.domains.ai.prompts.growth_plan import GROWTH_PLAN_PROMPT
 from app.domains.ai.prompts.journal import JOURNAL_PROMPT
 from app.domains.ai.prompts.map_insight import MAP_INSIGHT_PROMPT
 from app.domains.ai.prompts.photo_analysis import PHOTO_ANALYSIS_PROMPT
+from app.domains.ai.prompts.team_plan import TEAM_PLAN_PROMPT
 from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_PROMPT
 from app.domains.ai.prompts.year_summary import YEAR_SUMMARY_PROMPT
 from app.domains.ai.repository import AIContentRepository
@@ -17,6 +19,9 @@ from app.domains.ai.schemas import (
     BucketRecommendationItem,
     BucketRecommendationRequest,
     BucketRecommendationResponse,
+    FriendRecommendationItem,
+    FriendRecommendationRequest,
+    FriendRecommendationResponse,
     GenerateTasksResponse,
     GrowthPlanRequest,
     GrowthPlanResponse,
@@ -26,7 +31,12 @@ from app.domains.ai.schemas import (
     PhotoAnalysisResponse,
     RelatedBucketItem,
     RelatedGoalItem,
+    SharedGoalSuggestion,
     SuggestedRecord,
+    TeamPlanRequest,
+    TeamPlanResponse,
+    TeamRiskItem,
+    TeamTaskItem,
     TravelPlanRequest,
     TravelPlanResponse,
     YearSummaryRequest,
@@ -841,5 +851,427 @@ class JournalService:
             body=body[:1200],
             reflection=reflection[:200],
             keywords=list(dict.fromkeys(keywords))[:5],
+            source="fallback",
+        )
+
+
+# ── Sprint 8 Life Social: AI 好友推荐 + 团队规划 ─────────────────────
+class FriendRecommendationService:
+    """根据用户兴趣/目标/Bucket/城市/成长方向, 推荐志趣相投的好友与共同目标.
+
+    候选来源于用户的好友的好友 (二度关系) + 同城用户; AI 不可用时按简单规则排序.
+    """
+
+    CANDIDATE_LIMIT = 12
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIService(db)
+        self.goals = LifeGoalRepository(db)
+        self.records = LifeRecordRepository(db)
+
+    async def recommend(
+        self, user_id: str, payload: FriendRecommendationRequest
+    ) -> FriendRecommendationResponse:
+        candidates = self._load_candidates(user_id, payload)
+        profile_text = self._build_profile(payload)
+        candidates_text = self._build_candidates(candidates)
+
+        prompt = FRIEND_RECOMMENDATION_PROMPT.format(
+            profile=profile_text, candidates=candidates_text
+        )
+        input_data = payload.model_dump(exclude_none=True)
+
+        try:
+            _, parsed = await self.ai.generate_content(
+                user_id=user_id,
+                content_type="friend_recommendation",
+                input_data=input_data,
+                prompt=prompt,
+            )
+        except AppError:
+            return self._fallback(candidates, payload)
+
+        recs = self._parse_recommendations(parsed, candidates)
+        suggestions = self._parse_suggestions(parsed)
+        if not recs and not suggestions:
+            return self._fallback(candidates, payload)
+        return FriendRecommendationResponse(
+            recommendations=recs[:6],
+            shared_goal_suggestions=suggestions[:4],
+            source="ai",
+        )
+
+    def _load_candidates(self, user_id: str, payload: FriendRecommendationRequest):
+        """候选 = 好友的好友 (排除已是好友与自己) + 同城/同目标用户."""
+        from app.db.models import Friend, Profile, UserProfile
+
+        friend_ids = [
+            f.friend_id for f in self.db.query(Friend).filter(Friend.user_id == user_id).all()
+        ]
+        # 二度关系: 好友的好友
+        second_degree_ids: set[str] = set()
+        for fid in friend_ids:
+            for f in (
+                self.db.query(Friend).filter(Friend.user_id == fid, Friend.friend_id != user_id).all()
+            ):
+                if f.friend_id not in friend_ids:
+                    second_degree_ids.add(f.friend_id)
+        candidate_ids = list(second_degree_ids)
+
+        # 补充同城 / 同兴趣用户
+        city = payload.city
+        extra = []
+        if city:
+            extra = (
+                self.db.query(Profile)
+                .filter(Profile.id != user_id, Profile.id.notin_(friend_ids))
+                .limit(self.CANDIDATE_LIMIT)
+                .all()
+            )
+        else:
+            extra = (
+                self.db.query(Profile)
+                .filter(Profile.id != user_id, Profile.id.notin_(friend_ids))
+                .limit(self.CANDIDATE_LIMIT)
+                .all()
+            )
+        extra_ids = [p.id for p in extra if p.id not in candidate_ids]
+        candidate_ids.extend(extra_ids)
+
+        # 去重并截断
+        seen = set()
+        ordered = []
+        for cid in candidate_ids:
+            if cid not in seen and cid != user_id:
+                seen.add(cid)
+                ordered.append(cid)
+        ordered = ordered[: self.CANDIDATE_LIMIT]
+        if not ordered:
+            return []
+        profiles = self.db.query(Profile).filter(Profile.id.in_(ordered)).all()
+        # 关联 UserProfile (兴趣/方向)
+        profiles_map = {p.id: p for p in profiles}
+        user_profiles = {
+            up.user_id: up
+            for up in self.db.query(UserProfile).filter(UserProfile.user_id.in_(ordered)).all()
+        }
+        result = []
+        for cid in ordered:
+            p = profiles_map.get(cid)
+            if p is None:
+                continue
+            up = user_profiles.get(cid)
+            result.append((p, up))
+        return result
+
+    def _build_profile(self, payload: FriendRecommendationRequest) -> str:
+        parts = [
+            f"兴趣: {', '.join(payload.interests) or '未指定'}",
+            f"成长方向: {payload.growth_direction or '未指定'}",
+            f"所在城市: {payload.city or '未指定'}",
+            f"当前人生目标: {payload.goal_title or '未指定'}",
+            f"已加入清单: {', '.join(payload.bucket_titles) or '未指定'}",
+        ]
+        return "\n".join(parts)
+
+    def _build_candidates(self, candidates) -> str:
+        if not candidates:
+            return "（暂无候选好友, 推荐系统刚启动, 可先添加几位好友扩大社交圈）"
+        lines = []
+        for p, up in candidates:
+            interests = ", ".join((up.interests if up else []) or []) or "未填写"
+            direction = (up.career_direction if up else None) or "未填写"
+            city = p.current_title or "未知"
+            lines.append(
+                f"- friend_id={p.id} | 昵称={p.display_name or p.email.split('@')[0]} | "
+                f"职业={city} | 兴趣={interests} | 成长方向={direction}"
+            )
+        return "\n".join(lines)
+
+    def _parse_recommendations(self, parsed: dict, candidates) -> list[FriendRecommendationItem]:
+        raw = parsed.get("recommendations") or []
+        if not isinstance(raw, list):
+            return []
+        cand_ids = {p.id for p, _ in candidates}
+        result = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            fid = entry.get("friend_id") or entry.get("friendId")
+            if not fid or fid not in cand_ids:
+                continue
+            try:
+                conf = float(entry.get("confidence", 0.5))
+            except (TypeError, ValueError):
+                conf = 0.5
+            result.append(
+                FriendRecommendationItem(
+                    **{
+                        "friendId": fid,
+                        "reason": str(entry.get("reason", ""))[:200],
+                        "confidence": max(0.0, min(1.0, conf)),
+                    }
+                )
+            )
+        return result
+
+    @staticmethod
+    def _parse_suggestions(parsed: dict) -> list[SharedGoalSuggestion]:
+        raw = parsed.get("shared_goal_suggestions") or []
+        if not isinstance(raw, list):
+            return []
+        result = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            title = entry.get("title")
+            if not title:
+                continue
+            result.append(
+                SharedGoalSuggestion(
+                    title=str(title)[:80],
+                    category=str(entry.get("category", "other"))[:24],
+                    description=str(entry.get("description", ""))[:200],
+                )
+            )
+        return result
+
+    def _fallback(
+        self, candidates, payload: FriendRecommendationRequest
+    ) -> FriendRecommendationResponse:
+        """AI 不可用时按兴趣/城市重叠度排序, 仍给出可消费的推荐与共同目标建议."""
+        recs = []
+        for p, up in candidates[:5]:
+            score = 0.5
+            reasons = []
+            if up and (up.interests or []) and payload.interests:
+                overlap = set(up.interests) & set(payload.interests)
+                if overlap:
+                    score += 0.2 * len(overlap)
+                    reasons.append(f"都喜爱 {'、'.join(overlap)}")
+            if payload.city and p.current_title and payload.city in (p.current_title or ""):
+                score += 0.1
+                reasons.append(f"都在{payload.city}")
+            if not reasons:
+                reasons.append("可能志趣相投, 值得结识")
+            recs.append(
+                FriendRecommendationItem(
+                    **{
+                        "friendId": p.id,
+                        "reason": "; ".join(reasons),
+                        "confidence": min(0.95, score),
+                    }
+                )
+            )
+        suggestions = self._fallback_suggestions(payload)
+        return FriendRecommendationResponse(
+            recommendations=recs,
+            shared_goal_suggestions=suggestions,
+            source="fallback",
+        )
+
+    @staticmethod
+    def _fallback_suggestions(payload: FriendRecommendationRequest) -> list[SharedGoalSuggestion]:
+        suggestions = []
+        if payload.goal_title:
+            suggestions.append(
+                SharedGoalSuggestion(
+                    title=f"一起完成「{payload.goal_title[:12]}」",
+                    category="other",
+                    description=f"和志同道合的伙伴一起推进「{payload.goal_title}」, 互相督促, 共同成长。",
+                )
+            )
+        if payload.city:
+            suggestions.append(
+                SharedGoalSuggestion(
+                    title=f"一起探索{payload.city}",
+                    category="travel",
+                    description=f"在{payload.city}找到同伴, 一起打卡城市的精彩角落。",
+                )
+            )
+        if payload.interests:
+            top = payload.interests[0]
+            suggestions.append(
+                SharedGoalSuggestion(
+                    title=f"一起精进{top}",
+                    category="skill",
+                    description=f"组队学习{top}, 定期分享进度, 共同进步。",
+                )
+            )
+        return suggestions
+
+
+class TeamPlanService:
+    """为共同目标生成任务分工 / 时间安排 / 风险提示.
+
+    AI 不可用时回退为均分任务的模板方案, 保证前端可用.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIService(db)
+
+    async def plan(self, user_id: str, payload: TeamPlanRequest) -> TeamPlanResponse:
+        from app.db.models import GoalMember, LifeGoal, SharedGoal
+
+        sg = self.db.get(SharedGoal, payload.shared_goal_id)
+        if sg is None:
+            raise AppError(code="NOT_FOUND", message="共同目标不存在", status=404)
+        # 仅成员可查看团队规划
+        is_member = (
+            self.db.query(GoalMember)
+            .filter(GoalMember.shared_goal_id == sg.id, GoalMember.user_id == user_id)
+            .first()
+            is not None
+        )
+        if not is_member:
+            raise AppError(code="FORBIDDEN", message="你未加入此共同目标", status=403)
+
+        goal = self.db.get(LifeGoal, sg.life_goal_id)
+        members = self._load_members(sg.id)
+        if not members:
+            return TeamPlanResponse(source="fallback", collaboration_tip="先邀请伙伴加入共同目标。")
+
+        goal_info = self._build_goal_info(goal)
+        members_text = self._build_members(members)
+        prompt = TEAM_PLAN_PROMPT.format(goal_info=goal_info, members=members_text)
+        input_data = {"shared_goal_id": payload.shared_goal_id, "goal_title": goal.title if goal else ""}
+
+        try:
+            _, parsed = await self.ai.generate_content(
+                user_id=user_id,
+                content_type="team_plan",
+                input_data=input_data,
+                prompt=prompt,
+            )
+        except AppError:
+            return self._fallback(goal, members)
+
+        response = self._parse(parsed, members)
+        if response is None:
+            return self._fallback(goal, members)
+        return response
+
+    def _load_members(self, shared_id: str):
+        from app.db.models import GoalMember, Profile
+
+        rows = (
+            self.db.query(GoalMember, Profile)
+            .join(Profile, Profile.id == GoalMember.user_id)
+            .filter(GoalMember.shared_goal_id == shared_id)
+            .order_by(GoalMember.joined_at.asc())
+            .all()
+        )
+        return [(m, p) for m, p in rows]
+
+    def _build_goal_info(self, goal) -> str:
+        if goal is None:
+            return "目标信息: 共同目标 (标题未知)"
+        parts = [
+            f"目标标题: {goal.title}",
+            f"分类: {goal.category}",
+            f"状态: {goal.status}",
+            f"进度: {getattr(goal, 'progress', 0) or 0}%",
+        ]
+        return "\n".join(parts)
+
+    @staticmethod
+    def _build_members(members) -> str:
+        lines = []
+        for m, p in members:
+            name = p.display_name or p.email.split("@")[0]
+            lines.append(f"- member_id={p.id} | 昵称={name} | 角色={m.role}")
+        return "\n".join(lines)
+
+    def _parse(self, parsed: dict, members) -> TeamPlanResponse | None:
+        member_ids = {p.id for _, p in members}
+        tasks_raw = parsed.get("tasks") or []
+        if not isinstance(tasks_raw, list) or not tasks_raw:
+            return None
+        tasks = []
+        for entry in tasks_raw:
+            if not isinstance(entry, dict):
+                continue
+            assignee = entry.get("assignee") or entry.get("assigneeId") or ""
+            if assignee and assignee not in member_ids:
+                assignee = ""  # 过滤编造的 assignee
+            try:
+                days = int(entry.get("estimated_days", 1))
+            except (TypeError, ValueError):
+                days = 1
+            tasks.append(
+                TeamTaskItem(
+                    title=str(entry.get("title", ""))[:120],
+                    assignee=assignee,
+                    estimated_days=max(1, days),
+                    start_at=str(entry.get("start_at", ""))[:24] or None,
+                )
+            )
+        timeline = []
+        for entry in parsed.get("timeline") or []:
+            if isinstance(entry, dict) and entry.get("milestone"):
+                timeline.append(
+                    {
+                        "milestone": str(entry["milestone"])[:80],
+                        "target_date": str(entry.get("target_date", ""))[:24] or None,
+                    }
+                )
+        risks = []
+        for entry in parsed.get("risks") or []:
+            if isinstance(entry, dict) and entry.get("risk"):
+                risks.append(
+                    TeamRiskItem(
+                        risk=str(entry["risk"])[:200],
+                        mitigation=str(entry.get("mitigation", ""))[:200],
+                    )
+                )
+        tip = parsed.get("collaboration_tip") or parsed.get("collaborationTip")
+        return TeamPlanResponse(
+            tasks=tasks,
+            timeline=timeline,
+            risks=risks,
+            collaboration_tip=str(tip)[:200] if tip else None,
+            source="ai",
+        )
+
+    def _fallback(self, goal, members) -> TeamPlanResponse:
+        """均分任务模板: 把"筹备/执行/复盘"三阶段均分给成员."""
+        if not members:
+            return TeamPlanResponse(source="fallback")
+        goal_title = goal.title if goal else "共同目标"
+        phases = [
+            (f"「{goal_title}」筹备: 制定计划与分工", 3),
+            (f"「{goal_title}」执行: 推进核心任务", 7),
+            (f"「{goal_title}」复盘: 总结与分享", 2),
+        ]
+        tasks = []
+        for idx, (title, days) in enumerate(phases):
+            assignee_member = members[idx % len(members)]
+            tasks.append(
+                TeamTaskItem(
+                    title=title,
+                    assignee=assignee_member[1].id,
+                    estimated_days=days,
+                    start_at=None,
+                )
+            )
+        return TeamPlanResponse(
+            tasks=tasks,
+            timeline=[
+                {"milestone": "筹备完成", "target_date": None},
+                {"milestone": "执行完成", "target_date": None},
+            ],
+            risks=[
+                TeamRiskItem(
+                    risk="成员时间安排可能冲突",
+                    mitigation="提前固定每周共同时间, 设定缓冲期。",
+                ),
+                TeamRiskItem(
+                    risk="进度不一致导致拖延",
+                    mitigation="每周同步进度, 互相督促, 必要时调整分工。",
+                ),
+            ],
+            collaboration_tip="每周固定一次同步会, 进度透明, 互相激励。",
             source="fallback",
         )

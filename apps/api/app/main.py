@@ -31,6 +31,7 @@ from app.domains.resume.router import router as resume_router
 from app.domains.roadmap.router import router as roadmap_router
 from app.domains.salary.router import router as salary_router
 from app.domains.skills.router import router as skills_router
+from app.domains.social.router import router as social_router
 
 settings = get_settings()
 
@@ -91,3 +92,4 @@ app.include_router(jobs_router, prefix=settings.api_prefix)
 app.include_router(resume_router, prefix=settings.api_prefix)
 app.include_router(interviews_router, prefix=settings.api_prefix)
 app.include_router(salary_router, prefix=settings.api_prefix)
+app.include_router(social_router, prefix=settings.api_prefix)

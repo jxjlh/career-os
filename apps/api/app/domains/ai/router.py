@@ -10,6 +10,8 @@ from app.domains.ai.assistant import LifeAssistantService
 from app.domains.ai.schemas import (
     BucketRecommendationRequest,
     BucketRecommendationResponse,
+    FriendRecommendationRequest,
+    FriendRecommendationResponse,
     GenerateTasksResponse,
     GrowthPlanRequest,
     GrowthPlanResponse,
@@ -18,6 +20,8 @@ from app.domains.ai.schemas import (
     LifeAssistantResponse,
     PhotoAnalysisRequest,
     PhotoAnalysisResponse,
+    TeamPlanRequest,
+    TeamPlanResponse,
     TravelPlanRequest,
     TravelPlanResponse,
     YearReviewRequest,
@@ -27,11 +31,13 @@ from app.domains.ai.schemas import (
 )
 from app.domains.ai.service import (
     BucketRecommendationService,
+    FriendRecommendationService,
     GrowthPlanService,
     GrowthTaskGeneratorService,
     JournalService,
     MapInsightService,
     PhotoAnalysisService,
+    TeamPlanService,
     TravelPlanService,
     YearSummaryService,
 )
@@ -139,3 +145,22 @@ async def generate_journal(
     db: Annotated[Session, Depends(get_db)],
 ) -> JournalResponse:
     return await JournalService(db).generate(current_user.id, payload)
+
+
+# ── Sprint 8 Life Social: AI 好友推荐 + 团队规划 ─────────────────────
+@router.post("/ai/friend-recommendation", response_model=FriendRecommendationResponse)
+async def recommend_friends(
+    payload: FriendRecommendationRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> FriendRecommendationResponse:
+    return await FriendRecommendationService(db).recommend(current_user.id, payload)
+
+
+@router.post("/ai/team-plan", response_model=TeamPlanResponse)
+async def generate_team_plan(
+    payload: TeamPlanRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> TeamPlanResponse:
+    return await TeamPlanService(db).plan(current_user.id, payload)

@@ -257,3 +257,81 @@ class JournalResponse(BaseModel):
     reflection: str | None = None
     keywords: list[str] = []
     source: str = "ai"  # "ai" | "fallback"
+
+
+# ── Sprint 8 Life Social: AI 好友推荐 + 团队规划 ─────────────────────
+class FriendRecommendationRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    interests: list[str] = []
+    growth_direction: str | None = Field(
+        default=None, validation_alias=AliasChoices("growthDirection", "growth_direction")
+    )
+    city: str | None = None
+    goal_title: str | None = Field(default=None, validation_alias=AliasChoices("goalTitle", "goal_title"))
+    bucket_titles: list[str] = Field(
+        default_factory=list, validation_alias=AliasChoices("bucketTitles", "bucket_titles")
+    )
+
+
+class FriendRecommendationItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    friend_id: str = Field(validation_alias=AliasChoices("friendId", "friend_id"))
+    reason: str = ""
+    confidence: float = 0.5
+
+
+class SharedGoalSuggestion(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    title: str
+    category: str = "other"
+    description: str = ""
+
+
+class FriendRecommendationResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    recommendations: list[FriendRecommendationItem] = []
+    shared_goal_suggestions: list[SharedGoalSuggestion] = []
+    source: str = "ai"  # "ai" | "fallback"
+
+
+class TeamPlanRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    shared_goal_id: str = Field(validation_alias=AliasChoices("sharedGoalId", "shared_goal_id"))
+
+
+class TeamTaskItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    title: str
+    assignee: str = ""
+    estimated_days: int = 1
+    start_at: str | None = None
+
+
+class TeamMilestone(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    milestone: str
+    target_date: str | None = None
+
+
+class TeamRiskItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    risk: str
+    mitigation: str = ""
+
+
+class TeamPlanResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    tasks: list[TeamTaskItem] = []
+    timeline: list[TeamMilestone] = []
+    risks: list[TeamRiskItem] = []
+    collaboration_tip: str | None = None
+    source: str = "ai"  # "ai" | "fallback"
