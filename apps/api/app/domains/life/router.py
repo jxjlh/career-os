@@ -127,6 +127,18 @@ def life_record_timeline(
     return {"data": LifeRecordService(db).get_user_records(current_user.id, page, page_size, goal_id)}
 
 
+@router.get("/life/records/{record_id}")
+def get_life_record_detail(
+    record_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    result = LifeRecordService(db).get_record_detail(current_user.id, record_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Life record not found"})
+    return {"data": result}
+
+
 @router.delete("/life/records/{record_id}", status_code=204)
 def delete_life_record(
     record_id: str,

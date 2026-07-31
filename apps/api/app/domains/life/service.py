@@ -238,6 +238,16 @@ class LifeRecordService:
             payload.append(item)
         return {"total": total, "page": page, "pageSize": page_size, "items": payload}
 
+    def get_record_detail(self, user_id: str, record_id: str) -> dict | None:
+        row = self.repository.get_by_id_with_goal(user_id, record_id)
+        if row is None:
+            return None
+        record, goal_title = row
+        item = life_record_dict(record)
+        item["userId"] = record.user_id
+        item["goalTitle"] = goal_title
+        return item
+
     async def create(
         self,
         user_id: str,

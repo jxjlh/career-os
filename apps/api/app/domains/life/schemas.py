@@ -62,3 +62,23 @@ class LifeRecordListResponse(BaseModel):
     page: int
     pageSize: int
     items: list[LifeRecordListItem]
+
+
+class LifeRecordDetailResponse(BaseModel):
+    id: str
+    userId: str
+    goalId: str
+    goalTitle: str | None = None
+    recordType: str
+    photoUrl: str | None = None
+    watermarkUrl: str | None = None
+    content: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    city: str | None = None
+    country: str | None = None
+    weather: str | None = None
+    altitude: float | None = None
+    deviceInfo: dict[str, str] = {}
+    createdAt: str | None = None
+    updatedAt: str | None = None

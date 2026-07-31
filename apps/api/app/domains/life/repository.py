@@ -53,6 +53,15 @@ class LifeRecordRepository(BaseRepository[LifeRecord]):
     def get_owned(self, user_id: str, record_id: str) -> LifeRecord | None:
         return self.db.query(LifeRecord).filter(LifeRecord.id == record_id, LifeRecord.user_id == user_id).first()
 
+    def get_by_id_with_goal(self, user_id: str, record_id: str) -> tuple[LifeRecord, str | None] | None:
+        row = (
+            self.db.query(LifeRecord, LifeGoal.title)
+            .join(LifeGoal, LifeGoal.id == LifeRecord.goal_id)
+            .filter(LifeRecord.id == record_id, LifeRecord.user_id == user_id)
+            .first()
+        )
+        return row if row else None
+
     def get_all_by_user_paginated(
         self,
         user_id: str,
