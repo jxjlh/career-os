@@ -1,13 +1,15 @@
 import json
+from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
-from app.db.models import AIContent
+from app.db.models import AIContent, GoalTask
 from app.domains.ai.prompts.growth_plan import GROWTH_PLAN_PROMPT
 from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_PROMPT
 from app.domains.ai.repository import AIContentRepository
 from app.domains.ai.schemas import (
+    GenerateTasksResponse,
     GrowthPlanRequest,
     GrowthPlanResponse,
     TravelPlanRequest,
@@ -130,3 +132,45 @@ class GrowthPlanService:
             milestones=parsed.get("milestones") or [],
             tips=parsed.get("tips") or [],
         )
+
+
+class GrowthTaskGeneratorService:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIContentRepository(db)
+        self.goals = LifeGoalRepository(db)
+
+    def generate(self, user_id: str, ai_content_id: str) -> GenerateTasksResponse:
+        content = self.ai.get_by_id(user_id, ai_content_id)
+        if content is None:
+            raise AppError(code="NOT_FOUND", message="AI content not found", status=404)
+        if content.task_generated:
+            raise AppError(code="ALREADY_GENERATED", message="Tasks already generated for this plan", status=409)
+        goal_id = (content.input_json or {}).get("goal_id")
+        if not goal_id:
+            raise AppError(code="MISSING_GOAL", message="Growth plan is not linked to a life goal", status=400)
+        goal = self.goals.get_owned(user_id, goal_id)
+        if goal is None:
+            raise AppError(code="NOT_FOUND", message="Life goal not found", status=404)
+
+        daily_plan = (content.output_json or {}).get("daily_plan") or []
+        start = goal.start_date or date.today()
+        task_ids: list[str] = []
+        for entry in daily_plan:
+            day = max(1, int(entry.get("day", 1)))
+            for title in entry.get("tasks", []):
+                task = GoalTask(
+                    user_id=user_id,
+                    goal_id=None,
+                    life_goal_id=goal.id,
+                    title=str(title),
+                    task_type="daily",
+                    due_date=start + timedelta(days=day - 1),
+                    status="todo",
+                )
+                self.db.add(task)
+                self.db.flush()
+                task_ids.append(task.id)
+        content.task_generated = True
+        self.db.commit()
+        return GenerateTasksResponse(createdCount=len(task_ids), taskIds=task_ids)

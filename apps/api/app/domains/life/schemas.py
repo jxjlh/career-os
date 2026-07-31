@@ -16,6 +16,7 @@ class LifeGoalCreate(BaseModel):
     description: str | None = None
     goalType: LifeGoalType = "manual"
     difficulty: int = Field(default=3, ge=1, le=5)
+    startDate: str | None = None
     targetDate: str | None = None
     location: str | None = Field(default=None, max_length=200)
     latitude: float | None = None
@@ -33,6 +34,7 @@ class LifeGoalUpdate(BaseModel):
     description: str | None = None
     goalType: LifeGoalType | None = None
     difficulty: int | None = Field(default=None, ge=1, le=5)
+    startDate: str | None = None
     targetDate: str | None = None
     location: str | None = Field(default=None, max_length=200)
     latitude: float | None = None

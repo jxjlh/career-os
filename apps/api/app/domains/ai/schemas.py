@@ -80,3 +80,8 @@ class GrowthPlanResponse(BaseModel):
     dailyPlan: list[dict] = []
     milestones: list[str] = []
     tips: list[str] = []
+
+
+class GenerateTasksResponse(BaseModel):
+    createdCount: int
+    taskIds: list[str]

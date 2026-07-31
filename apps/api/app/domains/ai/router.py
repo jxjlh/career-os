@@ -7,12 +7,13 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import Profile
 from app.domains.ai.schemas import (
+    GenerateTasksResponse,
     GrowthPlanRequest,
     GrowthPlanResponse,
     TravelPlanRequest,
     TravelPlanResponse,
 )
-from app.domains.ai.service import GrowthPlanService, TravelPlanService
+from app.domains.ai.service import GrowthPlanService, GrowthTaskGeneratorService, TravelPlanService
 
 router = APIRouter(tags=["ai"])
 
@@ -33,3 +34,12 @@ async def generate_growth_plan(
     db: Annotated[Session, Depends(get_db)],
 ) -> GrowthPlanResponse:
     return await GrowthPlanService(db).generate(current_user.id, payload)
+
+
+@router.post("/ai/growth-plan/{ai_content_id}/generate-tasks", response_model=GenerateTasksResponse)
+def generate_tasks_from_growth_plan(
+    ai_content_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> GenerateTasksResponse:
+    return GrowthTaskGeneratorService(db).generate(current_user.id, ai_content_id)

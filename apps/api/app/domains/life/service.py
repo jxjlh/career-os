@@ -45,6 +45,7 @@ def life_goal_dict(goal: LifeGoal) -> dict:
         "description": goal.description,
         "goalType": goal.goal_type,
         "difficulty": goal.difficulty,
+        "startDate": goal.start_date.isoformat() if goal.start_date else None,
         "targetDate": goal.target_date.isoformat() if goal.target_date else None,
         "location": goal.location,
         "latitude": goal.latitude,
@@ -93,6 +94,7 @@ class LifeGoalService:
     def create(self, user_id: str, payload: LifeGoalCreate) -> dict:
         data = payload.model_dump()
         data["goal_type"] = data.pop("goalType")
+        data["start_date"] = parse_date(data.pop("startDate", None))
         data["target_date"] = parse_date(data.pop("targetDate", None))
         data["cover_image"] = data.pop("coverImage", None)
         data["is_ai_generated"] = data.pop("isAiGenerated", False)
@@ -119,6 +121,8 @@ class LifeGoalService:
             )
         if "goalType" in data:
             goal.goal_type = data.pop("goalType")
+        if "startDate" in data:
+            goal.start_date = parse_date(data.pop("startDate"))
         if "targetDate" in data:
             goal.target_date = parse_date(data.pop("targetDate"))
         if "coverImage" in data:

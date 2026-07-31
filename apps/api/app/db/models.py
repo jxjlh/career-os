@@ -689,7 +689,7 @@ class GoalTask(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
-    goal_id: Mapped[str] = mapped_column(ForeignKey("goals.id", ondelete="CASCADE"), index=True)
+    goal_id: Mapped[str | None] = mapped_column(ForeignKey("goals.id", ondelete="CASCADE"), index=True)
     life_goal_id: Mapped[str | None] = mapped_column(ForeignKey("life_goals.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(300))
     description: Mapped[str | None] = mapped_column(Text)
@@ -712,6 +712,7 @@ class LifeGoal(Base):
     description: Mapped[str | None] = mapped_column(Text)
     goal_type: Mapped[str] = mapped_column(String(16), default="manual")
     difficulty: Mapped[int] = mapped_column(SmallInteger, default=3)
+    start_date: Mapped[date | None] = mapped_column(Date)
     target_date: Mapped[date | None] = mapped_column(Date)
     location: Mapped[str | None] = mapped_column(String(200))
     latitude: Mapped[float | None] = mapped_column(Float)
@@ -765,5 +766,6 @@ class AIContent(Base):
     output_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     provider: Mapped[str] = mapped_column(String(64))
     model: Mapped[str] = mapped_column(String(64))
+    task_generated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
