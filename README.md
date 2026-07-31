@@ -113,6 +113,8 @@ uv run alembic revision --autogenerate -m "change description"
 uv run alembic upgrade head
 ```
 
+开发环境统一使用 `alembic upgrade head` 同步表结构；禁止使用 `create_all()` 做 schema 升级，生产环境只依赖 Alembic migration。
+
 Supabase RLS / 触发器 / 存储桶 / 种子数据见 `infra/supabase/migrations/0001_init.sql`。
 
 ## 免费部署

@@ -753,3 +753,17 @@ class LifeRecord(Base):
     device_info: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class AIContent(Base):
+    __tablename__ = "ai_content"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    content_type: Mapped[str] = mapped_column(String(32), index=True)
+    input_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    output_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    provider: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
