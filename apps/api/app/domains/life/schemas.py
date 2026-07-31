@@ -40,3 +40,25 @@ class LifeGoalUpdate(BaseModel):
     coverImage: str | None = None
     status: LifeGoalStatus | None = None
     isAiGenerated: bool | None = None
+
+
+class LifeRecordListItem(BaseModel):
+    id: str
+    goalId: str
+    goalTitle: str | None = None
+    recordType: str
+    photoUrl: str | None = None
+    watermarkUrl: str | None = None
+    content: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    city: str | None = None
+    country: str | None = None
+    createdAt: str | None = None
+
+
+class LifeRecordListResponse(BaseModel):
+    total: int
+    page: int
+    pageSize: int
+    items: list[LifeRecordListItem]

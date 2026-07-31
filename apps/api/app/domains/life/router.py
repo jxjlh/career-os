@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -120,8 +120,11 @@ def list_life_goal_records(
 def life_record_timeline(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    goal_id: str | None = None,
 ) -> dict:
-    return {"data": LifeRecordService(db).timeline(current_user.id)}
+    return {"data": LifeRecordService(db).get_user_records(current_user.id, page, page_size, goal_id)}
 
 
 @router.delete("/life/records/{record_id}", status_code=204)

@@ -69,6 +69,7 @@ def life_record_dict(record: LifeRecord) -> dict:
         "longitude": record.longitude,
         "city": record.city,
         "country": record.country,
+        "location": " ".join(filter(None, [record.country, record.city])),
         "weather": record.weather,
         "altitude": record.altitude,
         "deviceInfo": record.device_info or {},
@@ -219,6 +220,23 @@ class LifeRecordService:
             item["goalTitle"] = goals.get(record.goal_id)
             items.append(item)
         return items
+
+    def get_user_records(
+        self,
+        user_id: str,
+        page: int,
+        page_size: int,
+        goal_id: str | None = None,
+    ) -> dict:
+        offset = (page - 1) * page_size
+        items, total = self.repository.get_all_by_user_paginated(user_id, offset, page_size, goal_id)
+        goals = {goal.id: goal.title for goal in self.goals.list_by_user(user_id)}
+        payload = []
+        for record in items:
+            item = life_record_dict(record)
+            item["goalTitle"] = goals.get(record.goal_id)
+            payload.append(item)
+        return {"total": total, "page": page, "pageSize": page_size, "items": payload}
 
     async def create(
         self,

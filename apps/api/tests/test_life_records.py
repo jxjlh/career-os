@@ -33,7 +33,8 @@ def test_create_text_record_and_timeline() -> None:
 
         timeline = client.get("/api/v1/life/records", headers=HEADERS)
         assert timeline.status_code == 200
-        assert timeline.json()["data"][0]["goalId"] == goal_id
+        assert timeline.json()["data"]["total"] >= 1
+        assert timeline.json()["data"]["items"][0]["goalId"] == goal_id
 
 
 def test_photo_upload_record(monkeypatch) -> None:

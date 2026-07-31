@@ -53,6 +53,20 @@ class LifeRecordRepository(BaseRepository[LifeRecord]):
     def get_owned(self, user_id: str, record_id: str) -> LifeRecord | None:
         return self.db.query(LifeRecord).filter(LifeRecord.id == record_id, LifeRecord.user_id == user_id).first()
 
+    def get_all_by_user_paginated(
+        self,
+        user_id: str,
+        offset: int,
+        limit: int,
+        goal_id: str | None = None,
+    ) -> tuple[list[LifeRecord], int]:
+        query = self.db.query(LifeRecord).filter(LifeRecord.user_id == user_id)
+        if goal_id:
+            query = query.filter(LifeRecord.goal_id == goal_id)
+        total = query.count()
+        items = query.order_by(LifeRecord.created_at.desc()).offset(offset).limit(limit).all()
+        return items, total
+
     def create(self, user_id: str, goal_id: str, **values) -> LifeRecord:
         record = LifeRecord(user_id=user_id, goal_id=goal_id, **values)
         self.db.add(record)
