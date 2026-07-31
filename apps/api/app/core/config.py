@@ -14,9 +14,9 @@ class Settings(BaseSettings):
     xfyun_api_key: str = ""
     xfyun_api_secret: str = ""
     xfyun_app_id: str = ""
-    spark_model: str = "Spark-X2-Flash"
-    spark_ws_url: str = "wss://spark-api.xf-yun.com/v3.5/chat"
-    spark_domain: str = "generalv3.5"
+    spark_model: str = "Spark-Lite"
+    spark_ws_url: str = "wss://spark-api.xf-yun.com/v1.1/chat"
+    spark_domain: str = "lite"
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"

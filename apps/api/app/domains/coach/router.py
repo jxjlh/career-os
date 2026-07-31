@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import AiChat, AiMessage, Profile, UserSkill
+from app.providers.ai import registry as ai_registry
 
 router = APIRouter(tags=["coach"])
 
@@ -120,7 +122,7 @@ def list_messages(
 
 
 @router.post("/coach/chats/{chat_id}/messages", status_code=201)
-def send_message(
+async def send_message(
     chat_id: str,
     payload: MessageCreate,
     current_user: Annotated[Profile, Depends(get_current_user)],
@@ -132,17 +134,48 @@ def send_message(
     db.flush()
 
     skill_count = db.query(UserSkill).filter(UserSkill.user_id == current_user.id).count()
-    reply = (
-        f"我结合了你的技能矩阵（已覆盖 {skill_count} 项）与职业目标。建议下一步："
-        "1) 完成一个实战项目；2) 输出作品集；3) 用模拟面试验证掌握程度。"
+    history = (
+        db.query(AiMessage)
+        .filter(AiMessage.chat_id == chat_id)
+        .order_by(AiMessage.created_at.desc())
+        .limit(6)
+        .all()
     )
+    history.reverse()
+
+    system_prompt = (
+        "你是 Career OS 的 AI 职业教练，基于用户的全量上下文"
+        "（技能矩阵、职业目标、学习历史、项目、面试记录）给出具体、可执行、个性化的建议。"
+        f"用户当前职位：{current_user.current_title or '未知'}；"
+        f"目标职位：{current_user.target_title or '未设定'}；"
+        f"已录入技能：{skill_count} 项。"
+        "回复用中文，控制在 300 字以内，聚焦下一步行动。"
+    )
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    for msg in history:
+        if msg.role in ("user", "assistant") and msg.content:
+            messages.append({"role": msg.role, "content": msg.content})
+
+    provider = ai_registry.get_ai_provider()
+    try:
+        reply = await provider.complete(messages, temperature=0.6, max_tokens=512)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "AI_UNAVAILABLE", "message": f"AI 服务暂时不可用，请稍后重试。原因：{exc}"},
+        ) from exc
+
+    if not reply:
+        reply = "（AI 未返回内容，请重试。）"
+
     assistant_message = AiMessage(
         chat_id=chat_id,
         user_id=current_user.id,
         role="assistant",
         content=reply,
-        provider="mock",
-        model="Spark-X2-Flash",
+        provider=provider.name,
+        model=get_settings().spark_model,
     )
     db.add(assistant_message)
     db.commit()

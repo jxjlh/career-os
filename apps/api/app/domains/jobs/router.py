@@ -4,9 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import Job, JobAnalysis, Profile, Skill, UserSkill
+from app.providers.ai import registry as ai_registry
+from app.providers.ai.base import extract_json
 
 router = APIRouter(tags=["jobs"])
 
@@ -60,12 +63,44 @@ def get_owned_job(db: Session, user_id: str, job_id: str) -> Job:
     return job
 
 
-def analyze_job(db: Session, job: Job, user_id: str) -> JobAnalysis:
+async def analyze_job(db: Session, job: Job, user_id: str) -> JobAnalysis:
     required_skills = ["SQL", "Power BI", "Python"]
-    extracted = [
-        {"name": name, "level": 5 + index}
-        for index, name in enumerate(required_skills)
-    ]
+    extracted = [{"name": name, "level": 5 + index} for index, name in enumerate(required_skills)]
+    required_experience = job.jd_raw or "3-5 年相关经验"
+    recommendations: list[dict] = []
+    ai_provider_name = "fallback"
+
+    provider = ai_registry.get_ai_provider()
+    prompt = (
+        "你是招聘 JD 分析专家。从以下 JD 中提取 required skills、经验要求和学习建议。\n"
+        f"JD: {job.jd_raw or '(空)'}\n\n"
+        "请严格只返回 JSON, 不要其他文本, 格式:\n"
+        '{"extracted_skills": [{"name": "SQL", "level": 5}], '
+        '"required_experience": "3-5 年", '
+        '"recommendations": [{"type": "resource", "title": "学习建议", "status": "missing"}]}'
+    )
+    try:
+        reply = await provider.complete(
+            [{"role": "user", "content": prompt}], temperature=0.4, max_tokens=600
+        )
+        parsed = extract_json(reply)
+    except Exception:
+        parsed = None
+
+    if parsed:
+        ai_provider_name = provider.name
+        ai_extracted = parsed.get("extracted_skills")
+        if isinstance(ai_extracted, list) and ai_extracted:
+            extracted = [
+                {"name": str(s.get("name", "")), "level": int(s.get("level", 5))}
+                for s in ai_extracted
+                if s.get("name")
+            ]
+        if parsed.get("required_experience"):
+            required_experience = str(parsed["required_experience"])
+        if isinstance(parsed.get("recommendations"), list):
+            recommendations = parsed["recommendations"]
+
     user_skills = {
         us.skill_id: us
         for us in db.query(UserSkill).filter(UserSkill.user_id == user_id).all()
@@ -86,20 +121,22 @@ def analyze_job(db: Session, job: Job, user_id: str) -> JobAnalysis:
             }
         )
     match_score = round(100 * sum(g["gap"] == 0 for g in gaps) / max(len(gaps), 1), 2)
+    if not recommendations:
+        recommendations = [
+            {"type": "resource", "title": f"学习 {g['name']} 基础与实战", "status": g["status"]}
+            for g in gaps
+            if g["status"] != "mastered"
+        ]
     analysis = JobAnalysis(
         job_id=job.id,
         user_id=user_id,
         extracted_skills=extracted,
-        required_experience=job.jd_raw or "3-5 年相关经验",
+        required_experience=required_experience,
         skill_gaps=gaps,
         match_score=match_score,
-        recommendations=[
-            {"type": "resource", "title": f"学习 {g['name']} 基础与实战", "status": g["status"]}
-            for g in gaps
-            if g["status"] != "mastered"
-        ],
-        ai_provider="mock",
-        ai_model="Spark-X2-Flash",
+        recommendations=recommendations,
+        ai_provider=ai_provider_name,
+        ai_model=get_settings().spark_model,
     )
     job.match_score = match_score
     db.add(analysis)
@@ -177,13 +214,13 @@ def delete_job(
 
 
 @router.post("/jobs/{job_id}/analyze", status_code=201)
-def analyze_job_endpoint(
+async def analyze_job_endpoint(
     job_id: str,
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
     job = get_owned_job(db, current_user.id, job_id)
-    return {"data": analysis_dict(analyze_job(db, job, current_user.id))}
+    return {"data": analysis_dict(await analyze_job(db, job, current_user.id))}
 
 
 @router.get("/jobs/{job_id}/analyses")
@@ -203,7 +240,7 @@ def job_analyses(
 
 
 @router.get("/jobs/{job_id}/gap")
-def job_gap(
+async def job_gap(
     job_id: str,
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
@@ -216,7 +253,7 @@ def job_gap(
         .first()
     )
     if analysis is None:
-        analysis = analyze_job(db, job, current_user.id)
+        analysis = await analyze_job(db, job, current_user.id)
     return {
         "data": {
             "jobId": job.id,

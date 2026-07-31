@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import (
@@ -15,6 +16,8 @@ from app.db.models import (
     InterviewSession,
     Profile,
 )
+from app.providers.ai import registry as ai_registry
+from app.providers.ai.base import extract_json
 
 router = APIRouter(tags=["interviews"])
 
@@ -312,7 +315,7 @@ def get_transcript(
 
 
 @router.post("/sessions/{session_id}/finish")
-def finish_session(
+async def finish_session(
     session_id: str,
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
@@ -320,22 +323,89 @@ def finish_session(
     session = get_owned_session(db, current_user.id, session_id)
     session.status = "completed"
     session.ended_at = datetime.utcnow()
+
+    answers = (
+        db.query(InterviewAnswer)
+        .filter(InterviewAnswer.session_id == session.id)
+        .order_by(InterviewAnswer.created_at)
+        .all()
+    )
+    qa_lines: list[str] = []
+    for a in answers:
+        question = (
+            db.query(InterviewQuestion).filter(InterviewQuestion.id == a.question_id).first()
+            if a.question_id
+            else None
+        )
+        qa_lines.append(f"问: {question.question if question else '(无)'}\n答: {a.answer_text}")
+    qa_text = "\n\n".join(qa_lines)
+
+    overall_score = 78
+    dimensions = {
+        "structure": {"score": 82, "comment": "使用了总分总结构"},
+        "star": {"score": 74, "comment": "结果量化可以更充分"},
+        "expression": {"score": 84, "comment": "表达流畅"},
+        "technical_depth": {"score": 72, "comment": "补充原理与权衡"},
+        "time_control": {"score": 80, "comment": "时间控制良好"},
+    }
+    strengths = "逻辑清晰，案例完整"
+    improvements = "增加数据结果、量化指标与复盘"
+    sample_answer = "参考答案：使用 STAR 结构，先说明背景与任务，再描述行动，最后用 2-3 个数字展示结果。"
+    ai_provider_name = "fallback"
+
+    if qa_text.strip():
+        provider = ai_registry.get_ai_provider()
+        prompt = (
+            "你是资深面试官。基于以下面试问答, 从结构、STAR 完整度、表达、技术深度、时间控制五个维度评分(0-100), "
+            "并给出优势、改进建议和参考答案。\n"
+            f"问答记录:\n{qa_text}\n\n"
+            "请严格只返回 JSON, 不要其他文本, 格式:\n"
+            '{"overall_score": 78, "dimensions": {"structure": {"score": 80, "comment": "..."}, '
+            '"star": {"score": 75, "comment": "..."}, "expression": {"score": 82, "comment": "..."}, '
+            '"technical_depth": {"score": 70, "comment": "..."}, "time_control": {"score": 78, "comment": "..."}}, '
+            '"strengths": "...", "improvements": "...", "sample_answer": "..."}'
+        )
+        try:
+            reply = await provider.complete(
+                [{"role": "user", "content": prompt}], temperature=0.4, max_tokens=1000
+            )
+            parsed = extract_json(reply)
+        except Exception:
+            parsed = None
+
+        if parsed:
+            ai_provider_name = provider.name
+            if isinstance(parsed.get("overall_score"), (int, float)):
+                overall_score = int(parsed["overall_score"])
+            if isinstance(parsed.get("dimensions"), dict):
+                merged = {}
+                for dim_key, dim_default in dimensions.items():
+                    ai_dim = parsed["dimensions"].get(dim_key, {})
+                    if isinstance(ai_dim, dict):
+                        merged[dim_key] = {
+                            "score": int(ai_dim.get("score", dim_default["score"])),
+                            "comment": str(ai_dim.get("comment", dim_default["comment"])),
+                        }
+                    else:
+                        merged[dim_key] = dim_default
+                dimensions = merged
+            if parsed.get("strengths"):
+                strengths = str(parsed["strengths"])
+            if parsed.get("improvements"):
+                improvements = str(parsed["improvements"])
+            if parsed.get("sample_answer"):
+                sample_answer = str(parsed["sample_answer"])
+
     feedback = InterviewFeedback(
         session_id=session.id,
         user_id=current_user.id,
-        overall_score=78,
-        dimensions={
-            "structure": {"score": 82, "comment": "使用了总分总结构"},
-            "star": {"score": 74, "comment": "结果量化可以更充分"},
-            "expression": {"score": 84, "comment": "表达流畅"},
-            "technical_depth": {"score": 72, "comment": "补充原理与权衡"},
-            "time_control": {"score": 80, "comment": "时间控制良好"},
-        },
-        strengths="逻辑清晰，案例完整",
-        improvements="增加数据结果、量化指标与复盘",
-        sample_answer="参考答案：使用 STAR 结构，先说明背景与任务，再描述行动，最后用 2-3 个数字展示结果。",
-        ai_provider="mock",
-        ai_model="Spark-X2-Flash",
+        overall_score=overall_score,
+        dimensions=dimensions,
+        strengths=strengths,
+        improvements=improvements,
+        sample_answer=sample_answer,
+        ai_provider=ai_provider_name,
+        ai_model=get_settings().spark_model,
     )
     db.add(feedback)
     db.commit()

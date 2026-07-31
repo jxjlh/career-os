@@ -17,7 +17,11 @@ services:
       - key: XFYUN_APP_ID
         sync: false
       - key: SPARK_MODEL
-        value: Spark-X2-Flash
+        value: Spark-Lite
+      - key: SPARK_WS_URL
+        value: wss://spark-api.xf-yun.com/v1.1/chat
+      - key: SPARK_DOMAIN
+        value: lite
       - key: OPENAI_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY

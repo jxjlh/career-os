@@ -36,8 +36,14 @@ class XfyunSparkProvider(AIProvider):
         path = parsed.path or "/"
         date = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
         origin = f"host: {host}\ndate: {date}\nGET {path} HTTP/1.1"
-        sign = hmac.new(self.api_secret.encode(), origin.encode(), hashlib.sha256).digest()
-        authorization = base64.b64encode(sign).decode()
+        signature = hmac.new(self.api_secret.encode(), origin.encode(), hashlib.sha256).digest()
+        signature_b64 = base64.b64encode(signature).decode()
+        # 讯飞鉴权: 拼接 api_key/algorithm/headers/signature 后整体 base64
+        authorization_origin = (
+            f'api_key="{self.api_key}", algorithm="hmac-sha256", '
+            f'headers="host date request-line", signature="{signature_b64}"'
+        )
+        authorization = base64.b64encode(authorization_origin.encode()).decode()
         params = {"authorization": authorization, "date": date, "host": host}
         return f"{self.wss_url}?{urlencode(params)}"
 
@@ -62,7 +68,8 @@ class XfyunSparkProvider(AIProvider):
             "payload": {"message": {"text": messages}},
         }
         collected: list[str] = []
-        async with websockets.connect(self._auth_url(), open_timeout=10) as ws:
+        # 讯飞星火为国内服务, 显式禁用代理, 避免本地系统代理 (如 Clash) 拦截 wss 连接
+        async with websockets.connect(self._auth_url(), open_timeout=10, proxy=None) as ws:
             await ws.send(json.dumps(payload, ensure_ascii=False))
             while True:
                 raw = await ws.recv()
