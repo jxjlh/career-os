@@ -9,6 +9,7 @@ from app.core.errors import AppError, app_error_handler, unhandled_error_handler
 from app.core.logging import setup_logging
 from app.core.middleware import RateLimitMiddleware, RequestContextMiddleware
 from app.db.base import Base
+from app.domains.ai.router import router as ai_router
 from app.domains.analytics.router import router as analytics_router
 from app.domains.auth.router import router as auth_router
 from app.domains.coach.router import router as coach_router
@@ -74,6 +75,7 @@ app.include_router(notifications_router, prefix=settings.api_prefix)
 app.include_router(roadmap_router, prefix=settings.api_prefix)
 app.include_router(coach_router, prefix=settings.api_prefix)
 app.include_router(analytics_router, prefix=settings.api_prefix)
+app.include_router(ai_router, prefix=settings.api_prefix)
 app.include_router(projects_router, prefix=settings.api_prefix)
 app.include_router(jobs_router, prefix=settings.api_prefix)
 app.include_router(resume_router, prefix=settings.api_prefix)

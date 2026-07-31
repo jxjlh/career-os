@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -20,3 +20,28 @@ class AIContentResponse(BaseModel):
     provider: str
     model: str
     createdAt: str | None = None
+
+
+class TravelPlanRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    goal_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("goalId", "goal_id"),
+    )
+    destination: str
+    days: int = 7
+    budget: str | None = None
+    people: str | None = None
+    interests: list[str] = []
+
+
+class TravelPlanResponse(BaseModel):
+    id: str
+    aiContentId: str
+    title: str | None = None
+    summary: str | None = None
+    bestTime: str | None = None
+    route: list[dict] = []
+    preparation: list[str] = []
+    tips: list[str] = []
