@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-1.5-flash"
 
+    supabase_url: str = ""
     supabase_jwt_secret: str = ""
     supabase_anon_key: str = ""
     supabase_jwks_url: str = ""
