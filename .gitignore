@@ -25,6 +25,7 @@ __pycache__/
 # OS / editor
 .DS_Store
 *.log
+*.tsbuildinfo
 .idea/
 .vscode/
 .agents/
