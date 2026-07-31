@@ -19,7 +19,7 @@ def get_current_user(
 ) -> Profile:
     settings = get_settings()
 
-    if settings.app_env == "dev" and (authorization is None or authorization == "Bearer dev"):
+    if settings.app_env in ("dev", "test") and (authorization is None or authorization == "Bearer dev"):
         user_id = x_dev_user_id or DEV_USER_ID
         profile = db.get(Profile, user_id)
         if profile is None:

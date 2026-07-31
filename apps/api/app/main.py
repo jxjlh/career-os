@@ -36,7 +36,8 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    if settings.app_env == "dev":
+    # dev 与 test 环境自动建表, 便于本地启动与单测隔离; 生产仅依赖 Alembic migration
+    if settings.app_env in ("dev", "test"):
         Base.metadata.create_all(bind=engine)
     yield
 
@@ -56,7 +57,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(RequestContextMiddleware)
-app.add_middleware(RateLimitMiddleware, requests_per_minute=120)
+# 测试环境关闭限流: 单测共享同一 app 实例且来自同一 TestClient host,
+# 全局限流状态会跨用例累积导致后续用例误触发 429; 生产环境按 IP 滑动窗口限流.
+if settings.app_env != "test":
+    app.add_middleware(RateLimitMiddleware, requests_per_minute=120)
 
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(Exception, unhandled_error_handler)
