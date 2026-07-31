@@ -48,7 +48,8 @@ begin
     'interview_questions', 'interview_answers', 'interview_feedback',
     'resumes', 'resume_versions', 'ai_chats', 'ai_messages',
     'weekly_plans', 'plan_tasks', 'user_limits',
-    'roles', 'permissions', 'user_roles', 'role_permissions', 'settings'
+    'roles', 'permissions', 'user_roles', 'role_permissions', 'settings',
+    'life_goals'
   ] loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('create policy "own_select_%s" on public.%I for select using (auth.uid() = user_id);', t, t);

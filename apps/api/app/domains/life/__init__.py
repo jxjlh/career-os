@@ -1,0 +1,1 @@
+"""LifeOS life goals domain."""

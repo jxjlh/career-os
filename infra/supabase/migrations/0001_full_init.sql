@@ -10,10 +10,12 @@ DROP TABLE IF EXISTS public.ai_chats CASCADE;
 DROP TABLE IF EXISTS public.audit_logs CASCADE;
 DROP TABLE IF EXISTS public.background_jobs CASCADE;
 DROP TABLE IF EXISTS public.bookmarks CASCADE;
+DROP TABLE IF EXISTS public.goals CASCADE;
 DROP TABLE IF EXISTS public.interviews CASCADE;
 DROP TABLE IF EXISTS public.jobs CASCADE;
 DROP TABLE IF EXISTS public.learning_history CASCADE;
 DROP TABLE IF EXISTS public.learning_history_aggregates CASCADE;
+DROP TABLE IF EXISTS public.life_goals CASCADE;
 DROP TABLE IF EXISTS public.notifications CASCADE;
 DROP TABLE IF EXISTS public.okrs CASCADE;
 DROP TABLE IF EXISTS public.projects CASCADE;
@@ -26,6 +28,7 @@ DROP TABLE IF EXISTS public.settings CASCADE;
 DROP TABLE IF EXISTS public.study_sessions CASCADE;
 DROP TABLE IF EXISTS public.tags CASCADE;
 DROP TABLE IF EXISTS public.user_limits CASCADE;
+DROP TABLE IF EXISTS public.user_profiles CASCADE;
 DROP TABLE IF EXISTS public.user_resource_states CASCADE;
 DROP TABLE IF EXISTS public.user_roles CASCADE;
 DROP TABLE IF EXISTS public.user_skills CASCADE;
@@ -41,6 +44,7 @@ DROP TABLE IF EXISTS public.project_files CASCADE;
 DROP TABLE IF EXISTS public.resume_versions CASCADE;
 DROP TABLE IF EXISTS public.roadmap_milestones CASCADE;
 DROP TABLE IF EXISTS public.search_results CASCADE;
+DROP TABLE IF EXISTS public.tasks CASCADE;
 DROP TABLE IF EXISTS public.interview_feedback CASCADE;
 DROP TABLE IF EXISTS public.interview_questions CASCADE;
 DROP TABLE IF EXISTS public.interview_answers CASCADE;
@@ -74,8 +78,8 @@ CREATE TABLE learning_resources (
 )
 
 ;
-CREATE INDEX ix_learning_resources_resource_type ON learning_resources (resource_type);
 CREATE INDEX ix_learning_resources_provider ON learning_resources (provider);
+CREATE INDEX ix_learning_resources_resource_type ON learning_resources (resource_type);
 
 
 CREATE TABLE limit_configs (
@@ -186,8 +190,8 @@ CREATE TABLE audit_logs (
 )
 
 ;
-CREATE INDEX ix_audit_logs_created_at ON audit_logs (created_at);
 CREATE INDEX ix_audit_logs_user_id ON audit_logs (user_id);
+CREATE INDEX ix_audit_logs_created_at ON audit_logs (created_at);
 
 
 CREATE TABLE background_jobs (
@@ -206,9 +210,9 @@ CREATE TABLE background_jobs (
 )
 
 ;
-CREATE INDEX ix_background_jobs_job_type ON background_jobs (job_type);
 CREATE INDEX ix_background_jobs_user_id ON background_jobs (user_id);
 CREATE INDEX ix_background_jobs_status ON background_jobs (status);
+CREATE INDEX ix_background_jobs_job_type ON background_jobs (job_type);
 
 
 CREATE TABLE bookmarks (
@@ -226,6 +230,32 @@ CREATE TABLE bookmarks (
 ;
 CREATE INDEX ix_bookmarks_user_id ON bookmarks (user_id);
 CREATE INDEX ix_bookmarks_resource_id ON bookmarks (resource_id);
+
+
+CREATE TABLE goals (
+	id VARCHAR(36) NOT NULL, 
+	user_id VARCHAR(36) NOT NULL, 
+	title VARCHAR(200) NOT NULL, 
+	vision_type VARCHAR(40) NOT NULL, 
+	category VARCHAR(80), 
+	description TEXT, 
+	why_this_goal TEXT, 
+	priority VARCHAR(16) NOT NULL, 
+	start_date DATE, 
+	due_date DATE, 
+	status VARCHAR(24) NOT NULL, 
+	progress SMALLINT NOT NULL, 
+	ai_generated_plan JSON NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES profiles (id) ON DELETE CASCADE
+)
+
+;
+CREATE INDEX ix_goals_vision_type ON goals (vision_type);
+CREATE INDEX ix_goals_user_id ON goals (user_id);
+CREATE INDEX ix_goals_status ON goals (status);
 
 
 CREATE TABLE interviews (
@@ -286,8 +316,8 @@ CREATE TABLE learning_history (
 
 ;
 CREATE INDEX ix_learning_history_user_id ON learning_history (user_id);
-CREATE INDEX ix_learning_history_action ON learning_history (action);
 CREATE INDEX ix_learning_history_occurred_at ON learning_history (occurred_at);
+CREATE INDEX ix_learning_history_action ON learning_history (action);
 
 
 CREATE TABLE learning_history_aggregates (
@@ -305,6 +335,33 @@ CREATE TABLE learning_history_aggregates (
 
 ;
 CREATE INDEX ix_learning_history_aggregates_user_id ON learning_history_aggregates (user_id);
+
+
+CREATE TABLE life_goals (
+	id VARCHAR(36) NOT NULL, 
+	user_id VARCHAR(36) NOT NULL, 
+	title VARCHAR(200) NOT NULL, 
+	category VARCHAR(40) NOT NULL, 
+	description TEXT, 
+	goal_type VARCHAR(16) NOT NULL, 
+	difficulty SMALLINT NOT NULL, 
+	target_date DATE, 
+	location VARCHAR(200), 
+	latitude FLOAT, 
+	longitude FLOAT, 
+	cover_image TEXT, 
+	status VARCHAR(24) NOT NULL, 
+	is_ai_generated BOOLEAN NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES profiles (id) ON DELETE CASCADE
+)
+
+;
+CREATE INDEX ix_life_goals_category ON life_goals (category);
+CREATE INDEX ix_life_goals_user_id ON life_goals (user_id);
+CREATE INDEX ix_life_goals_status ON life_goals (status);
 
 
 CREATE TABLE notifications (
@@ -411,8 +468,8 @@ CREATE TABLE role_permissions (
 )
 
 ;
-CREATE INDEX ix_role_permissions_permission_id ON role_permissions (permission_id);
 CREATE INDEX ix_role_permissions_role_id ON role_permissions (role_id);
+CREATE INDEX ix_role_permissions_permission_id ON role_permissions (permission_id);
 
 
 CREATE TABLE salary_plans (
@@ -525,6 +582,28 @@ CREATE TABLE user_limits (
 CREATE INDEX ix_user_limits_user_id ON user_limits (user_id);
 
 
+CREATE TABLE user_profiles (
+	id VARCHAR(36) NOT NULL, 
+	user_id VARCHAR(36) NOT NULL, 
+	nickname VARCHAR(120), 
+	avatar TEXT, 
+	bio TEXT, 
+	birth_year INTEGER, 
+	current_stage VARCHAR(40), 
+	strengths JSON NOT NULL, 
+	interests JSON NOT NULL, 
+	career_direction VARCHAR(200), 
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_user_profiles_user UNIQUE (user_id), 
+	FOREIGN KEY(user_id) REFERENCES profiles (id) ON DELETE CASCADE
+)
+
+;
+CREATE UNIQUE INDEX ix_user_profiles_user_id ON user_profiles (user_id);
+
+
 CREATE TABLE user_resource_states (
 	id VARCHAR(36) NOT NULL, 
 	user_id VARCHAR(36) NOT NULL, 
@@ -542,8 +621,8 @@ CREATE TABLE user_resource_states (
 )
 
 ;
-CREATE INDEX ix_user_resource_states_resource_id ON user_resource_states (resource_id);
 CREATE INDEX ix_user_resource_states_user_id ON user_resource_states (user_id);
+CREATE INDEX ix_user_resource_states_resource_id ON user_resource_states (resource_id);
 
 
 CREATE TABLE user_roles (
@@ -558,8 +637,8 @@ CREATE TABLE user_roles (
 )
 
 ;
-CREATE INDEX ix_user_roles_user_id ON user_roles (user_id);
 CREATE INDEX ix_user_roles_role_id ON user_roles (role_id);
+CREATE INDEX ix_user_roles_user_id ON user_roles (user_id);
 
 
 CREATE TABLE user_skills (
@@ -577,8 +656,8 @@ CREATE TABLE user_skills (
 )
 
 ;
-CREATE INDEX ix_user_skills_skill_id ON user_skills (skill_id);
 CREATE INDEX ix_user_skills_user_id ON user_skills (user_id);
+CREATE INDEX ix_user_skills_skill_id ON user_skills (skill_id);
 
 
 CREATE TABLE weekly_plans (
@@ -617,8 +696,8 @@ CREATE TABLE ai_messages (
 )
 
 ;
-CREATE INDEX ix_ai_messages_user_id ON ai_messages (user_id);
 CREATE INDEX ix_ai_messages_chat_id ON ai_messages (chat_id);
+CREATE INDEX ix_ai_messages_user_id ON ai_messages (user_id);
 
 
 CREATE TABLE bookmark_tags (
@@ -698,8 +777,8 @@ CREATE TABLE okr_key_results (
 )
 
 ;
-CREATE INDEX ix_okr_key_results_okr_id ON okr_key_results (okr_id);
 CREATE INDEX ix_okr_key_results_user_id ON okr_key_results (user_id);
+CREATE INDEX ix_okr_key_results_okr_id ON okr_key_results (okr_id);
 
 
 CREATE TABLE plan_tasks (
@@ -781,8 +860,8 @@ CREATE TABLE resume_versions (
 )
 
 ;
-CREATE INDEX ix_resume_versions_resume_id ON resume_versions (resume_id);
 CREATE INDEX ix_resume_versions_user_id ON resume_versions (user_id);
+CREATE INDEX ix_resume_versions_resume_id ON resume_versions (resume_id);
 
 
 CREATE TABLE roadmap_milestones (
@@ -825,6 +904,30 @@ CREATE TABLE search_results (
 
 ;
 CREATE INDEX ix_search_results_query_id ON search_results (query_id);
+
+
+CREATE TABLE tasks (
+	id VARCHAR(36) NOT NULL, 
+	user_id VARCHAR(36) NOT NULL, 
+	goal_id VARCHAR(36) NOT NULL, 
+	title VARCHAR(300) NOT NULL, 
+	description TEXT, 
+	task_type VARCHAR(24) NOT NULL, 
+	due_date DATE, 
+	status VARCHAR(24) NOT NULL, 
+	completed_at TIMESTAMP WITH TIME ZONE, 
+	check_in_dates JSON NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES profiles (id) ON DELETE CASCADE, 
+	FOREIGN KEY(goal_id) REFERENCES goals (id) ON DELETE CASCADE
+)
+
+;
+CREATE INDEX ix_tasks_goal_id ON tasks (goal_id);
+CREATE INDEX ix_tasks_status ON tasks (status);
+CREATE INDEX ix_tasks_user_id ON tasks (user_id);
 
 
 CREATE TABLE interview_feedback (
@@ -886,8 +989,8 @@ CREATE TABLE interview_answers (
 )
 
 ;
-CREATE INDEX ix_interview_answers_user_id ON interview_answers (user_id);
 CREATE INDEX ix_interview_answers_session_id ON interview_answers (session_id);
+CREATE INDEX ix_interview_answers_user_id ON interview_answers (user_id);
 
 COMMIT;
 -- Career OS Supabase setup
@@ -940,7 +1043,8 @@ begin
     'interview_questions', 'interview_answers', 'interview_feedback',
     'resumes', 'resume_versions', 'ai_chats', 'ai_messages',
     'weekly_plans', 'plan_tasks', 'user_limits',
-    'roles', 'permissions', 'user_roles', 'role_permissions', 'settings'
+    'roles', 'permissions', 'user_roles', 'role_permissions', 'settings',
+    'life_goals'
   ] loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('create policy "own_select_%s" on public.%I for select using (auth.uid() = user_id);', t, t);
