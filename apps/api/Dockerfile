@@ -8,14 +8,19 @@ WORKDIR /app
 
 COPY apps/api/pyproject.toml apps/api/uv.lock ./
 COPY apps/api/app ./app
+COPY apps/api/migrations ./migrations
+COPY apps/api/alembic.ini ./alembic.ini
 
-RUN uv sync --no-dev --frozen
+# 安装含 dev 组（提供 alembic，用于容器启动时自动迁移）
+RUN uv sync --frozen
 RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
 
 USER app
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 启动时自动执行 Alembic 迁移（幂等：无待执行则秒过），再拉起服务。
+# DATABASE_URL 环境变量指向 Supabase Postgres（env.py 会改写为 psycopg3 驱动）。
+CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
