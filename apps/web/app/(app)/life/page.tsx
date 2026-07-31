@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Images, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
-import { AiEntryCard } from "@/components/life/ai-entry-card";
+import { DailyAssistantCard } from "@/components/life/assistant/daily-assistant-card";
 import { LifeCategoryCard } from "@/components/life/life-category-card";
 import { LifeHeader } from "@/components/life/life-header";
 import { LifeLevelCard } from "@/components/life/life-level-card";
@@ -62,6 +62,8 @@ export default function LifePage() {
     <div className="mx-auto max-w-5xl space-y-4">
       <LifeHeader nickname={nickname} avatar={avatar} level={data.level} />
 
+      <DailyAssistantCard showHeader />
+
       <div className="grid gap-3 sm:grid-cols-2">
         <Link href="/life/records" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
           <span className="flex items-center gap-2 text-sm font-medium">
@@ -114,7 +116,6 @@ export default function LifePage() {
         </>
       )}
 
-      <AiEntryCard />
     </div>
   );
 }
