@@ -4,9 +4,15 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.db.models import AIContent
+from app.domains.ai.prompts.growth_plan import GROWTH_PLAN_PROMPT
 from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_PROMPT
 from app.domains.ai.repository import AIContentRepository
-from app.domains.ai.schemas import TravelPlanRequest, TravelPlanResponse
+from app.domains.ai.schemas import (
+    GrowthPlanRequest,
+    GrowthPlanResponse,
+    TravelPlanRequest,
+    TravelPlanResponse,
+)
 from app.domains.life.repository import LifeGoalRepository
 from app.providers.ai.base import AIProvider, extract_json
 from app.providers.ai.registry import get_ai_provider
@@ -82,5 +88,45 @@ class TravelPlanService:
             bestTime=parsed.get("best_time"),
             route=parsed.get("route") or [],
             preparation=parsed.get("preparation") or [],
+            tips=parsed.get("tips") or [],
+        )
+
+
+class GrowthPlanService:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIService(db)
+        self.goals = LifeGoalRepository(db)
+
+    async def generate(self, user_id: str, payload: GrowthPlanRequest) -> GrowthPlanResponse:
+        if payload.goal_id and self.goals.get_owned(user_id, payload.goal_id) is None:
+            raise AppError(code="NOT_FOUND", message="Life goal not found", status=404)
+        input_data = {
+            "goal_id": payload.goal_id,
+            "goal_title": payload.goal_title,
+            "target_description": payload.target_description,
+            "available_time": payload.available_time,
+            "difficulty": payload.difficulty,
+        }
+        prompt = GROWTH_PLAN_PROMPT.format(
+            target_description=payload.target_description,
+            current_status=payload.current_status or "未说明",
+            available_time=payload.available_time or "未说明",
+            difficulty=payload.difficulty or "medium",
+        )
+        record, parsed = await self.ai.generate_content(
+            user_id=user_id,
+            content_type="growth_plan",
+            input_data=input_data,
+            prompt=prompt,
+        )
+        return GrowthPlanResponse(
+            id=record.id,
+            aiContentId=record.id,
+            title=parsed.get("title"),
+            summary=parsed.get("summary"),
+            phases=parsed.get("phases") or [],
+            dailyPlan=parsed.get("daily_plan") or [],
+            milestones=parsed.get("milestones") or [],
             tips=parsed.get("tips") or [],
         )

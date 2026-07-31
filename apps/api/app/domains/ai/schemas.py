@@ -45,3 +45,38 @@ class TravelPlanResponse(BaseModel):
     route: list[dict] = []
     preparation: list[str] = []
     tips: list[str] = []
+
+
+class GrowthPlanRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    goal_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("goalId", "goal_id"),
+    )
+    goal_title: str | None = Field(default=None, validation_alias=AliasChoices("goalTitle", "goal_title"))
+    target_description: str = Field(
+        min_length=1,
+        max_length=300,
+        validation_alias=AliasChoices("targetDescription", "target_description"),
+    )
+    current_status: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("currentStatus", "current_status"),
+    )
+    available_time: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("availableTime", "available_time"),
+    )
+    difficulty: str | None = Field(default=None, validation_alias=AliasChoices("difficulty", "difficulty"))
+
+
+class GrowthPlanResponse(BaseModel):
+    id: str
+    aiContentId: str
+    title: str | None = None
+    summary: str | None = None
+    phases: list[dict] = []
+    dailyPlan: list[dict] = []
+    milestones: list[str] = []
+    tips: list[str] = []
