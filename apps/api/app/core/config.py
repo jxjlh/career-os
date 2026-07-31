@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     youtube_api_key: str = ""
 
 
+def normalize_db_url(url: str) -> str:
+    # 项目依赖 psycopg3 (psycopg[binary])，但裸 postgresql:// 会被 SQLAlchemy 路由到 psycopg2
+    # （未安装，会报 No module named 'psycopg2'）。这里统一改写为 +psycopg 驱动。
+    # sqlite 与已带驱动的 URL 原样返回。
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

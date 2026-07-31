@@ -7,7 +7,8 @@ import { useState } from "react";
 
 import { Button, Card, Input } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { redirectAfterAuth } from "@/lib/api";
+import { isSupabaseConfigured, supabase, writeSessionCookie } from "@/lib/supabase";
 
 export default function SignupPage() {
   const { t } = useI18n();
@@ -15,21 +16,38 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setNotice("");
     try {
       if (isSupabaseConfigured && supabase) {
         const { error: authError } = await supabase.auth.signUp({ email, password });
         if (authError) throw new Error(authError.message);
+
+        // 开启邮箱确认时 signUp 不会立即返回 session
+        const { data } = await supabase.auth.getSession();
+        if (data.session) {
+          const token = data.session.access_token;
+          localStorage.setItem("career_os_token", token);
+          writeSessionCookie(token);
+          const target = await redirectAfterAuth(null);
+          router.push(target);
+          router.refresh();
+        } else {
+          setNotice("注册成功，请查收邮箱激活账户后登录。");
+        }
       } else {
+        // dev 模式：无 Supabase，用占位 token
         localStorage.setItem("career_os_token", "dev");
+        writeSessionCookie("dev");
+        router.push("/onboarding");
+        router.refresh();
       }
-      router.push("/onboarding");
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "注册失败");
     } finally {
@@ -57,6 +75,7 @@ export default function SignupPage() {
           onChange={(e) => setPassword(e.target.value)}
         />
         {error && <p className="text-xs text-danger">{error}</p>}
+        {notice && <p className="text-xs text-primary">{notice}</p>}
         <Button type="submit" className="w-full" disabled={loading}>
           <UserPlus className="h-4 w-4" />
           {loading ? t("auth.signingUp") : t("auth.signupCta")}

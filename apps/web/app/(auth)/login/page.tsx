@@ -7,7 +7,8 @@ import { useState } from "react";
 
 import { Button, Card, Input } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { redirectAfterAuth } from "@/lib/api";
+import { isSupabaseConfigured, supabase, writeSessionCookie } from "@/lib/supabase";
 
 export default function LoginPage() {
   const { t } = useI18n();
@@ -22,15 +23,25 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
+      // middleware 守卫会把原目标带在 ?next= 上，登录成功后优先回跳
+      const next = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("next") : null;
+
       if (isSupabaseConfigured && supabase) {
         const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
         if (authError) throw new Error(authError.message);
         const { data } = await supabase.auth.getSession();
-        if (data.session) localStorage.setItem("career_os_token", data.session.access_token);
+        if (data.session) {
+          const token = data.session.access_token;
+          localStorage.setItem("career_os_token", token);
+          writeSessionCookie(token);
+        }
       } else {
         localStorage.setItem("career_os_token", "dev");
+        writeSessionCookie("dev");
       }
-      router.push("/onboarding");
+
+      const target = await redirectAfterAuth(next);
+      router.push(target);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败");

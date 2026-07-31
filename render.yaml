@@ -1,23 +1,31 @@
+# Render Blueprint —— AI Life OS 后端 API
+# 部署：Render Dashboard → New → Blueprint → 连接 GitHub 仓库 → 自动读取本文件。
+# 所有敏感值用 sync: false，部署时在 Render 控制台填写（不写入仓库）。
 services:
   - type: web
-    name: career-os-api
+    name: ai-life-os-api
     runtime: docker
     plan: free
     dockerfilePath: ./apps/api/Dockerfile
     healthCheckPath: /health
+    autoDeploy: false
     envVars:
       - key: APP_ENV
         value: production
+      - key: API_PREFIX
+        value: /api/v1
       - key: DATABASE_URL
-        value: postgresql://postgres:or0tjNNYz64MmKvm@db.odthfgmjgutpsfjkmvto.supabase.co:6543/postgres
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
       - key: SUPABASE_URL
-        value: https://odthfgmjgutpsfjkmvto.supabase.co
+        sync: false
       - key: SUPABASE_ANON_KEY
-        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9kdGhmZ21qZ3V0cHNmamttdnRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0NjIxNTcsImV4cCI6MjEwMTAzODE1N30.ORovjxkwm74Jpc-_cp6oK60k16--WF6ttcKqzobRkbE
+        sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
-        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9kdGhmZ21qZ3V0cHNmamttdnRvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTQ2MjE1NywiZXhwIjoyMTAxMDM4MTU3fQ.s3UL2Jpi7eMmE9AAh5d08WuDzNcUsSupjOu8ja81KNQ
-      - key: SUPABASE_JWKS_URL
-        value: https://odthfgmjgutpsfjkmvto.supabase.co/auth/v1/.well-known/jwks.json
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
       - key: XFYUN_API_KEY
         sync: false
       - key: XFYUN_API_SECRET
@@ -30,31 +38,3 @@ services:
         value: wss://spark-api.xf-yun.com/v1.1/chat
       - key: SPARK_DOMAIN
         value: lite
-      - key: TAVILY_API_KEY
-        sync: false
-      - key: EXA_API_KEY
-        sync: false
-      - key: GOOGLE_SEARCH_API_KEY
-        sync: false
-      - key: GOOGLE_SEARCH_CX
-        sync: false
-      - key: BING_API_KEY
-        sync: false
-      - key: GITHUB_TOKEN
-        sync: false
-      - key: YOUTUBE_API_KEY
-        sync: false
-
-  - type: web
-    name: career-os-web
-    runtime: node
-    plan: free
-    buildCommand: npm install && npm --workspace apps/web run build
-    startCommand: npm --workspace apps/web run start
-    envVars:
-      - key: API_UPSTREAM
-        sync: false
-      - key: NEXT_PUBLIC_SUPABASE_URL
-        value: https://odthfgmjgutpsfjkmvto.supabase.co
-      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
-        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9kdGhmZ21qZ3V0cHNmamttdnRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0NjIxNTcsImV4cCI6MjEwMTAzODE1N30.ORovjxkwm74Jpc-_cp6oK60k16--WF6ttcKqzobRkbE
