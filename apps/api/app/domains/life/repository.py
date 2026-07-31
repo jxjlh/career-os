@@ -17,6 +17,22 @@ class LifeGoalRepository(BaseRepository[LifeGoal]):
     def get_owned(self, user_id: str, goal_id: str) -> LifeGoal | None:
         return self.db.query(LifeGoal).filter(LifeGoal.id == goal_id, LifeGoal.user_id == user_id).first()
 
+    def get_active(self, user_id: str) -> LifeGoal | None:
+        goal = (
+            self.db.query(LifeGoal)
+            .filter(LifeGoal.user_id == user_id, LifeGoal.status == "in_progress")
+            .order_by(LifeGoal.updated_at.desc(), LifeGoal.created_at.desc())
+            .first()
+        )
+        if goal is None:
+            goal = (
+                self.db.query(LifeGoal)
+                .filter(LifeGoal.user_id == user_id, LifeGoal.status == "pending")
+                .order_by(LifeGoal.updated_at.desc(), LifeGoal.created_at.desc())
+                .first()
+            )
+        return goal
+
     def create(self, user_id: str, **values) -> LifeGoal:
         goal = LifeGoal(user_id=user_id, **values)
         self.db.add(goal)
@@ -49,6 +65,15 @@ class LifeRecordRepository(BaseRepository[LifeRecord]):
 
     def list_by_user(self, user_id: str) -> list[LifeRecord]:
         return self.db.query(LifeRecord).filter(LifeRecord.user_id == user_id).order_by(LifeRecord.created_at.desc()).all()
+
+    def list_recent_by_user(self, user_id: str, limit: int = 5) -> list[LifeRecord]:
+        return (
+            self.db.query(LifeRecord)
+            .filter(LifeRecord.user_id == user_id)
+            .order_by(LifeRecord.created_at.desc())
+            .limit(limit)
+            .all()
+        )
 
     def get_owned(self, user_id: str, record_id: str) -> LifeRecord | None:
         return self.db.query(LifeRecord).filter(LifeRecord.id == record_id, LifeRecord.user_id == user_id).first()

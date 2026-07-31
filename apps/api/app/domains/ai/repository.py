@@ -52,3 +52,11 @@ class AIContentRepository(BaseRepository[AIContent]):
             .limit(limit)
             .all()
         )
+
+    def get_latest_by_type(self, user_id: str, content_type: str) -> AIContent | None:
+        return (
+            self.db.query(AIContent)
+            .filter(AIContent.user_id == user_id, AIContent.content_type == content_type)
+            .order_by(AIContent.created_at.desc())
+            .first()
+        )

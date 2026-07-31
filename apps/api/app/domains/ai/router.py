@@ -6,10 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import Profile
+from app.domains.ai.assistant import LifeAssistantService
 from app.domains.ai.schemas import (
     GenerateTasksResponse,
     GrowthPlanRequest,
     GrowthPlanResponse,
+    LifeAssistantResponse,
     TravelPlanRequest,
     TravelPlanResponse,
 )
@@ -43,3 +45,11 @@ def generate_tasks_from_growth_plan(
     db: Annotated[Session, Depends(get_db)],
 ) -> GenerateTasksResponse:
     return GrowthTaskGeneratorService(db).generate(current_user.id, ai_content_id)
+
+
+@router.get("/ai/assistant/daily", response_model=LifeAssistantResponse)
+async def daily_life_assistant(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> LifeAssistantResponse:
+    return await LifeAssistantService(db).daily(current_user.id)

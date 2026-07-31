@@ -85,3 +85,13 @@ class GrowthPlanResponse(BaseModel):
 class GenerateTasksResponse(BaseModel):
     createdCount: int
     taskIds: list[str]
+
+
+class LifeAssistantResponse(BaseModel):
+    greeting: str | None = None
+    focusGoal: dict | None = None
+    todayTasks: list[dict] = []
+    progress: dict = {}
+    suggestions: list[str] = []
+    motivation: str | None = None
+    dailySummary: str | None = None
