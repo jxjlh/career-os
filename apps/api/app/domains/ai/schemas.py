@@ -95,3 +95,21 @@ class LifeAssistantResponse(BaseModel):
     suggestions: list[str] = []
     motivation: str | None = None
     dailySummary: str | None = None
+
+
+class YearReviewRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    year: int | None = Field(default=None, ge=2000, le=2100)
+
+
+class YearReviewResponse(BaseModel):
+    id: str
+    aiContentId: str
+    year: int
+    title: str | None = None
+    summary: str | None = None
+    highlights: list[str] = []
+    growth: dict = {}
+    versions: dict = {}
+    createdAt: str | None = None

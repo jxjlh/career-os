@@ -7,6 +7,7 @@ from app.core.errors import AppError
 from app.db.models import AIContent, GoalTask
 from app.domains.ai.prompts.growth_plan import GROWTH_PLAN_PROMPT
 from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_PROMPT
+from app.domains.ai.prompts.year_review import YEAR_REVIEW_PROMPT
 from app.domains.ai.repository import AIContentRepository
 from app.domains.ai.schemas import (
     GenerateTasksResponse,
@@ -14,8 +15,14 @@ from app.domains.ai.schemas import (
     GrowthPlanResponse,
     TravelPlanRequest,
     TravelPlanResponse,
+    YearReviewRequest,
+    YearReviewResponse,
 )
-from app.domains.life.repository import LifeGoalRepository
+from app.domains.life.repository import (
+    LifeGoalRepository,
+    LifeRecordRepository,
+    UserLevelRepository,
+)
 from app.providers.ai.base import AIProvider, extract_json
 from app.providers.ai.registry import get_ai_provider
 
@@ -174,3 +181,101 @@ class GrowthTaskGeneratorService:
         content.task_generated = True
         self.db.commit()
         return GenerateTasksResponse(createdCount=len(task_ids), taskIds=task_ids)
+
+
+class YearReviewService:
+    """Generates an AI year summary from completed goals, records and XP."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIService(db)
+        self.goals = LifeGoalRepository(db)
+        self.records = LifeRecordRepository(db)
+        self.levels = UserLevelRepository(db)
+
+    async def generate(self, user_id: str, payload: YearReviewRequest) -> YearReviewResponse:
+        year = payload.year or date.today().year
+        completed = self._completed_goals(user_id, year)
+        records = self._records(user_id, year)
+        level = self.levels.get_by_user(user_id)
+        if level is None:
+            level = self.levels.create(user_id)
+
+        goal_lines = "；".join(f"{goal.title}（{goal.category}）" for goal in completed) or "暂无"
+        record_lines = []
+        for record in records:
+            location = " ".join(filter(None, [record.country, record.city]))
+            when = record.created_at.date().isoformat() if record.created_at else ""
+            record_lines.append(" ".join(filter(None, [when, location, record.content])))
+
+        input_data = {
+            "user_id": user_id,
+            "year": year,
+            "completed_goals": [
+                {
+                    "title": goal.title,
+                    "category": goal.category,
+                    "completed_at": goal.updated_at.isoformat() if goal.updated_at else None,
+                }
+                for goal in completed
+            ],
+            "records": [
+                {
+                    "content": record.content,
+                    "location": " ".join(filter(None, [record.country, record.city])),
+                    "created_at": record.created_at.isoformat() if record.created_at else None,
+                }
+                for record in records
+            ],
+            "xp": level.experience,
+            "level": level.level,
+        }
+        prompt = YEAR_REVIEW_PROMPT.format(
+            year=year,
+            completed_goals=goal_lines or "暂无",
+            life_records="；".join(record_lines) or "暂无",
+            xp=level.experience,
+            level=level.level,
+        )
+        record, parsed = await self.ai.generate_content(
+            user_id=user_id,
+            content_type="year_summary",
+            input_data=input_data,
+            prompt=prompt,
+        )
+        return self._to_response(record, parsed, year)
+
+    def get_latest(self, user_id: str, year: int | None = None) -> YearReviewResponse | None:
+        for content in self.ai.repository.list_by_type(user_id, "year_summary", limit=50):
+            saved_year = (content.input_json or {}).get("year")
+            if year is not None and saved_year != year:
+                continue
+            return self._to_response(content, content.output_json or {}, saved_year)
+        return None
+
+    def _completed_goals(self, user_id: str, year: int) -> list:
+        return [
+            goal
+            for goal in self.goals.list_by_user(user_id)
+            if goal.status == "completed" and goal.updated_at is not None and goal.updated_at.year == year
+        ]
+
+    def _records(self, user_id: str, year: int) -> list:
+        return [
+            record
+            for record in self.records.list_by_user(user_id)
+            if record.created_at is not None and record.created_at.year == year
+        ]
+
+    def _to_response(self, content, parsed: dict, year: int) -> YearReviewResponse:
+        return YearReviewResponse(
+            id=content.id,
+            aiContentId=content.id,
+            year=year,
+            title=parsed.get("title"),
+            summary=parsed.get("summary"),
+            highlights=parsed.get("highlights") or [],
+            growth=parsed.get("growth") or {},
+            versions=parsed.get("versions") or {},
+            createdAt=content.created_at.isoformat() if content.created_at else None,
+        )

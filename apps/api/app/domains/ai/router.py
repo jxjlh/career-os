@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -14,8 +14,15 @@ from app.domains.ai.schemas import (
     LifeAssistantResponse,
     TravelPlanRequest,
     TravelPlanResponse,
+    YearReviewRequest,
+    YearReviewResponse,
 )
-from app.domains.ai.service import GrowthPlanService, GrowthTaskGeneratorService, TravelPlanService
+from app.domains.ai.service import (
+    GrowthPlanService,
+    GrowthTaskGeneratorService,
+    TravelPlanService,
+    YearReviewService,
+)
 
 router = APIRouter(tags=["ai"])
 
@@ -53,3 +60,24 @@ async def daily_life_assistant(
     db: Annotated[Session, Depends(get_db)],
 ) -> LifeAssistantResponse:
     return await LifeAssistantService(db).daily(current_user.id)
+
+
+@router.post("/ai/year-summary", response_model=YearReviewResponse)
+async def generate_year_summary(
+    payload: YearReviewRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> YearReviewResponse:
+    return await YearReviewService(db).generate(current_user.id, payload)
+
+
+@router.get("/ai/year-summary", response_model=YearReviewResponse)
+def get_year_summary(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+) -> YearReviewResponse:
+    result = YearReviewService(db).get_latest(current_user.id, year)
+    if result is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Year summary not found"})
+    return result
