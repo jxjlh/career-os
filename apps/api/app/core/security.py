@@ -25,7 +25,7 @@ def get_current_user(
         if profile is None:
             profile = Profile(
                 id=user_id,
-                email="dev@career-os.local",
+                email=f"dev-{user_id}@career-os.local",
                 display_name="Developer",
                 language="zh-CN",
             )

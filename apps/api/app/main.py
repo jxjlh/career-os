@@ -20,6 +20,7 @@ from app.domains.jobs.router import router as jobs_router
 from app.domains.library.router import router as library_router
 from app.domains.notifications.router import router as notifications_router
 from app.domains.planner.router import router as planner_router
+from app.domains.profile.router import router as profile_router
 from app.domains.projects.router import router as projects_router
 from app.domains.resume.router import router as resume_router
 from app.domains.roadmap.router import router as roadmap_router
@@ -63,6 +64,7 @@ app.include_router(dashboard_router, prefix=settings.api_prefix)
 app.include_router(skills_router, prefix=settings.api_prefix)
 app.include_router(explorer_router, prefix=settings.api_prefix)
 app.include_router(planner_router, prefix=settings.api_prefix)
+app.include_router(profile_router, prefix=settings.api_prefix)
 app.include_router(library_router, prefix=settings.api_prefix)
 app.include_router(notifications_router, prefix=settings.api_prefix)
 app.include_router(roadmap_router, prefix=settings.api_prefix)

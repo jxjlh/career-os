@@ -1,0 +1,1 @@
+"""User growth profile domain."""

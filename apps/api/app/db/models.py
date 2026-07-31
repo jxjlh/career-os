@@ -46,6 +46,24 @@ class Profile(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
 
 
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_user_profiles_user"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True, unique=True)
+    nickname: Mapped[str | None] = mapped_column(String(120))
+    avatar: Mapped[str | None] = mapped_column(Text)
+    bio: Mapped[str | None] = mapped_column(Text)
+    birth_year: Mapped[int | None] = mapped_column(Integer)
+    current_stage: Mapped[str | None] = mapped_column(String(40))
+    strengths: Mapped[list[str]] = mapped_column(JSON, default=list)
+    interests: Mapped[list[str]] = mapped_column(JSON, default=list)
+    career_direction: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
 class Role(Base):
     __tablename__ = "roles"
 
