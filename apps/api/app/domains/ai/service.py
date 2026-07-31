@@ -7,7 +7,7 @@ from app.core.errors import AppError
 from app.db.models import AIContent, GoalTask
 from app.domains.ai.prompts.growth_plan import GROWTH_PLAN_PROMPT
 from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_PROMPT
-from app.domains.ai.prompts.year_review import YEAR_REVIEW_PROMPT
+from app.domains.ai.prompts.year_summary import YEAR_SUMMARY_PROMPT
 from app.domains.ai.repository import AIContentRepository
 from app.domains.ai.schemas import (
     GenerateTasksResponse,
@@ -15,8 +15,8 @@ from app.domains.ai.schemas import (
     GrowthPlanResponse,
     TravelPlanRequest,
     TravelPlanResponse,
-    YearReviewRequest,
-    YearReviewResponse,
+    YearSummaryRequest,
+    YearSummaryResponse,
 )
 from app.domains.life.repository import (
     LifeGoalRepository,
@@ -183,7 +183,7 @@ class GrowthTaskGeneratorService:
         return GenerateTasksResponse(createdCount=len(task_ids), taskIds=task_ids)
 
 
-class YearReviewService:
+class YearSummaryService:
     """Generates an AI year summary from completed goals, records and XP."""
 
     def __init__(self, db: Session) -> None:
@@ -193,7 +193,7 @@ class YearReviewService:
         self.records = LifeRecordRepository(db)
         self.levels = UserLevelRepository(db)
 
-    async def generate(self, user_id: str, payload: YearReviewRequest) -> YearReviewResponse:
+    async def generate(self, user_id: str, payload: YearSummaryRequest) -> YearSummaryResponse:
         year = payload.year or date.today().year
         completed = self._completed_goals(user_id, year)
         records = self._records(user_id, year)
@@ -230,7 +230,7 @@ class YearReviewService:
             "xp": level.experience,
             "level": level.level,
         }
-        prompt = YEAR_REVIEW_PROMPT.format(
+        prompt = YEAR_SUMMARY_PROMPT.format(
             year=year,
             completed_goals=goal_lines or "暂无",
             life_records="；".join(record_lines) or "暂无",
@@ -245,7 +245,7 @@ class YearReviewService:
         )
         return self._to_response(record, parsed, year)
 
-    def get_latest(self, user_id: str, year: int | None = None) -> YearReviewResponse | None:
+    def get_latest(self, user_id: str, year: int | None = None) -> YearSummaryResponse | None:
         for content in self.ai.repository.list_by_type(user_id, "year_summary", limit=50):
             saved_year = (content.input_json or {}).get("year")
             if year is not None and saved_year != year:
@@ -267,8 +267,8 @@ class YearReviewService:
             if record.created_at is not None and record.created_at.year == year
         ]
 
-    def _to_response(self, content, parsed: dict, year: int) -> YearReviewResponse:
-        return YearReviewResponse(
+    def _to_response(self, content, parsed: dict, year: int) -> YearSummaryResponse:
+        return YearSummaryResponse(
             id=content.id,
             aiContentId=content.id,
             year=year,

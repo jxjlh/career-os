@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
@@ -97,13 +99,13 @@ class LifeAssistantResponse(BaseModel):
     dailySummary: str | None = None
 
 
-class YearReviewRequest(BaseModel):
+class YearSummaryRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
 
     year: int | None = Field(default=None, ge=2000, le=2100)
 
 
-class YearReviewResponse(BaseModel):
+class YearSummaryResponse(BaseModel):
     id: str
     aiContentId: str
     year: int
@@ -113,3 +115,24 @@ class YearReviewResponse(BaseModel):
     growth: dict = {}
     versions: dict = {}
     createdAt: str | None = None
+
+
+class YearReviewRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    year: int = Field(ge=2000, le=2100)
+    style: Literal["personal", "social", "xiaohongshu"] | None = None
+
+
+class YearReviewResponse(BaseModel):
+    id: str
+    aiContentId: str
+    year: int
+    title: str | None = None
+    summary: str | None = None
+    statistics: dict = {}
+    achievements: list[str] = []
+    growth: dict = {}
+    memories: list[dict] = []
+    reflection: str | None = None
+    nextYearPlan: list[str] = []
