@@ -1004,3 +1004,73 @@ class Comment(Base):
     post_id: Mapped[str] = mapped_column(ForeignKey("social_posts.id", ondelete="CASCADE"), index=True)
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+# ── Sprint 9 Life AI Coach ──────────────────────────────────────────
+class AIConversation(Base):
+    """AI 教练对话会话: 多轮对话的容器, 聚合消息与摘要."""
+
+    __tablename__ = "ai_conversations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str | None] = mapped_column(String(200))
+    summary: Mapped[str | None] = mapped_column(Text)
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class AIMessage(Base):
+    """AI 教练单条消息: user / assistant / system 角色, 可携带工具调用记录.
+
+    注: 表名使用 ``coach_messages`` 以避免与原职业教练模块 ``AiMessage`` (表 ``ai_messages``) 冲突.
+    """
+
+    __tablename__ = "coach_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("ai_conversations.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16))  # user | assistant | system
+    content: Mapped[str] = mapped_column(Text)
+    tool_calls: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    tokens: Mapped[int] = mapped_column(Integer, default=0)
+    provider: Mapped[str | None] = mapped_column(String(64))
+    model: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+class CoachMemory(Base):
+    """AI 教练长期记忆: 从对话与行为中提取的用户画像, 持续更新."""
+
+    __tablename__ = "coach_memory"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    memory_type: Mapped[str] = mapped_column(String(40), index=True)  # goal/interest/travel/learning/career/language/budget
+    content: Mapped[str] = mapped_column(Text)
+    importance: Mapped[int] = mapped_column(SmallInteger, default=5)  # 1~10
+    source: Mapped[str] = mapped_column(String(40), default="ai")  # ai | user | system
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class CoachTask(Base):
+    """AI 教练生成的任务: 今日行动建议的具体落地, 可关联人生目标."""
+
+    __tablename__ = "coach_tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="todo", index=True)  # todo | done | postponed
+    priority: Mapped[str] = mapped_column(String(16), default="medium")  # low | medium | high
+    source: Mapped[str] = mapped_column(String(40), default="coach")  # coach | advice | review
+    life_goal_id: Mapped[str | None] = mapped_column(
+        ForeignKey("life_goals.id", ondelete="SET NULL"), index=True
+    )
+    due_date: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
