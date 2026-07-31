@@ -8,7 +8,12 @@ from app.core.security import get_current_user
 from app.db.models import Profile
 from app.domains.goals.service import TaskService
 from app.domains.life.schemas import LifeGoalCreate, LifeGoalUpdate
-from app.domains.life.service import LifeDashboardService, LifeGoalService, LifeRecordService
+from app.domains.life.service import (
+    LifeDashboardService,
+    LifeGoalService,
+    LifeMapService,
+    LifeRecordService,
+)
 
 router = APIRouter(tags=["life"])
 
@@ -19,6 +24,14 @@ def life_dashboard(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
     return {"data": LifeDashboardService(db).get(current_user.id)}
+
+
+@router.get("/life/map")
+def life_map(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return {"data": LifeMapService(db).get(current_user.id)}
 
 
 @router.get("/life/goals")

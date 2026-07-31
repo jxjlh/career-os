@@ -14,6 +14,19 @@ class LifeGoalRepository(BaseRepository[LifeGoal]):
             .all()
         )
 
+    def list_geotagged(self, user_id: str) -> list[LifeGoal]:
+        # 带经纬度的人生目标(如旅行目的地), 用于地图目的地标记
+        return (
+            self.db.query(LifeGoal)
+            .filter(
+                LifeGoal.user_id == user_id,
+                LifeGoal.latitude.is_not(None),
+                LifeGoal.longitude.is_not(None),
+            )
+            .order_by(LifeGoal.created_at.desc())
+            .all()
+        )
+
     def get_owned(self, user_id: str, goal_id: str) -> LifeGoal | None:
         return self.db.query(LifeGoal).filter(LifeGoal.id == goal_id, LifeGoal.user_id == user_id).first()
 
@@ -70,6 +83,20 @@ class LifeRecordRepository(BaseRepository[LifeRecord]):
         return (
             self.db.query(LifeRecord)
             .filter(LifeRecord.user_id == user_id)
+            .order_by(LifeRecord.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    def list_geotagged(self, user_id: str, limit: int = 200) -> list[LifeRecord]:
+        # 带经纬度的人生记录, 用于地图图钉; 按创建时间倒序, 取最新一页(个人记录量有限)
+        return (
+            self.db.query(LifeRecord)
+            .filter(
+                LifeRecord.user_id == user_id,
+                LifeRecord.latitude.is_not(None),
+                LifeRecord.longitude.is_not(None),
+            )
             .order_by(LifeRecord.created_at.desc())
             .limit(limit)
             .all()

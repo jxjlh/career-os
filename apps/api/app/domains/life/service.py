@@ -193,6 +193,56 @@ class LifeDashboardService:
         }
 
 
+class LifeMapService:
+    """聚合带地理位置的人生记录与目标, 供前端人生地图渲染."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.records = LifeRecordRepository(db)
+        self.goals = LifeGoalRepository(db)
+
+    def get(self, user_id: str) -> dict:
+        geotagged_records = self.records.list_geotagged(user_id)
+        destinations = self.goals.list_geotagged(user_id)
+
+        # 按 (country, city) 聚合城市; records 已按 created_at desc, 首个即该城市最新记录
+        cities: dict[tuple[str | None, str | None], dict] = {}
+        for record in geotagged_records:
+            city_label = record.city or "未知城市"
+            key = (record.country, city_label)
+            entry = cities.setdefault(
+                key,
+                {
+                    "city": city_label,
+                    "country": record.country,
+                    "latitude": record.latitude,
+                    "longitude": record.longitude,
+                    "recordCount": 0,
+                    "latestRecordId": None,
+                    "latestContent": None,
+                },
+            )
+            entry["recordCount"] += 1
+            if entry["latestRecordId"] is None:
+                entry["latestRecordId"] = record.id
+                entry["latestContent"] = record.content
+
+        cities_list = sorted(cities.values(), key=lambda c: c["recordCount"], reverse=True)
+        countries = {c["country"] for c in cities_list if c["country"]}
+
+        return {
+            "summary": {
+                "totalRecords": len(geotagged_records),
+                "totalCities": len(cities_list),
+                "totalCountries": len(countries),
+                "totalDestinations": len(destinations),
+            },
+            "cities": cities_list,
+            "records": [life_record_dict(record) for record in geotagged_records],
+            "destinations": [life_goal_dict(goal) for goal in destinations],
+        }
+
+
 async def upload_record_file(
     user_id: str,
     goal_id: str,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Images, RefreshCw } from "lucide-react";
+import { BarChart3, Images, MapPin, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 import { DailyAssistantCard } from "@/components/life/assistant/daily-assistant-card";
@@ -64,13 +64,20 @@ export default function LifePage() {
 
       <DailyAssistantCard showHeader />
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <Link href="/life/records" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
           <span className="flex items-center gap-2 text-sm font-medium">
             <Images className="h-4 w-4 text-primary" />
             我的人生记录
           </span>
           <span className="text-xs text-muted">时间轴 →</span>
+        </Link>
+        <Link href="/life/map" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <MapPin className="h-4 w-4 text-primary" />
+            人生地图
+          </span>
+          <span className="text-xs text-muted">查看足迹 →</span>
         </Link>
         <Link href="/life/review" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
           <span className="flex items-center gap-2 text-sm font-medium">

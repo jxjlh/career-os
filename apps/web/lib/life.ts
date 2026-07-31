@@ -178,6 +178,35 @@ export async function getRecordMediaUrl(path: string): Promise<string | null> {
   return data?.signedUrl ?? null;
 }
 
+export interface LifeMapSummary {
+  totalRecords: number;
+  totalCities: number;
+  totalCountries: number;
+  totalDestinations: number;
+}
+
+export interface LifeMapCity {
+  city: string;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  recordCount: number;
+  latestRecordId: string | null;
+  latestContent: string | null;
+}
+
+export interface LifeMapData {
+  summary: LifeMapSummary;
+  cities: LifeMapCity[];
+  records: LifeRecord[];
+  destinations: LifeGoal[];
+}
+
+export async function getLifeMap(): Promise<LifeMapData> {
+  const res = await apiFetch<{ data: LifeMapData }>("/life/map");
+  return res.data;
+}
+
 export interface TravelPlanRequest {
   goalId?: string;
   destination: string;
