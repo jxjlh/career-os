@@ -1,0 +1,21 @@
+{
+  "name": "career-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Career OS - AI Career Growth Platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev",
+    "dev:api": "uv run --project apps/api uvicorn app.main:app --reload --port 8000",
+    "build:web": "npm --workspace apps/web run build",
+    "lint": "npm --workspace apps/web run lint",
+    "test": "npm --workspace apps/web run test && uv run --project apps/api pytest"
+  },
+  "packageManager": "npm@11.13.0",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.111.0"
+  }
+}

@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: career-os-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./apps/api/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: XFYUN_API_KEY
+        sync: false
+      - key: XFYUN_API_SECRET
+        sync: false
+      - key: XFYUN_APP_ID
+        sync: false
+      - key: SPARK_MODEL
+        value: Spark-X2-Flash
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: EXA_API_KEY
+        sync: false
+      - key: GOOGLE_SEARCH_API_KEY
+        sync: false
+      - key: GOOGLE_SEARCH_CX
+        sync: false
+      - key: BING_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+
+  - type: web
+    name: career-os-web
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm --workspace apps/web run build
+    startCommand: npm --workspace apps/web run start
+    envVars:
+      - key: API_UPSTREAM
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false

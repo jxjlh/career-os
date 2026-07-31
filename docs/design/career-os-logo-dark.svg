@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="48" viewBox="0 0 220 48" fill="none">
+  <circle cx="24" cy="24" r="17.5" stroke="#3B82F6" stroke-width="4" stroke-linecap="round" stroke-dasharray="100 9.96" transform="rotate(-45 24 24)" />
+  <polygon points="39.25,13.82 34.65,12.93 38.05,9.53" fill="#60A5FA" />
+  <rect x="15.5" y="29" width="4" height="4" rx="1.2" fill="#60A5FA" />
+  <rect x="22" y="26.5" width="4" height="6.5" rx="1.2" fill="#60A5FA" />
+  <rect x="28.5" y="23" width="4" height="10" rx="1.2" fill="#60A5FA" />
+  <circle cx="30.5" cy="19.5" r="2.4" fill="#4ADE80" />
+  <text x="56" y="28" font-family="Inter, PingFang SC, system-ui, sans-serif" font-size="19" font-weight="700" fill="#FAFAFA" letter-spacing="0">Career OS</text>
+  <text x="57" y="41" font-family="Inter, PingFang SC, system-ui, sans-serif" font-size="11" fill="#A1A1AA" letter-spacing="0">AI Career Growth Platform</text>
+</svg>

@@ -1,0 +1,31 @@
+# Node
+node_modules/
+.next/
+out/
+dist/
+
+# Env files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Local DB
+*.db
+*.sqlite3
+
+# OS / editor
+.DS_Store
+*.log
+.idea/
+.vscode/
+.agents/
+skills-lock.json

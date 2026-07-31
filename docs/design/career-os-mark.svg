@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <!-- growth loop ring -->
+  <circle cx="24" cy="24" r="17.5" stroke="#2563EB" stroke-width="4" stroke-linecap="round" stroke-dasharray="100 9.96" transform="rotate(-45 24 24)" />
+  <!-- loop arrowhead -->
+  <polygon points="39.25,13.82 34.65,12.93 38.05,9.53" fill="#1D4ED8" />
+  <!-- ascending bars -->
+  <rect x="15.5" y="29" width="4" height="4" rx="1.2" fill="#1D4ED8" />
+  <rect x="22" y="26.5" width="4" height="6.5" rx="1.2" fill="#1D4ED8" />
+  <rect x="28.5" y="23" width="4" height="10" rx="1.2" fill="#1D4ED8" />
+  <!-- career target node -->
+  <circle cx="30.5" cy="19.5" r="2.4" fill="#16A34A" />
+</svg>
