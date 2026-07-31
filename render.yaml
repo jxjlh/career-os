@@ -1,7 +1,9 @@
-# Render Blueprint —— AI Life OS 后端 API
+# Render Blueprint —— AI Life OS 全栈（前端 Next.js + 后端 FastAPI）
+# 零 Vercel：前后端都部署到 Render（免费档），共用同一套 Blueprint。
 # 部署：Render Dashboard → New → Blueprint → 连接 GitHub 仓库 → 自动读取本文件。
 # 所有敏感值用 sync: false，部署时在 Render 控制台填写（不写入仓库）。
 services:
+  # ---------- 后端 API（Docker + FastAPI + 自动 Alembic 迁移）----------
   - type: web
     name: ai-life-os-api
     runtime: docker
@@ -38,3 +40,21 @@ services:
         value: wss://spark-api.xf-yun.com/v1.1/chat
       - key: SPARK_DOMAIN
         value: lite
+
+  # ---------- 前端（Node.js + Next.js 15 standalone，内部 rewrite 代理后端）----------
+  - type: web
+    name: ai-life-os-web
+    runtime: node
+    plan: free
+    rootDir: apps/web
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    autoDeploy: false
+    envVars:
+      - key: API_UPSTREAM
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
