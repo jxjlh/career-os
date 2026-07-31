@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.core.database import engine
+from app.core.database import SessionLocal, engine
 from app.core.errors import AppError, app_error_handler, unhandled_error_handler
 from app.core.logging import setup_logging
 from app.core.middleware import RateLimitMiddleware, RequestContextMiddleware
@@ -12,6 +12,8 @@ from app.db.base import Base
 from app.domains.ai.router import router as ai_router
 from app.domains.analytics.router import router as analytics_router
 from app.domains.auth.router import router as auth_router
+from app.domains.bucket.router import router as bucket_router
+from app.domains.bucket.seed import seed_bucket_data
 from app.domains.coach.router import router as coach_router
 from app.domains.dashboard.router import router as dashboard_router
 from app.domains.explorer.router import router as explorer_router
@@ -39,6 +41,9 @@ async def lifespan(app: FastAPI):
     # dev 与 test 环境自动建表, 便于本地启动与单测隔离; 生产仅依赖 Alembic migration
     if settings.app_env in ("dev", "test"):
         Base.metadata.create_all(bind=engine)
+        # 幂等写入 Bucket List 种子目录, 保证页面有可消费内容
+        with SessionLocal() as db:
+            seed_bucket_data(db)
     yield
 
 
@@ -75,6 +80,7 @@ app.include_router(planner_router, prefix=settings.api_prefix)
 app.include_router(profile_router, prefix=settings.api_prefix)
 app.include_router(library_router, prefix=settings.api_prefix)
 app.include_router(life_router, prefix=settings.api_prefix)
+app.include_router(bucket_router, prefix=settings.api_prefix)
 app.include_router(notifications_router, prefix=settings.api_prefix)
 app.include_router(roadmap_router, prefix=settings.api_prefix)
 app.include_router(coach_router, prefix=settings.api_prefix)

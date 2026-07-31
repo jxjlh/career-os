@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Images, MapPin, RefreshCw } from "lucide-react";
+import { BarChart3, Images, ListChecks, MapPin, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 import { DailyAssistantCard } from "@/components/life/assistant/daily-assistant-card";
@@ -64,7 +64,14 @@ export default function LifePage() {
 
       <DailyAssistantCard showHeader />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Link href="/life/bucket" className="flex items-center justify-between rounded-[12px] border border-border bg-gradient-to-br from-indigo-500/5 to-pink-500/5 p-4 transition-colors hover:border-primary/40">
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <ListChecks className="h-4 w-4 text-primary" />
+            人生必做清单
+          </span>
+          <span className="text-xs text-muted">探索 →</span>
+        </Link>
         <Link href="/life/records" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
           <span className="flex items-center gap-2 text-sm font-medium">
             <Images className="h-4 w-4 text-primary" />

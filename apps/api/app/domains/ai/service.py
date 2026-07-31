@@ -5,11 +5,15 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.db.models import AIContent, GoalTask
+from app.domains.ai.prompts.bucket_recommendation import BUCKET_RECOMMENDATION_PROMPT
 from app.domains.ai.prompts.growth_plan import GROWTH_PLAN_PROMPT
 from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_PROMPT
 from app.domains.ai.prompts.year_summary import YEAR_SUMMARY_PROMPT
 from app.domains.ai.repository import AIContentRepository
 from app.domains.ai.schemas import (
+    BucketRecommendationItem,
+    BucketRecommendationRequest,
+    BucketRecommendationResponse,
     GenerateTasksResponse,
     GrowthPlanRequest,
     GrowthPlanResponse,
@@ -17,6 +21,10 @@ from app.domains.ai.schemas import (
     TravelPlanResponse,
     YearSummaryRequest,
     YearSummaryResponse,
+)
+from app.domains.bucket.repository import (
+    BucketCategoryRepository,
+    BucketItemRepository,
 )
 from app.domains.life.repository import (
     LifeGoalRepository,
@@ -279,3 +287,139 @@ class YearSummaryService:
             versions=parsed.get("versions") or {},
             createdAt=content.created_at.isoformat() if content.created_at else None,
         )
+
+
+class BucketRecommendationService:
+    """根据用户画像 + 清单目录, 让 AI 推荐 5~10 个最匹配的人生必做项.
+
+    AI 不可用或返回非法 JSON 时, 回退为按 popularity 取热门条目, 保证前端可用.
+    """
+
+    CATALOG_LIMIT = 60
+    FALLBACK_COUNT = 8
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIService(db)
+        self.categories = BucketCategoryRepository(db)
+        self.items = BucketItemRepository(db)
+
+    async def recommend(
+        self, user_id: str, payload: BucketRecommendationRequest
+    ) -> BucketRecommendationResponse:
+        catalog = self.items.list_published(limit=self.CATALOG_LIMIT)
+        if not catalog:
+            return BucketRecommendationResponse(recommendations=[], source="fallback")
+
+        # 已加入条目不重复推荐
+        joined_ids = {ub.bucket_item_id for ub in self._joined_ids(user_id)}
+        candidates = [it for it in catalog if it.id not in joined_ids]
+        if not candidates:
+            return BucketRecommendationResponse(recommendations=[], source="fallback")
+
+        category_map = {c.id: c.name for c in self.categories.list_all()}
+        profile = self._build_profile(user_id, payload)
+        catalog_text = self._build_catalog(candidates, category_map)
+
+        prompt = BUCKET_RECOMMENDATION_PROMPT.format(profile=profile, catalog=catalog_text)
+        input_data = payload.model_dump(exclude_none=True)
+
+        try:
+            _, parsed = await self.ai.generate_content(
+                user_id=user_id,
+                content_type="bucket_recommendation",
+                input_data=input_data,
+                prompt=prompt,
+            )
+        except AppError:
+            return self._fallback(candidates, category_map)
+
+        recs = self._parse_recommendations(parsed, candidates, category_map)
+        if not recs:
+            return self._fallback(candidates, category_map)
+        return BucketRecommendationResponse(recommendations=recs, source="ai")
+
+    def _joined_ids(self, user_id: str) -> list:
+        from app.db.models import UserBucketItem
+
+        return self.db.query(UserBucketItem).filter(UserBucketItem.user_id == user_id).all()
+
+    def _build_profile(self, user_id: str, payload: BucketRecommendationRequest) -> str:
+        """拼接用户画像文本: 显式入参优先, 缺省字段给出未指定."""
+        parts = [
+            f"职业: {payload.career or '未指定'}",
+            f"兴趣: {', '.join(payload.interests) or '未指定'}",
+            f"预算: {payload.budget or '未指定'}",
+            f"所在城市: {payload.city or '未指定'}",
+            f"可用时间: {payload.time or '未指定'}",
+            f"成长方向: {payload.growth_direction or '未指定'}",
+            # 历史完成情况: 已加入数, 帮助 AI 避开重复与匹配难度
+            f"已加入清单数: {self._joined_count(user_id)}",
+        ]
+        return "\n".join(parts)
+
+    def _joined_count(self, user_id: str) -> int:
+        from app.db.models import UserBucketItem
+
+        return self.db.query(UserBucketItem).filter(UserBucketItem.user_id == user_id).count()
+
+    def _build_catalog(self, items, category_map: dict) -> str:
+        lines = []
+        for it in items:
+            cat = category_map.get(it.category_id, "未分类")
+            season = it.best_season or "不限"
+            cost = it.estimated_cost or "未知"
+            tags = "/".join(it.tags or []) or "无"
+            lines.append(
+                f"- item_id={it.id} | {it.title} | 分类={cat} | 难度={it.difficulty} | "
+                f"预算={cost} | 最佳季节={season} | 国家={it.country or '不限'} | "
+                f"城市={it.city or '不限'} | 标签={tags}"
+            )
+        return "\n".join(lines)
+
+    def _parse_recommendations(self, parsed: dict, candidates, category_map: dict) -> list[BucketRecommendationItem]:
+        raw = parsed.get("recommendations") or []
+        if not isinstance(raw, list):
+            return []
+        cand_by_id = {it.id: it for it in candidates}
+        result: list[BucketRecommendationItem] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            item_id = entry.get("item_id") or entry.get("itemId")
+            item = cand_by_id.get(item_id)
+            if item is None:
+                continue  # AI 编造的 id 直接丢弃
+            result.append(
+                BucketRecommendationItem(
+                    **{
+                        "itemId": item.id,
+                        "title": item.title,
+                        "coverImage": item.cover_image,
+                        "reason": str(entry.get("reason", ""))[:200],
+                        "matchScore": int(entry.get("match_score", entry.get("matchScore", 0)) or 0),
+                        "priority": str(entry.get("priority", "medium")),
+                        "category": category_map.get(item.category_id),
+                    }
+                )
+            )
+        return result
+
+    def _fallback(self, candidates, category_map: dict) -> BucketRecommendationResponse:
+        """AI 不可用时按 popularity 回退, 仍给出可消费的推荐列表."""
+        top = candidates[: self.FALLBACK_COUNT]
+        recs = [
+            BucketRecommendationItem(
+                **{
+                    "itemId": it.id,
+                    "title": it.title,
+                    "coverImage": it.cover_image,
+                    "reason": "热门推荐",
+                    "matchScore": 60,
+                    "priority": "medium",
+                    "category": category_map.get(it.category_id),
+                }
+            )
+            for it in top
+        ]
+        return BucketRecommendationResponse(recommendations=recs, source="fallback")

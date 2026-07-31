@@ -8,6 +8,8 @@ from app.core.security import get_current_user
 from app.db.models import Profile
 from app.domains.ai.assistant import LifeAssistantService
 from app.domains.ai.schemas import (
+    BucketRecommendationRequest,
+    BucketRecommendationResponse,
     GenerateTasksResponse,
     GrowthPlanRequest,
     GrowthPlanResponse,
@@ -20,6 +22,7 @@ from app.domains.ai.schemas import (
     YearSummaryResponse,
 )
 from app.domains.ai.service import (
+    BucketRecommendationService,
     GrowthPlanService,
     GrowthTaskGeneratorService,
     TravelPlanService,
@@ -93,3 +96,12 @@ async def generate_year_review(
     db: Annotated[Session, Depends(get_db)],
 ) -> YearReviewResponse:
     return await YearReviewService(db).generate(current_user.id, payload)
+
+
+@router.post("/ai/bucket-recommendation", response_model=BucketRecommendationResponse)
+async def recommend_bucket_items(
+    payload: BucketRecommendationRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> BucketRecommendationResponse:
+    return await BucketRecommendationService(db).recommend(current_user.id, payload)

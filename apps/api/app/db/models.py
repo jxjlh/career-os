@@ -769,3 +769,64 @@ class AIContent(Base):
     task_generated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class BucketCategory(Base):
+    __tablename__ = "bucket_categories"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    icon: Mapped[str | None] = mapped_column(String(32))
+    color: Mapped[str | None] = mapped_column(String(32))
+    cover_image: Mapped[str | None] = mapped_column(Text)
+    sort: Mapped[int] = mapped_column(SmallInteger, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class BucketItem(Base):
+    __tablename__ = "bucket_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    category_id: Mapped[str] = mapped_column(ForeignKey("bucket_categories.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    subtitle: Mapped[str | None] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text)
+    story: Mapped[str | None] = mapped_column(Text)
+    cover_image: Mapped[str | None] = mapped_column(Text)
+    gallery_images: Mapped[list[str]] = mapped_column(JSON, default=list)
+    video_url: Mapped[str | None] = mapped_column(Text)
+    difficulty: Mapped[int] = mapped_column(SmallInteger, default=3)
+    estimated_cost: Mapped[str | None] = mapped_column(String(80))
+    estimated_days: Mapped[int | None] = mapped_column(Integer)
+    best_season: Mapped[str | None] = mapped_column(String(120))
+    country: Mapped[str | None] = mapped_column(String(80), index=True)
+    city: Mapped[str | None] = mapped_column(String(120), index=True)
+    location: Mapped[str | None] = mapped_column(String(200))
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    address: Mapped[str | None] = mapped_column(String(300))
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tips: Mapped[str | None] = mapped_column(Text)
+    ai_prompt: Mapped[str | None] = mapped_column(Text)
+    popularity: Mapped[int] = mapped_column(Integer, default=0)
+    completed_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(24), default="published", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class UserBucketItem(Base):
+    __tablename__ = "user_bucket_items"
+    __table_args__ = (UniqueConstraint("user_id", "bucket_item_id", name="uq_user_bucket_item"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    bucket_item_id: Mapped[str] = mapped_column(ForeignKey("bucket_items.id", ondelete="CASCADE"), index=True)
+    life_goal_id: Mapped[str | None] = mapped_column(ForeignKey("life_goals.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="joined")
+    wishlist: Mapped[bool] = mapped_column(Boolean, default=False)
+    favorite: Mapped[bool] = mapped_column(Boolean, default=False)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

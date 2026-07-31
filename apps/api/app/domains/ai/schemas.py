@@ -137,3 +137,37 @@ class YearReviewResponse(BaseModel):
     memories: list[dict] = []
     reflection: str | None = None
     nextYearPlan: list[str] = []
+
+
+class BucketRecommendationRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    career: str | None = None
+    interests: list[str] = []
+    budget: str | None = None
+    city: str | None = None
+    time: str | None = None
+    growth_direction: str | None = Field(
+        default=None, validation_alias=AliasChoices("growthDirection", "growth_direction")
+    )
+
+
+class BucketRecommendationItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    item_id: str = Field(validation_alias=AliasChoices("itemId", "item_id"))
+    title: str
+    cover_image: str | None = Field(
+        default=None, validation_alias=AliasChoices("coverImage", "cover_image")
+    )
+    reason: str = ""
+    match_score: int = Field(default=0, validation_alias=AliasChoices("matchScore", "match_score"))
+    priority: str = "medium"
+    category: str | None = None
+
+
+class BucketRecommendationResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    recommendations: list[BucketRecommendationItem] = []
+    source: str = "ai"  # "ai" | "fallback"
