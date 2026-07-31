@@ -1,13 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Check, Loader2, Sparkles } from "lucide-react";
+import { Camera, Check, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 
 import { CameraCapture } from "@/components/life/camera-capture";
 import { LifeRecordImage } from "@/components/life/life-record-image";
+import { LifeTaskList } from "@/components/life/life-task-list";
 import { Badge, Button, Card, Skeleton } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
 import { CATEGORY_META, getGoalRecords, type LifeRecord } from "@/lib/life";
@@ -106,6 +107,8 @@ export default function LifeGoalDetailPage() {
           onSuccess={() => queryClient.invalidateQueries({ queryKey: ["life-goal-records", goalId] })}
         />
       )}
+
+      <LifeTaskList goalId={goalId} />
 
       <div className="space-y-3">
         <h2 className="text-sm font-semibold">人生记录</h2>

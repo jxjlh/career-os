@@ -32,6 +32,15 @@ class TaskRepository(BaseRepository[GoalTask]):
             .all()
         )
 
+    def list_by_life_goal(self, life_goal_id: str) -> list[GoalTask]:
+        # AI 成长规划生成的任务挂在 life_goal_id 上(goal_id 为空), 按到期日升序, 未排期的按创建顺序
+        return (
+            self.db.query(GoalTask)
+            .filter(GoalTask.life_goal_id == life_goal_id)
+            .order_by(GoalTask.due_date.asc(), GoalTask.created_at)
+            .all()
+        )
+
     def get_owned(self, user_id: str, task_id: str) -> GoalTask | None:
         return self.db.query(GoalTask).filter(GoalTask.id == task_id, GoalTask.user_id == user_id).first()
 

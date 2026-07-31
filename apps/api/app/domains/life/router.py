@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import Profile
+from app.domains.goals.service import TaskService
 from app.domains.life.schemas import LifeGoalCreate, LifeGoalUpdate
 from app.domains.life.service import LifeDashboardService, LifeGoalService, LifeRecordService
 
@@ -114,6 +115,19 @@ def list_life_goal_records(
     if not records and LifeGoalService(db).get(current_user.id, goal_id) is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Life goal not found"})
     return {"data": records}
+
+
+@router.get("/life/goals/{goal_id}/tasks")
+def list_life_goal_tasks(
+    goal_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    # 校验 life goal 归属: 不存在或不属于当前用户一律 404, 避免泄露他人任务
+    if LifeGoalService(db).get(current_user.id, goal_id) is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Life goal not found"})
+    tasks = TaskService(db).list_by_life_goal(goal_id)
+    return {"data": tasks}
 
 
 @router.get("/life/records")

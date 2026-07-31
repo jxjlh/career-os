@@ -37,6 +37,7 @@ def task_dict(task: GoalTask) -> dict:
     return {
         "id": task.id,
         "goalId": task.goal_id,
+        "lifeGoalId": task.life_goal_id,
         "title": task.title,
         "description": task.description,
         "taskType": task.task_type,
@@ -142,6 +143,10 @@ class TaskService:
             return []
         return [task_dict(task) for task in self.repository.list_by_goal(goal.id)]
 
+    def list_by_life_goal(self, life_goal_id: str) -> list[dict]:
+        # 调用方(life router)已校验 life goal 归属; 此处按 life_goal_id 列出 AI 成长规划生成的任务
+        return [task_dict(task) for task in self.repository.list_by_life_goal(life_goal_id)]
+
     def create(self, user_id: str, goal_id: str, payload: TaskCreate) -> GoalTask | None:
         goal = self.goals.get_owned(user_id, goal_id)
         if goal is None:
@@ -174,9 +179,11 @@ class TaskService:
                 setattr(task, field, value)
         self.db.commit()
         self.db.refresh(task)
-        goal = self.goals.get(task.goal_id)
-        if goal:
-            GoalService(self.db).refresh_progress(goal)
+        # AI 成长规划生成的任务 goal_id 为空(挂在 life_goal_id 上), 此时无需刷新 career goal 进度
+        if task.goal_id:
+            goal = self.goals.get(task.goal_id)
+            if goal:
+                GoalService(self.db).refresh_progress(goal)
         return task
 
     def complete(self, user_id: str, task_id: str) -> GoalTask | None:

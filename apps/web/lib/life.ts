@@ -122,6 +122,40 @@ export async function getGoalRecords(goalId: string): Promise<LifeRecord[]> {
   return res.data;
 }
 
+export interface LifeTask {
+  id: string;
+  goalId?: string | null;
+  lifeGoalId?: string | null;
+  title: string;
+  description?: string | null;
+  taskType: string;
+  dueDate?: string | null;
+  status: string;
+  completedAt?: string | null;
+  createdAt?: string | null;
+}
+
+export async function getLifeGoalTasks(goalId: string): Promise<LifeTask[]> {
+  const res = await apiFetch<{ data: LifeTask[] }>(`/life/goals/${goalId}/tasks`);
+  return res.data;
+}
+
+export async function completeLifeTask(taskId: string): Promise<LifeTask> {
+  const res = await apiFetch<{ data: LifeTask }>(`/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "done" }),
+  });
+  return res.data;
+}
+
+export async function reopenLifeTask(taskId: string): Promise<LifeTask> {
+  const res = await apiFetch<{ data: LifeTask }>(`/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "todo" }),
+  });
+  return res.data;
+}
+
 export async function getLifeRecords(
   page = 1,
   pageSize = 20,
