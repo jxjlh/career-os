@@ -1,3 +1,5 @@
+from math import floor, sqrt
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -42,7 +44,7 @@ def test_dashboard_stats_xp_and_level() -> None:
         assert dashboard["totalGoals"] >= 2
         assert dashboard["completedGoals"] >= 2
         assert dashboard["experience"] >= 300
-        assert dashboard["level"] == 2
+        assert dashboard["level"] == floor(sqrt(dashboard["experience"] / 100)) + 1
         assert dashboard["categoryStats"]["travel"]["completed"] >= 1
         assert dashboard["categoryStats"]["career"]["completed"] >= 1
         assert len(dashboard["recentCompleted"]) >= 1

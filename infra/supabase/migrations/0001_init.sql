@@ -49,7 +49,7 @@ begin
     'resumes', 'resume_versions', 'ai_chats', 'ai_messages',
     'weekly_plans', 'plan_tasks', 'user_limits',
     'roles', 'permissions', 'user_roles', 'role_permissions', 'settings',
-    'life_goals'
+    'life_goals', 'life_records'
   ] loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('create policy "own_select_%s" on public.%I for select using (auth.uid() = user_id);', t, t);
@@ -85,6 +85,10 @@ values
   ('avatars', 'avatars', false)
 on conflict (id) do nothing;
 
+insert into storage.buckets (id, name, public)
+values ('life-records', 'life-records', false)
+on conflict (id) do nothing;
+
 create policy "projects_owner_all" on storage.objects
   for all using (bucket_id = 'projects' and (storage.foldername(name))[2] = auth.uid()::text)
   with check (bucket_id = 'projects' and (storage.foldername(name))[2] = auth.uid()::text);
@@ -96,6 +100,10 @@ create policy "interviews_owner_all" on storage.objects
 create policy "avatars_owner_all" on storage.objects
   for all using (bucket_id = 'avatars' and (storage.foldername(name))[2] = auth.uid()::text)
   with check (bucket_id = 'avatars' and (storage.foldername(name))[2] = auth.uid()::text);
+
+create policy "life_records_owner_all" on storage.objects
+  for all using (bucket_id = 'life-records' and (storage.foldername(name))[2] = auth.uid()::text)
+  with check (bucket_id = 'life-records' and (storage.foldername(name))[2] = auth.uid()::text);
 
 -- 4. Seed skills
 insert into public.skills (id, name, category, description)

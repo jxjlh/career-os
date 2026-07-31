@@ -1,13 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import Profile
 from app.domains.life.schemas import LifeGoalCreate, LifeGoalUpdate
-from app.domains.life.service import LifeDashboardService, LifeGoalService
+from app.domains.life.service import LifeDashboardService, LifeGoalService, LifeRecordService
 
 router = APIRouter(tags=["life"])
 
@@ -70,3 +70,65 @@ def delete_life_goal(
 ) -> None:
     if not LifeGoalService(db).delete(current_user.id, goal_id):
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Life goal not found"})
+
+
+@router.post("/life/goals/{goal_id}/records", status_code=201)
+async def create_life_record(
+    goal_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    file: Annotated[UploadFile | None, File()] = None,
+    content: Annotated[str | None, Form()] = None,
+    latitude: Annotated[float | None, Form()] = None,
+    longitude: Annotated[float | None, Form()] = None,
+    city: Annotated[str | None, Form()] = None,
+    country: Annotated[str | None, Form()] = None,
+    weather: Annotated[str | None, Form()] = None,
+    altitude: Annotated[float | None, Form()] = None,
+    record_type: Annotated[str, Form()] = "photo",
+) -> dict:
+    record = await LifeRecordService(db).create(
+        current_user.id,
+        goal_id,
+        record_type,
+        file,
+        content,
+        latitude,
+        longitude,
+        city,
+        country,
+        weather,
+        altitude,
+        {},
+    )
+    return {"data": {"id": record.id, "goalId": record.goal_id, "status": "created"}}
+
+
+@router.get("/life/goals/{goal_id}/records")
+def list_life_goal_records(
+    goal_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    records = LifeRecordService(db).list_by_goal(current_user.id, goal_id)
+    if not records and LifeGoalService(db).get(current_user.id, goal_id) is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Life goal not found"})
+    return {"data": records}
+
+
+@router.get("/life/records")
+def life_record_timeline(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return {"data": LifeRecordService(db).timeline(current_user.id)}
+
+
+@router.delete("/life/records/{record_id}", status_code=204)
+def delete_life_record(
+    record_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    if not LifeRecordService(db).delete(current_user.id, record_id):
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Life record not found"})

@@ -1,5 +1,5 @@
 from app.core.repository import BaseRepository
-from app.db.models import LifeGoal, UserLevel
+from app.db.models import LifeGoal, LifeRecord, UserLevel
 
 
 class LifeGoalRepository(BaseRepository[LifeGoal]):
@@ -38,3 +38,24 @@ class UserLevelRepository(BaseRepository[UserLevel]):
         self.db.commit()
         self.db.refresh(level)
         return level
+
+
+class LifeRecordRepository(BaseRepository[LifeRecord]):
+    def __init__(self, db):
+        super().__init__(db, LifeRecord)
+
+    def list_by_goal(self, goal_id: str) -> list[LifeRecord]:
+        return self.db.query(LifeRecord).filter(LifeRecord.goal_id == goal_id).order_by(LifeRecord.created_at.desc()).all()
+
+    def list_by_user(self, user_id: str) -> list[LifeRecord]:
+        return self.db.query(LifeRecord).filter(LifeRecord.user_id == user_id).order_by(LifeRecord.created_at.desc()).all()
+
+    def get_owned(self, user_id: str, record_id: str) -> LifeRecord | None:
+        return self.db.query(LifeRecord).filter(LifeRecord.id == record_id, LifeRecord.user_id == user_id).first()
+
+    def create(self, user_id: str, goal_id: str, **values) -> LifeRecord:
+        record = LifeRecord(user_id=user_id, goal_id=goal_id, **values)
+        self.db.add(record)
+        self.db.commit()
+        self.db.refresh(record)
+        return record

@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 
 export interface LifeGoal {
   id: string;
@@ -36,6 +37,65 @@ export interface LifeDashboard {
 export async function getLifeDashboard(): Promise<LifeDashboard> {
   const res = await apiFetch<{ data: LifeDashboard }>("/life/dashboard");
   return res.data;
+}
+
+export interface LifeRecord {
+  id: string;
+  goalId: string;
+  recordType: string;
+  photoUrl?: string | null;
+  watermarkUrl?: string | null;
+  content?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  city?: string | null;
+  country?: string | null;
+  weather?: string | null;
+  altitude?: number | null;
+  goalTitle?: string | null;
+  createdAt?: string | null;
+}
+
+export async function createLifeRecord(
+  goalId: string,
+  payload: {
+    file: File;
+    content?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    city?: string;
+    country?: string;
+  },
+): Promise<{ id: string; goalId: string; status: string }> {
+  const form = new FormData();
+  form.append("file", payload.file);
+  form.append("record_type", "photo");
+  if (payload.content) form.append("content", payload.content);
+  if (payload.latitude != null) form.append("latitude", String(payload.latitude));
+  if (payload.longitude != null) form.append("longitude", String(payload.longitude));
+  if (payload.city) form.append("city", payload.city);
+  if (payload.country) form.append("country", payload.country);
+  const res = await apiFetch<{ data: { id: string; goalId: string; status: string } }>(
+    `/life/goals/${goalId}/records`,
+    { method: "POST", body: form },
+  );
+  return res.data;
+}
+
+export async function getGoalRecords(goalId: string): Promise<LifeRecord[]> {
+  const res = await apiFetch<{ data: LifeRecord[] }>(`/life/goals/${goalId}/records`);
+  return res.data;
+}
+
+export async function getLifeTimeline(): Promise<LifeRecord[]> {
+  const res = await apiFetch<{ data: LifeRecord[] }>("/life/records");
+  return res.data;
+}
+
+export async function getRecordMediaUrl(path: string): Promise<string | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.storage.from("life-records").createSignedUrl(path, 3600);
+  return data?.signedUrl ?? null;
 }
 
 export function getLevelInfo(level: number, experience: number) {
