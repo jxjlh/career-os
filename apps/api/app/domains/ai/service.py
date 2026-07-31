@@ -7,7 +7,9 @@ from app.core.errors import AppError
 from app.db.models import AIContent, GoalTask
 from app.domains.ai.prompts.bucket_recommendation import BUCKET_RECOMMENDATION_PROMPT
 from app.domains.ai.prompts.growth_plan import GROWTH_PLAN_PROMPT
+from app.domains.ai.prompts.journal import JOURNAL_PROMPT
 from app.domains.ai.prompts.map_insight import MAP_INSIGHT_PROMPT
+from app.domains.ai.prompts.photo_analysis import PHOTO_ANALYSIS_PROMPT
 from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_PROMPT
 from app.domains.ai.prompts.year_summary import YEAR_SUMMARY_PROMPT
 from app.domains.ai.repository import AIContentRepository
@@ -18,6 +20,13 @@ from app.domains.ai.schemas import (
     GenerateTasksResponse,
     GrowthPlanRequest,
     GrowthPlanResponse,
+    JournalRequest,
+    JournalResponse,
+    PhotoAnalysisRequest,
+    PhotoAnalysisResponse,
+    RelatedBucketItem,
+    RelatedGoalItem,
+    SuggestedRecord,
     TravelPlanRequest,
     TravelPlanResponse,
     YearSummaryRequest,
@@ -497,3 +506,340 @@ class MapInsightService:
             "suggestions": ["多拍照记录人生瞬间", "为下一个目标制定计划"],
             "source": "fallback",
         }
+
+
+class PhotoAnalysisService:
+    """基于拍照上下文(GPS/时间/天气/海拔)的场景识别.
+
+    现有 AIProvider 仅支持文本, 因此照片本体不上传, 前端可传 photo_description 辅助理解.
+    AI 不可用或返回非法 JSON 时, 回退为基于上下文规则的场景推断, 保证前端可用.
+    """
+
+    BUCKET_CANDIDATE_LIMIT = 10
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIService(db)
+        self.goals = LifeGoalRepository(db)
+        self.items = BucketItemRepository(db)
+        self.categories = BucketCategoryRepository(db)
+
+    async def analyze(self, user_id: str, payload: PhotoAnalysisRequest) -> PhotoAnalysisResponse:
+        goal = None
+        if payload.goal_id:
+            goal = self.goals.get_owned(user_id, payload.goal_id)
+            if goal is None:
+                raise AppError(code="NOT_FOUND", message="Life goal not found", status=404)
+
+        bucket_candidates = self.items.list_published(limit=self.BUCKET_CANDIDATE_LIMIT)
+        goals_for_match = [g for g in self.goals.list_by_user(user_id) if g.status != "cancelled"][:8]
+
+        context = self._build_context(payload, goal)
+        buckets_text = self._build_buckets(bucket_candidates)
+        goals_text = self._build_goals(goals_for_match)
+
+        prompt = PHOTO_ANALYSIS_PROMPT.format(
+            context=context, buckets=buckets_text, goals=goals_text
+        )
+        input_data = payload.model_dump(exclude_none=True)
+
+        try:
+            _, parsed = await self.ai.generate_content(
+                user_id=user_id,
+                content_type="photo_analysis",
+                input_data=input_data,
+                prompt=prompt,
+            )
+        except AppError:
+            return self._fallback(payload, goal, bucket_candidates)
+
+        response = self._parse(parsed, bucket_candidates, goals_for_match)
+        if response is None:
+            return self._fallback(payload, goal, bucket_candidates)
+        return response
+
+    def _build_context(self, payload: PhotoAnalysisRequest, goal) -> str:
+        """拼接拍摄上下文文本, 供 AI 推断场景."""
+        parts = [
+            f"拍摄时间: {payload.captured_at or '刚刚'}",
+            f"地点: {' · '.join(filter(None, [payload.country, payload.city])) or '未知'}",
+            f"GPS: {self._fmt_gps(payload.latitude, payload.longitude)}",
+            f"天气: {payload.weather or '未知'}",
+            f"温度: {f'{payload.temperature}°C' if payload.temperature is not None else '未知'}",
+            f"海拔: {f'{payload.altitude}m' if payload.altitude is not None else '未知'}",
+        ]
+        if payload.photo_description:
+            parts.append(f"画面描述: {payload.photo_description}")
+        if goal is not None:
+            parts.append(f"关联人生目标: {goal.title} ({goal.category})")
+        return "\n".join(parts)
+
+    @staticmethod
+    def _fmt_gps(lat: float | None, lng: float | None) -> str:
+        if lat is None or lng is None:
+            return "未知"
+        return f"{lat:.4f}, {lng:.4f}"
+
+    def _build_buckets(self, items) -> str:
+        if not items:
+            return "（暂无可选清单）"
+        category_map = {c.id: c.name for c in self.categories.list_all()}
+        lines = []
+        for it in items:
+            cat = category_map.get(it.category_id, "未分类")
+            lines.append(f"- bucket_id={it.id} | {it.title} | 分类={cat} | 国家={it.country or '不限'} | 城市={it.city or '不限'}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _build_goals(goals) -> str:
+        if not goals:
+            return "（暂无人生目标）"
+        lines = []
+        for g in goals:
+            lines.append(f"- goal_id={g.id} | {g.title} | 分类={g.category} | 状态={g.status}")
+        return "\n".join(lines)
+
+    def _parse(self, parsed: dict, bucket_candidates, goals_for_match) -> PhotoAnalysisResponse | None:
+        scene_type = parsed.get("scene_type")
+        if not scene_type:
+            return None
+        bucket_by_id = {it.id: it for it in bucket_candidates}
+        goal_by_id = {g.id: g for g in goals_for_match}
+
+        related_buckets = []
+        for entry in parsed.get("related_buckets") or []:
+            if not isinstance(entry, dict):
+                continue
+            item_id = entry.get("bucket_id") or entry.get("bucketId")
+            item = bucket_by_id.get(item_id)
+            if item is None:
+                continue
+            related_buckets.append(
+                RelatedBucketItem(
+                    **{
+                        "bucketId": item.id,
+                        "title": item.title,
+                        "reason": str(entry.get("reason", ""))[:120],
+                    }
+                )
+            )
+
+        related_goals = []
+        for entry in parsed.get("related_goals") or []:
+            if not isinstance(entry, dict):
+                continue
+            goal_id = entry.get("goal_id") or entry.get("goalId")
+            g = goal_by_id.get(goal_id)
+            if g is None:
+                continue
+            related_goals.append(
+                RelatedGoalItem(
+                    **{
+                        "goalId": g.id,
+                        "title": g.title,
+                        "reason": str(entry.get("reason", ""))[:120],
+                    }
+                )
+            )
+
+        suggested = None
+        raw_suggested = parsed.get("suggested_record")
+        if isinstance(raw_suggested, dict) and raw_suggested.get("content"):
+            suggested = SuggestedRecord(
+                type=str(raw_suggested.get("type", "travel"))[:20],
+                content=str(raw_suggested.get("content", ""))[:500],
+            )
+
+        return PhotoAnalysisResponse(
+            sceneType=str(scene_type)[:40],
+            tags=[str(t) for t in (parsed.get("tags") or [])][:8],
+            description=(parsed.get("description") or "")[:200] or None,
+            relatedBuckets=related_buckets[:3],
+            relatedGoals=related_goals[:3],
+            suggestedRecord=suggested,
+            source="ai",
+        )
+
+    def _fallback(self, payload: PhotoAnalysisRequest, goal, bucket_candidates) -> PhotoAnalysisResponse:
+        """AI 不可用时按上下文规则推断场景, 仍给出可消费的建议."""
+        scene_type = self._infer_scene(payload, goal)
+        tags = self._infer_tags(payload, scene_type)
+        description = self._infer_description(payload, scene_type)
+
+        related_buckets: list[RelatedBucketItem] = []
+        if payload.latitude is not None and payload.longitude is not None:
+            related_buckets = [
+                RelatedBucketItem(**{
+                    "bucketId": it.id,
+                    "title": it.title,
+                    "reason": "附近的人生必做项",
+                })
+                for it in bucket_candidates[:2]
+            ]
+
+        related_goals = []
+        if goal is not None:
+            related_goals = [
+                RelatedGoalItem(**{"goalId": goal.id, "title": goal.title, "reason": "本次拍摄关联的目标"})
+            ]
+
+        return PhotoAnalysisResponse(
+            sceneType=scene_type,
+            tags=tags,
+            description=description,
+            relatedBuckets=related_buckets,
+            relatedGoals=related_goals,
+            suggestedRecord=None,
+            source="fallback",
+        )
+
+    @staticmethod
+    def _infer_scene(payload: PhotoAnalysisRequest, goal) -> str:
+        weather = (payload.weather or "").lower()
+        if goal is not None:
+            if goal.category == "travel":
+                return "travel"
+            if goal.category == "career":
+                return "work"
+            if goal.category == "health":
+                return "sport"
+            if goal.category == "relationship":
+                return "family"
+            if goal.category == "skill":
+                return "learning"
+        if any(w in weather for w in ("雪", "山", "海拔")):
+            return "nature"
+        if payload.city:
+            return "city"
+        return "daily"
+
+    @staticmethod
+    def _infer_tags(payload: PhotoAnalysisRequest, scene_type: str) -> list[str]:
+        base = {
+            "travel": ["旅途", "风景", "记录"],
+            "city": ["城市", "街景", "日常"],
+            "nature": ["自然", "山野", "宁静"],
+            "food": ["美食", "味蕾", "生活"],
+            "sport": ["运动", "活力", "坚持"],
+            "family": ["家人", "陪伴", "温暖"],
+            "work": ["工作", "专注", "成长"],
+            "learning": ["学习", "进步", "积累"],
+            "celebration": ["庆祝", "时刻", "纪念"],
+            "daily": ["日常", "此刻", "记录"],
+            "pet": ["萌宠", "陪伴", "治愈"],
+            "other": ["此刻", "记录"],
+        }
+        tags = list(base.get(scene_type, base["daily"]))
+        if payload.weather:
+            tags.append(payload.weather)
+        return tags[:6]
+
+    @staticmethod
+    def _infer_description(payload: PhotoAnalysisRequest, scene_type: str) -> str:
+        location = " · ".join(filter(None, [payload.country, payload.city])) or "此地"
+        weather = payload.weather or "此刻"
+        templates = {
+            "travel": f"在{location}, {weather}, 留下了旅途中的一个瞬间。",
+            "city": f"穿行于{location}, 记录城市的这一刻。",
+            "nature": f"在{location}, 拥抱自然, {weather}。",
+            "food": f"在{location}, 用一顿美食犒赏自己。",
+            "sport": f"在{location}, 用运动给自己充能。",
+            "family": f"和家人在{location}, {weather}。",
+            "work": f"在{location}, 专注此刻的工作。",
+            "learning": f"在{location}, 又一次专注的学习时光。",
+            "celebration": f"在{location}, 值得纪念的一刻。",
+            "daily": f"{location}的{weather}, 平凡而珍贵的一刻。",
+            "pet": f"在{location}, 与萌宠相伴的一刻。",
+            "other": f"{location}的此刻。",
+        }
+        return templates.get(scene_type, templates["daily"])
+
+
+class JournalService:
+    """根据照片/视频描述 + 上下文生成人生日志.
+
+    AI 不可用或返回非法 JSON 时, 回退为基于素材的模板日志, 保证前端可用.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIService(db)
+        self.goals = LifeGoalRepository(db)
+
+    async def generate(self, user_id: str, payload: JournalRequest) -> JournalResponse:
+        goal = None
+        if payload.goal_id:
+            goal = self.goals.get_owned(user_id, payload.goal_id)
+            if goal is None:
+                raise AppError(code="NOT_FOUND", message="Life goal not found", status=404)
+        if not payload.goal_title and goal is not None:
+            payload = payload.model_copy(update={"goal_title": goal.title})
+
+        context = self._build_context(payload, goal)
+        prompt = JOURNAL_PROMPT.format(context=context)
+        input_data = payload.model_dump(exclude_none=True)
+
+        try:
+            _, parsed = await self.ai.generate_content(
+                user_id=user_id,
+                content_type="journal",
+                input_data=input_data,
+                prompt=prompt,
+            )
+        except AppError:
+            return self._fallback(payload, goal)
+
+        if not parsed.get("body"):
+            return self._fallback(payload, goal)
+        return JournalResponse(
+            title=(parsed.get("title") or "")[:60] or None,
+            body=(parsed.get("body") or "")[:1200] or None,
+            reflection=(parsed.get("reflection") or "")[:200] or None,
+            keywords=[str(k) for k in (parsed.get("keywords") or [])][:8],
+            source="ai",
+        )
+
+    @staticmethod
+    def _build_context(payload: JournalRequest, goal) -> str:
+        media_label = "视频日志" if payload.media_type == "video" else "照片"
+        parts = [
+            f"媒体类型: {media_label}",
+            f"媒体描述: {payload.media_description or '（用户未提供描述）'}",
+            f"地点: {' · '.join(filter(None, [payload.country, payload.city])) or '未知'}",
+            f"天气: {payload.weather or '未知'}",
+            f"温度: {f'{payload.temperature}°C' if payload.temperature is not None else '未知'}",
+            f"海拔: {f'{payload.altitude}m' if payload.altitude is not None else '未知'}",
+            f"拍摄时间: {payload.captured_at or '刚刚'}",
+        ]
+        if goal is not None:
+            parts.append(f"关联人生目标: {goal.title} ({goal.category})")
+        return "\n".join(parts)
+
+    def _fallback(self, payload: JournalRequest, goal) -> JournalResponse:
+        """AI 不可用时按素材拼接模板日志."""
+        location = " · ".join(filter(None, [payload.country, payload.city])) or "此地"
+        weather = payload.weather or "此刻"
+        media_label = "视频" if payload.media_type == "video" else "照片"
+        desc = payload.media_description or "一个值得记录的瞬间"
+        goal_phrase = f"契合「{goal.title}」的" if goal else ""
+
+        title = f"{location}的此刻"
+        body = (
+            f"在{location}, {weather}。我记录下了这{media_label}: {desc}。"
+            f"这是{goal_phrase}人生旅途中的一个片段, 平凡却真实。"
+            f"愿日后翻看时, 仍能记起此刻的温度与心情。"
+        )
+        reflection = f"每一个被记录的瞬间, 都是{goal_phrase or ''}人生的一部分。"
+        keywords = [media_label, location.split(" · ")[-1] if " · " in location else location]
+        if goal:
+            keywords.append(goal.title[:8])
+        if payload.weather:
+            keywords.append(payload.weather)
+
+        return JournalResponse(
+            title=title[:60],
+            body=body[:1200],
+            reflection=reflection[:200],
+            keywords=list(dict.fromkeys(keywords))[:5],
+            source="fallback",
+        )

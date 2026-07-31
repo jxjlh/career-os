@@ -51,6 +51,14 @@ class LifeRecordListItem(BaseModel):
     recordType: str
     photoUrl: str | None = None
     watermarkUrl: str | None = None
+    videoUrl: str | None = None
+    thumbnailUrl: str | None = None
+    durationSeconds: int | None = None
+    sceneType: str | None = None
+    aiTags: list[str] = []
+    aiDescription: str | None = None
+    temperature: float | None = None
+    bucketItemId: str | None = None
     content: str | None = None
     latitude: float | None = None
     longitude: float | None = None
@@ -74,6 +82,14 @@ class LifeRecordDetailResponse(BaseModel):
     recordType: str
     photoUrl: str | None = None
     watermarkUrl: str | None = None
+    videoUrl: str | None = None
+    thumbnailUrl: str | None = None
+    durationSeconds: int | None = None
+    sceneType: str | None = None
+    aiTags: list[str] = []
+    aiDescription: str | None = None
+    temperature: float | None = None
+    bucketItemId: str | None = None
     content: str | None = None
     latitude: float | None = None
     longitude: float | None = None
@@ -84,3 +100,13 @@ class LifeRecordDetailResponse(BaseModel):
     deviceInfo: dict[str, str] = {}
     createdAt: str | None = None
     updatedAt: str | None = None
+
+
+class CheckinStreakResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    currentStreak: int = 0
+    longestStreak: int = 0
+    lastCheckinDate: str | None = None
+    totalCheckins: int = 0
+    checkedInToday: bool = False

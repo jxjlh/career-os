@@ -1,5 +1,5 @@
 from app.core.repository import BaseRepository
-from app.db.models import LifeGoal, LifeMapVisit, LifeRecord, UserLevel
+from app.db.models import CheckinStreak, LifeGoal, LifeMapVisit, LifeRecord, UserLevel
 
 
 class LifeGoalRepository(BaseRepository[LifeGoal]):
@@ -173,3 +173,18 @@ class LifeMapVisitRepository(BaseRepository[LifeMapVisit]):
         self.db.commit()
         self.db.refresh(visit)
         return visit
+
+
+class CheckinStreakRepository(BaseRepository[CheckinStreak]):
+    def __init__(self, db):
+        super().__init__(db, CheckinStreak)
+
+    def get_by_user(self, user_id: str) -> CheckinStreak | None:
+        return self.db.query(CheckinStreak).filter(CheckinStreak.user_id == user_id).first()
+
+    def create(self, user_id: str) -> CheckinStreak:
+        streak = CheckinStreak(user_id=user_id, current_streak=0, longest_streak=0, total_checkins=0)
+        self.db.add(streak)
+        self.db.commit()
+        self.db.refresh(streak)
+        return streak

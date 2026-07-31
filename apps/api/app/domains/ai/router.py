@@ -13,7 +13,11 @@ from app.domains.ai.schemas import (
     GenerateTasksResponse,
     GrowthPlanRequest,
     GrowthPlanResponse,
+    JournalRequest,
+    JournalResponse,
     LifeAssistantResponse,
+    PhotoAnalysisRequest,
+    PhotoAnalysisResponse,
     TravelPlanRequest,
     TravelPlanResponse,
     YearReviewRequest,
@@ -25,7 +29,9 @@ from app.domains.ai.service import (
     BucketRecommendationService,
     GrowthPlanService,
     GrowthTaskGeneratorService,
+    JournalService,
     MapInsightService,
+    PhotoAnalysisService,
     TravelPlanService,
     YearSummaryService,
 )
@@ -114,3 +120,22 @@ async def generate_map_insight(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
     return {"data": await MapInsightService(db).generate(current_user.id)}
+
+
+# ── Sprint 7 Life Camera: AI 场景识别 + AI 日志生成 ──────────────────
+@router.post("/ai/photo-analysis", response_model=PhotoAnalysisResponse)
+async def analyze_photo(
+    payload: PhotoAnalysisRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> PhotoAnalysisResponse:
+    return await PhotoAnalysisService(db).analyze(current_user.id, payload)
+
+
+@router.post("/ai/journal", response_model=JournalResponse)
+async def generate_journal(
+    payload: JournalRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> JournalResponse:
+    return await JournalService(db).generate(current_user.id, payload)

@@ -9,6 +9,7 @@ from app.db.models import Profile
 from app.domains.goals.service import TaskService
 from app.domains.life.schemas import LifeGoalCreate, LifeGoalUpdate
 from app.domains.life.service import (
+    CheckinStreakService,
     LifeDashboardService,
     LifeGoalService,
     LifeMapService,
@@ -128,6 +129,14 @@ async def create_life_record(
     weather: Annotated[str | None, Form()] = None,
     altitude: Annotated[float | None, Form()] = None,
     record_type: Annotated[str, Form()] = "photo",
+    # ── Sprint 7: 视频日志 + AI 场景 ──
+    video: Annotated[UploadFile | None, File()] = None,
+    thumbnail: Annotated[UploadFile | None, File()] = None,
+    duration_seconds: Annotated[int | None, Form()] = None,
+    scene_type: Annotated[str | None, Form()] = None,
+    ai_tags: Annotated[str | None, Form()] = None,
+    temperature: Annotated[float | None, Form()] = None,
+    bucket_item_id: Annotated[str | None, Form()] = None,
 ) -> dict:
     record = await LifeRecordService(db).create(
         current_user.id,
@@ -142,8 +151,31 @@ async def create_life_record(
         weather,
         altitude,
         {},
+        video_file=video,
+        thumbnail=thumbnail,
+        duration_seconds=duration_seconds,
+        scene_type=scene_type,
+        ai_tags=ai_tags,
+        temperature=temperature,
+        bucket_item_id=bucket_item_id,
     )
     return {"data": {"id": record.id, "goalId": record.goal_id, "status": "created"}}
+
+
+@router.get("/life/checkin")
+def get_checkin_streak(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return {"data": CheckinStreakService(db).get(current_user.id)}
+
+
+@router.post("/life/checkin")
+def trigger_checkin(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return {"data": CheckinStreakService(db).checkin(current_user.id)}
 
 
 @router.get("/life/goals/{goal_id}/records")

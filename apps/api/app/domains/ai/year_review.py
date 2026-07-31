@@ -65,6 +65,13 @@ class YearReviewService:
             if record.created_at is not None and record.created_at.year == year
         ]
         cities = {(record.country, record.city) for record in records if record.country or record.city}
+        # Sprint 7 联动: 区分照片/视频, 汇总场景类型, 让年度回顾覆盖年度照片/视频/故事
+        photo_count = sum(1 for r in records if r.record_type == "photo" and r.photo_url)
+        video_count = sum(1 for r in records if r.record_type == "video" and r.video_url)
+        scene_counter: dict[str, int] = {}
+        for r in records:
+            if r.scene_type:
+                scene_counter[r.scene_type] = scene_counter.get(r.scene_type, 0) + 1
         goal_titles = {goal.id: goal.title for goal in self.goals.list_by_user(user_id)}
         memories = []
         for record in sorted(records, key=lambda item: item.created_at, reverse=True)[:5]:
@@ -74,6 +81,8 @@ class YearReviewService:
                     "description": " ".join(filter(None, [record.content, record.city, record.country]))
                     or "记录了一个特别的时刻",
                     "date": record.created_at.date().isoformat() if record.created_at else None,
+                    "media_type": record.record_type,
+                    "thumbnail_url": record.thumbnail_url or record.photo_url,
                 }
             )
 
@@ -111,6 +120,9 @@ class YearReviewService:
             },
             "records": {
                 "count": len(records),
+                "photo_count": photo_count,
+                "video_count": video_count,
+                "scene_stats": scene_counter,
                 "cities_visited": [f"{country or ''} {city or ''}".strip() for country, city in cities if country or city],
                 "memories": memories,
             },

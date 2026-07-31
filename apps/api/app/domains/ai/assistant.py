@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
@@ -27,9 +27,15 @@ class LifeAssistantService:
         self.records = LifeRecordRepository(db)
 
     async def daily(self, user_id: str) -> LifeAssistantResponse:
-        today = date.today()
+        # created_at 以 UTC 写入 (datetime.utcnow), 缓存命中判定须用 UTC 日期, 否则
+        # 00:00~08:00 (本地) 时本地日已翻页而 UTC 仍是昨日, 导致缓存恒失效重复调用 AI.
+        utc_today = datetime.utcnow().date()
         cached = self.ai.repository.get_latest_by_type(user_id, "life_assistant")
-        if cached is not None and cached.created_at is not None and cached.created_at.date() == today:
+        if (
+            cached is not None
+            and cached.created_at is not None
+            and cached.created_at.date() == utc_today
+        ):
             state = self._load_state(user_id)
             return self._build_response(cached.output_json or {}, state)
 

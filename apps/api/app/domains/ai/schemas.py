@@ -171,3 +171,89 @@ class BucketRecommendationResponse(BaseModel):
 
     recommendations: list[BucketRecommendationItem] = []
     source: str = "ai"  # "ai" | "fallback"
+
+
+# ── Sprint 7 Life Camera: AI 场景识别 ────────────────────────────────
+class PhotoAnalysisRequest(BaseModel):
+    """基于上下文(GPS/时间/天气/海拔)的拍照场景识别.
+
+    照片本身不上传到 AI(现有 provider 仅文本), 前端可附 photo_description 帮助 AI 理解画面.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    latitude: float | None = None
+    longitude: float | None = None
+    city: str | None = None
+    country: str | None = None
+    weather: str | None = None
+    temperature: float | None = None
+    altitude: float | None = None
+    captured_at: str | None = Field(default=None, validation_alias=AliasChoices("capturedAt", "captured_at"))
+    photo_description: str | None = Field(
+        default=None, validation_alias=AliasChoices("photoDescription", "photo_description")
+    )
+    goal_id: str | None = Field(default=None, validation_alias=AliasChoices("goalId", "goal_id"))
+
+
+class RelatedBucketItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    bucket_id: str = Field(validation_alias=AliasChoices("bucketId", "bucket_id"))
+    title: str | None = None
+    reason: str = ""
+
+
+class RelatedGoalItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    goal_id: str = Field(validation_alias=AliasChoices("goalId", "goal_id"))
+    title: str | None = None
+    reason: str = ""
+
+
+class SuggestedRecord(BaseModel):
+    type: str = "travel"
+    content: str = ""
+
+
+class PhotoAnalysisResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    sceneType: str | None = None
+    tags: list[str] = []
+    description: str | None = None
+    relatedBuckets: list[RelatedBucketItem] = []
+    relatedGoals: list[RelatedGoalItem] = []
+    suggestedRecord: SuggestedRecord | None = None
+    source: str = "ai"  # "ai" | "fallback"
+
+
+# ── Sprint 7 Life Camera: AI Journal 生成 ────────────────────────────
+class JournalRequest(BaseModel):
+    """根据照片/视频描述 + 上下文生成人生日志."""
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    media_type: str = Field(default="photo", validation_alias=AliasChoices("mediaType", "media_type"))
+    media_description: str = Field(
+        default="", validation_alias=AliasChoices("mediaDescription", "media_description")
+    )
+    city: str | None = None
+    country: str | None = None
+    weather: str | None = None
+    temperature: float | None = None
+    altitude: float | None = None
+    captured_at: str | None = Field(default=None, validation_alias=AliasChoices("capturedAt", "captured_at"))
+    goal_id: str | None = Field(default=None, validation_alias=AliasChoices("goalId", "goal_id"))
+    goal_title: str | None = Field(default=None, validation_alias=AliasChoices("goalTitle", "goal_title"))
+
+
+class JournalResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    title: str | None = None
+    body: str | None = None
+    reflection: str | None = None
+    keywords: list[str] = []
+    source: str = "ai"  # "ai" | "fallback"

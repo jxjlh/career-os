@@ -751,6 +751,17 @@ class LifeRecord(Base):
     country: Mapped[str | None] = mapped_column(String(80))
     weather: Mapped[str | None] = mapped_column(String(120))
     altitude: Mapped[float | None] = mapped_column(Float)
+    # ── Sprint 7 Life Camera: 视频日志 + AI 场景识别 ──
+    video_url: Mapped[str | None] = mapped_column(Text)
+    thumbnail_url: Mapped[str | None] = mapped_column(Text)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    scene_type: Mapped[str | None] = mapped_column(String(40))
+    ai_tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    ai_description: Mapped[str | None] = mapped_column(Text)
+    temperature: Mapped[float | None] = mapped_column(Float)
+    bucket_item_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bucket_items.id", ondelete="SET NULL"), index=True
+    )
     device_info: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
@@ -861,3 +872,22 @@ class LifeMapVisit(Base):
     cover_image: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str | None] = mapped_column(String(40), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class CheckinStreak(Base):
+    """连续打卡: 当天首次记录即 +1, 间隔则重置. 跟踪当前/最长/总打卡."""
+
+    __tablename__ = "checkin_streaks"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_checkin_streaks_user"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE"), index=True, unique=True
+    )
+    current_streak: Mapped[int] = mapped_column(Integer, default=0)
+    longest_streak: Mapped[int] = mapped_column(Integer, default=0)
+    last_checkin_date: Mapped[date | None] = mapped_column(Date)
+    total_checkins: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), onupdate=datetime.utcnow
+    )

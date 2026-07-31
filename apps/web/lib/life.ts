@@ -39,6 +39,11 @@ export async function getLifeDashboard(): Promise<LifeDashboard> {
   return res.data;
 }
 
+export async function getLifeGoals(): Promise<LifeGoal[]> {
+  const res = await apiFetch<{ data: LifeGoal[] }>("/life/goals");
+  return res.data;
+}
+
 export function getLevelInfo(level: number, experience: number) {
   const currentFloor = (level - 1) ** 2 * 100;
   const nextFloor = level ** 2 * 100;
@@ -71,6 +76,15 @@ export interface LifeRecord {
   recordType: string;
   photoUrl?: string | null;
   watermarkUrl?: string | null;
+  // Sprint 7: 视频日志 + AI 场景识别字段
+  videoUrl?: string | null;
+  thumbnailUrl?: string | null;
+  durationSeconds?: number | null;
+  sceneType?: string | null;
+  aiTags?: string[];
+  aiDescription?: string | null;
+  temperature?: number | null;
+  bucketItemId?: string | null;
   content?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -100,6 +114,8 @@ export async function createLifeRecord(
     longitude?: number | null;
     city?: string;
     country?: string;
+    weather?: string;
+    altitude?: number | null;
   },
 ): Promise<{ id: string; goalId: string; status: string }> {
   const form = new FormData();
@@ -110,11 +126,153 @@ export async function createLifeRecord(
   if (payload.longitude != null) form.append("longitude", String(payload.longitude));
   if (payload.city) form.append("city", payload.city);
   if (payload.country) form.append("country", payload.country);
+  if (payload.weather) form.append("weather", payload.weather);
+  if (payload.altitude != null) form.append("altitude", String(payload.altitude));
   const res = await apiFetch<{ data: { id: string; goalId: string; status: string } }>(
     `/life/goals/${goalId}/records`,
     { method: "POST", body: form },
   );
   return res.data;
+}
+
+// ── Sprint 7 Life Camera: 视频日志 + AI 场景记录 ────────────────────
+export interface CreateVideoRecordPayload {
+  video: File;
+  thumbnail?: File | null;
+  content?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  city?: string;
+  country?: string;
+  weather?: string;
+  altitude?: number | null;
+  durationSeconds?: number;
+  sceneType?: string;
+  aiTags?: string[];
+  temperature?: number | null;
+  bucketItemId?: string;
+}
+
+export async function createVideoRecord(
+  goalId: string,
+  payload: CreateVideoRecordPayload,
+): Promise<{ id: string; goalId: string; status: string }> {
+  const form = new FormData();
+  form.append("video", payload.video);
+  form.append("record_type", "video");
+  if (payload.thumbnail) form.append("thumbnail", payload.thumbnail);
+  if (payload.content) form.append("content", payload.content);
+  if (payload.latitude != null) form.append("latitude", String(payload.latitude));
+  if (payload.longitude != null) form.append("longitude", String(payload.longitude));
+  if (payload.city) form.append("city", payload.city);
+  if (payload.country) form.append("country", payload.country);
+  if (payload.weather) form.append("weather", payload.weather);
+  if (payload.altitude != null) form.append("altitude", String(payload.altitude));
+  if (payload.durationSeconds != null) form.append("duration_seconds", String(payload.durationSeconds));
+  if (payload.sceneType) form.append("scene_type", payload.sceneType);
+  if (payload.aiTags?.length) form.append("ai_tags", JSON.stringify(payload.aiTags));
+  if (payload.temperature != null) form.append("temperature", String(payload.temperature));
+  if (payload.bucketItemId) form.append("bucket_item_id", payload.bucketItemId);
+  const res = await apiFetch<{ data: { id: string; goalId: string; status: string } }>(
+    `/life/goals/${goalId}/records`,
+    { method: "POST", body: form },
+  );
+  return res.data;
+}
+
+// ── Sprint 7 Life Camera: 连续打卡 ─────────────────────────────────
+export interface CheckinStreak {
+  currentStreak: number;
+  longestStreak: number;
+  lastCheckinDate?: string | null;
+  totalCheckins: number;
+  checkedInToday: boolean;
+}
+
+export async function getCheckinStreak(): Promise<CheckinStreak> {
+  const res = await apiFetch<{ data: CheckinStreak }>("/life/checkin");
+  return res.data;
+}
+
+export async function triggerCheckin(): Promise<CheckinStreak> {
+  const res = await apiFetch<{ data: CheckinStreak }>("/life/checkin", { method: "POST" });
+  return res.data;
+}
+
+// ── Sprint 7 Life Camera: AI 场景识别 + AI 日志 ─────────────────────
+export interface PhotoAnalysisRequest {
+  latitude?: number | null;
+  longitude?: number | null;
+  city?: string;
+  country?: string;
+  weather?: string;
+  temperature?: number | null;
+  altitude?: number | null;
+  capturedAt?: string;
+  photoDescription?: string;
+  goalId?: string;
+}
+
+export interface RelatedBucketItem {
+  bucketId: string;
+  title?: string | null;
+  reason: string;
+}
+
+export interface RelatedGoalItem {
+  goalId: string;
+  title?: string | null;
+  reason: string;
+}
+
+export interface SuggestedRecord {
+  type: string;
+  content: string;
+}
+
+export interface PhotoAnalysisResponse {
+  sceneType?: string | null;
+  tags: string[];
+  description?: string | null;
+  relatedBuckets: RelatedBucketItem[];
+  relatedGoals: RelatedGoalItem[];
+  suggestedRecord?: SuggestedRecord | null;
+  source: string;
+}
+
+export async function analyzePhoto(payload: PhotoAnalysisRequest): Promise<PhotoAnalysisResponse> {
+  return apiFetch<PhotoAnalysisResponse>("/ai/photo-analysis", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface JournalRequest {
+  mediaType: "photo" | "video";
+  mediaDescription?: string;
+  city?: string;
+  country?: string;
+  weather?: string;
+  temperature?: number | null;
+  altitude?: number | null;
+  capturedAt?: string;
+  goalId?: string;
+  goalTitle?: string;
+}
+
+export interface JournalResponse {
+  title?: string | null;
+  body?: string | null;
+  reflection?: string | null;
+  keywords: string[];
+  source: string;
+}
+
+export async function generateJournal(payload: JournalRequest): Promise<JournalResponse> {
+  return apiFetch<JournalResponse>("/ai/journal", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getGoalRecords(goalId: string): Promise<LifeRecord[]> {

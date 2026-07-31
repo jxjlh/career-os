@@ -1,4 +1,5 @@
-from datetime import date
+import json
+from datetime import date, timedelta
 from itertools import pairwise
 from math import floor, sqrt
 
@@ -8,6 +9,7 @@ from app.core.errors import AppError
 from app.core.storage import upload_object
 from app.db.models import (
     BucketItem,
+    CheckinStreak,
     LifeGoal,
     LifeMapVisit,
     LifeRecord,
@@ -15,6 +17,7 @@ from app.db.models import (
     UserLevel,
 )
 from app.domains.life.repository import (
+    CheckinStreakRepository,
     LifeGoalRepository,
     LifeMapVisitRepository,
     LifeRecordRepository,
@@ -30,6 +33,13 @@ XP_BY_CATEGORY = {
     "relationship": 50,
     "finance": 100,
     "other": 50,
+}
+
+# Sprint 7: 每条记录获得的 XP (按记录类型). 完成记录即成长, 与 LifeGoal XP 并行累加.
+XP_PER_RECORD = {
+    "photo": 10,
+    "video": 20,
+    "text": 5,
 }
 
 ALLOWED_TRANSITIONS = {
@@ -74,6 +84,14 @@ def life_record_dict(record: LifeRecord) -> dict:
         "recordType": record.record_type,
         "photoUrl": record.photo_url,
         "watermarkUrl": record.watermark_url,
+        "videoUrl": record.video_url,
+        "thumbnailUrl": record.thumbnail_url,
+        "durationSeconds": record.duration_seconds,
+        "sceneType": record.scene_type,
+        "aiTags": record.ai_tags or [],
+        "aiDescription": record.ai_description,
+        "temperature": record.temperature,
+        "bucketItemId": record.bucket_item_id,
         "content": record.content,
         "latitude": record.latitude,
         "longitude": record.longitude,
@@ -567,8 +585,9 @@ async def upload_record_file(
     filename: str,
     content: bytes,
     content_type: str,
+    subdir: str = "watermark",
 ) -> str:
-    path = f"{user_id}/{goal_id}/watermark/{filename}"
+    path = f"{user_id}/{goal_id}/{subdir}/{filename}"
     return await upload_object(path, content, content_type)
 
 
@@ -634,24 +653,60 @@ class LifeRecordService:
         weather: str | None,
         altitude: float | None,
         device_info: dict,
+        *,
+        video_file: object | None = None,
+        thumbnail: object | None = None,
+        duration_seconds: int | None = None,
+        scene_type: str | None = None,
+        ai_tags: str | list | None = None,
+        temperature: float | None = None,
+        bucket_item_id: str | None = None,
     ) -> LifeRecord:
         goal = self.goals.get_owned(user_id, goal_id)
         if goal is None:
             raise AppError(code="NOT_FOUND", message="Life goal not found", status=404)
+
         photo_url = None
         watermark_url = None
-        if file is not None:
+        video_url = None
+        thumbnail_url = None
+
+        if record_type == "video" and video_file is not None:
+            vname = video_file.filename or f"{record_type}.mp4"
+            vbytes = await video_file.read()
+            video_url = await upload_record_file(
+                user_id, goal_id, vname, vbytes, video_file.content_type or "video/mp4", subdir="video"
+            )
+            if thumbnail is not None:
+                tname = thumbnail.filename or "thumbnail.jpg"
+                tbytes = await thumbnail.read()
+                thumbnail_url = await upload_record_file(
+                    user_id, goal_id, tname, tbytes, thumbnail.content_type or "image/jpeg", subdir="thumbnail"
+                )
+        elif file is not None:
             filename = file.filename or f"{record_type}.jpg"
             content_bytes = await file.read()
-            path = await upload_record_file(user_id, goal_id, filename, content_bytes, file.content_type or "image/jpeg")
+            path = await upload_record_file(
+                user_id, goal_id, filename, content_bytes, file.content_type or "image/jpeg"
+            )
             photo_url = path
             watermark_url = path
-        return self.repository.create(
+
+        tags = self._parse_tags(ai_tags)
+
+        record = self.repository.create(
             user_id,
             goal_id,
             record_type=record_type,
             photo_url=photo_url,
             watermark_url=watermark_url,
+            video_url=video_url,
+            thumbnail_url=thumbnail_url,
+            duration_seconds=duration_seconds,
+            scene_type=scene_type,
+            ai_tags=tags,
+            temperature=temperature,
+            bucket_item_id=bucket_item_id,
             content=content,
             latitude=latitude,
             longitude=longitude,
@@ -662,6 +717,34 @@ class LifeRecordService:
             device_info=device_info,
         )
 
+        # 联动: 完成记录 → 增加经验值 + 触发当日连续打卡
+        self._award_record_xp(user_id, record_type)
+        CheckinStreakService(self.db).checkin(user_id)
+        return record
+
+    @staticmethod
+    def _parse_tags(ai_tags: str | list | None) -> list[str]:
+        if not ai_tags:
+            return []
+        try:
+            parsed = json.loads(ai_tags) if isinstance(ai_tags, str) else ai_tags
+        except (json.JSONDecodeError, TypeError):
+            return []
+        if isinstance(parsed, list):
+            return [str(t) for t in parsed][:20]
+        return []
+
+    def _award_record_xp(self, user_id: str, record_type: str) -> UserLevel:
+        repository = UserLevelRepository(self.db)
+        level = repository.get_by_user(user_id)
+        if level is None:
+            level = repository.create(user_id)
+        level.experience += XP_PER_RECORD.get(record_type, XP_PER_RECORD["photo"])
+        level.level = floor(sqrt(level.experience / 100)) + 1
+        self.db.commit()
+        self.db.refresh(level)
+        return level
+
     def delete(self, user_id: str, record_id: str) -> bool:
         record = self.repository.get_owned(user_id, record_id)
         if record is None:
@@ -669,3 +752,67 @@ class LifeRecordService:
         self.db.delete(record)
         self.db.commit()
         return True
+
+
+class CheckinStreakService:
+    """连续打卡: 当天首次记录即 +1, 间隔则重置. 跟踪当前/最长/总打卡.
+
+    规则:
+      - 当天已打卡 → 幂等返回, 不重复计数.
+      - 上次打卡 == 昨天 → current_streak + 1 (连续).
+      - 否则 (中断或首次) → current_streak = 1.
+      - longest_streak 取历史最大; total_checkins 每次有效打卡 +1.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.repository = CheckinStreakRepository(db)
+
+    def get(self, user_id: str) -> dict:
+        return self._to_dict(self.repository.get_by_user(user_id), date.today())
+
+    def checkin(self, user_id: str, today: date | None = None) -> dict:
+        today = today or date.today()
+        streak = self.repository.get_by_user(user_id)
+        if streak is None:
+            # 显式初始化: 列 default 在 flush 前为 None, 直接比较会触发 TypeError.
+            streak = CheckinStreak(
+                user_id=user_id,
+                current_streak=0,
+                longest_streak=0,
+                total_checkins=0,
+            )
+            self.db.add(streak)
+
+        if streak.last_checkin_date == today:
+            self.db.commit()  # 当天已打卡: 幂等
+            return self._to_dict(streak, today)
+
+        if streak.last_checkin_date == today - timedelta(days=1):
+            streak.current_streak += 1
+        else:
+            streak.current_streak = 1
+        streak.longest_streak = max(streak.longest_streak or 0, streak.current_streak)
+        streak.last_checkin_date = today
+        streak.total_checkins = (streak.total_checkins or 0) + 1
+        self.db.commit()
+        self.db.refresh(streak)
+        return self._to_dict(streak, today)
+
+    @staticmethod
+    def _to_dict(streak: CheckinStreak | None, today: date) -> dict:
+        if streak is None:
+            return {
+                "currentStreak": 0,
+                "longestStreak": 0,
+                "lastCheckinDate": None,
+                "totalCheckins": 0,
+                "checkedInToday": False,
+            }
+        return {
+            "currentStreak": streak.current_streak,
+            "longestStreak": streak.longest_streak,
+            "lastCheckinDate": streak.last_checkin_date.isoformat() if streak.last_checkin_date else None,
+            "totalCheckins": streak.total_checkins,
+            "checkedInToday": streak.last_checkin_date == today,
+        }
