@@ -14,6 +14,7 @@ from app.domains.auth.router import router as auth_router
 from app.domains.coach.router import router as coach_router
 from app.domains.dashboard.router import router as dashboard_router
 from app.domains.explorer.router import router as explorer_router
+from app.domains.goals.router import router as goals_router
 from app.domains.health.router import router as health_router
 from app.domains.interviews.router import router as interviews_router
 from app.domains.jobs.router import router as jobs_router
@@ -63,6 +64,7 @@ app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(dashboard_router, prefix=settings.api_prefix)
 app.include_router(skills_router, prefix=settings.api_prefix)
 app.include_router(explorer_router, prefix=settings.api_prefix)
+app.include_router(goals_router, prefix=settings.api_prefix)
 app.include_router(planner_router, prefix=settings.api_prefix)
 app.include_router(profile_router, prefix=settings.api_prefix)
 app.include_router(library_router, prefix=settings.api_prefix)
