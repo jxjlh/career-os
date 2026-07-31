@@ -7,6 +7,7 @@ from app.core.errors import AppError
 from app.db.models import AIContent, GoalTask
 from app.domains.ai.prompts.bucket_recommendation import BUCKET_RECOMMENDATION_PROMPT
 from app.domains.ai.prompts.growth_plan import GROWTH_PLAN_PROMPT
+from app.domains.ai.prompts.map_insight import MAP_INSIGHT_PROMPT
 from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_PROMPT
 from app.domains.ai.prompts.year_summary import YEAR_SUMMARY_PROMPT
 from app.domains.ai.repository import AIContentRepository
@@ -423,3 +424,76 @@ class BucketRecommendationService:
             for it in top
         ]
         return BucketRecommendationResponse(recommendations=recs, source="fallback")
+
+
+class MapInsightService:
+    """基于人生地图数据生成 AI 洞察: 足迹总结 + 下一站推荐.
+
+    AI 不可用时回退为基于统计的模板文案, 保证前端可用.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIService(db)
+
+    async def generate(self, user_id: str) -> dict:
+        from app.domains.life.service import LifeMapService
+
+        map_service = LifeMapService(self.db)
+        stats = map_service.statistics(user_id)
+        markers = map_service.get(user_id)["markers"][:10]
+        goals = [
+            m for m in map_service.get(user_id)["markers"] if m["sourceType"] == "goal"
+        ][:5]
+
+        footprints = "\n".join(
+            f"- {m['visitTime'] or m['createdAt'] or ''} | {m['title']} | "
+            f"{m['country'] or ''} {m['city'] or ''}".strip()
+            for m in markers
+        ) or "暂无足迹"
+        goal_lines = "\n".join(f"- {g['title']} ({g['status']})" for g in goals) or "暂无目标"
+
+        prompt = MAP_INSIGHT_PROMPT.format(
+            stats=json.dumps(stats, ensure_ascii=False),
+            footprints=footprints,
+            goals=goal_lines,
+        )
+
+        try:
+            _, parsed = await self.ai.generate_content(
+                user_id=user_id,
+                content_type="map_insight",
+                input_data={"stats": stats},
+                prompt=prompt,
+            )
+        except AppError:
+            return self._fallback(stats, markers)
+
+        return {
+            "summary": parsed.get("summary", ""),
+            "highlights": parsed.get("highlights") or [],
+            "nextStop": parsed.get("next_stop") or {},
+            "suggestions": parsed.get("suggestions") or [],
+            "source": "ai",
+        }
+
+    def _fallback(self, stats: dict, markers: list[dict]) -> dict:
+        cities = stats.get("totalCities", 0)
+        countries = stats.get("totalCountries", 0)
+        distance = stats.get("totalDistance", 0)
+        next_stop = {}
+        # 推荐: 第一个未完成 goal 或热门 bucket
+        pending = next((m for m in markers if m["status"] == "pending"), None)
+        if pending:
+            next_stop = {
+                "title": pending["title"],
+                "reason": "这是你尚未到达的目的地, 值得下一步前往。",
+                "category": pending.get("category") or "travel",
+            }
+        return {
+            "summary": f"今年你的脚步遍布 {cities} 个城市、{countries} 个国家, 旅行里程约 {distance} 公里。",
+            "highlights": ["继续记录每一步成长"],
+            "nextStop": next_stop,
+            "suggestions": ["多拍照记录人生瞬间", "为下一个目标制定计划"],
+            "source": "fallback",
+        }

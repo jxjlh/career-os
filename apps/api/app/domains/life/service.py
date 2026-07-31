@@ -1,13 +1,22 @@
 from datetime import date
+from itertools import pairwise
 from math import floor, sqrt
 
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.core.storage import upload_object
-from app.db.models import LifeGoal, LifeRecord, UserLevel
+from app.db.models import (
+    BucketItem,
+    LifeGoal,
+    LifeMapVisit,
+    LifeRecord,
+    UserBucketItem,
+    UserLevel,
+)
 from app.domains.life.repository import (
     LifeGoalRepository,
+    LifeMapVisitRepository,
     LifeRecordRepository,
     UserLevelRepository,
 )
@@ -194,53 +203,362 @@ class LifeDashboardService:
 
 
 class LifeMapService:
-    """聚合带地理位置的人生记录与目标, 供前端人生地图渲染."""
+    """聚合人生地图: 统一 markers 来自 LifeRecord / LifeGoal / BucketItem / LifeMapVisit.
+
+    支持按 年份/分类/国家/城市 过滤, 计算 统计(城市/国家/公里/Bucket/XP) 与 路线距离.
+    """
 
     def __init__(self, db: Session) -> None:
         self.db = db
         self.records = LifeRecordRepository(db)
         self.goals = LifeGoalRepository(db)
+        self.visits = LifeMapVisitRepository(db)
 
-    def get(self, user_id: str) -> dict:
-        geotagged_records = self.records.list_geotagged(user_id)
-        destinations = self.goals.list_geotagged(user_id)
+    def get(
+        self,
+        user_id: str,
+        *,
+        year: int | None = None,
+        category: str | None = None,
+        country: str | None = None,
+        city: str | None = None,
+    ) -> dict:
+        markers = self._collect_markers(user_id)
+        markers = self._filter(markers, year=year, category=category, country=country, city=city)
+        markers.sort(key=lambda m: (m["visitTime"] or m["createdAt"] or ""), reverse=True)
 
-        # 按 (country, city) 聚合城市; records 已按 created_at desc, 首个即该城市最新记录
-        cities: dict[tuple[str | None, str | None], dict] = {}
-        for record in geotagged_records:
-            city_label = record.city or "未知城市"
-            key = (record.country, city_label)
+        # 城市聚合 (用于城市列表)
+        cities: dict[tuple, dict] = {}
+        for m in markers:
+            key = (m["country"], m["city"])
             entry = cities.setdefault(
                 key,
                 {
-                    "city": city_label,
-                    "country": record.country,
-                    "latitude": record.latitude,
-                    "longitude": record.longitude,
-                    "recordCount": 0,
-                    "latestRecordId": None,
-                    "latestContent": None,
+                    "city": m["city"] or "未知城市",
+                    "country": m["country"],
+                    "latitude": m["latitude"],
+                    "longitude": m["longitude"],
+                    "markerCount": 0,
+                    "latestTitle": None,
                 },
             )
-            entry["recordCount"] += 1
-            if entry["latestRecordId"] is None:
-                entry["latestRecordId"] = record.id
-                entry["latestContent"] = record.content
-
-        cities_list = sorted(cities.values(), key=lambda c: c["recordCount"], reverse=True)
-        countries = {c["country"] for c in cities_list if c["country"]}
+            entry["markerCount"] += 1
+            if entry["latestTitle"] is None:
+                entry["latestTitle"] = m["title"]
 
         return {
-            "summary": {
-                "totalRecords": len(geotagged_records),
-                "totalCities": len(cities_list),
-                "totalCountries": len(countries),
-                "totalDestinations": len(destinations),
-            },
-            "cities": cities_list,
-            "records": [life_record_dict(record) for record in geotagged_records],
-            "destinations": [life_goal_dict(goal) for goal in destinations],
+            "markers": markers,
+            "cities": sorted(cities.values(), key=lambda c: c["markerCount"], reverse=True),
         }
+
+    def statistics(self, user_id: str) -> dict:
+        markers = self._collect_markers(user_id)
+        countries = {m["country"] for m in markers if m["country"]}
+        city_keys = {(m["country"], m["city"]) for m in markers if m["city"]}
+        bucket_completed = sum(1 for m in markers if m["sourceType"] == "bucket" and m["status"] == "completed")
+        records_count = sum(1 for m in markers if m["sourceType"] == "record")
+        goals_count = sum(1 for m in markers if m["sourceType"] == "goal")
+
+        # 按时间升序计算旅行距离 (haversine)
+        ordered = sorted(markers, key=lambda m: (m["visitTime"] or m["createdAt"] or ""))
+        distance_km = 0.0
+        for prev, cur in pairwise(ordered):
+            if prev["latitude"] is None or cur["latitude"] is None:
+                continue
+            distance_km += _haversine_km(
+                prev["latitude"], prev["longitude"], cur["latitude"], cur["longitude"]
+            )
+
+        level = UserLevelRepository(self.db).get_by_user(user_id)
+        experience = level.experience if level else 0
+        level_num = level.level if level else 1
+
+        return {
+            "totalMarkers": len(markers),
+            "totalCities": len(city_keys),
+            "totalCountries": len(countries),
+            "totalDistance": round(distance_km, 1),
+            "bucketCompleted": bucket_completed,
+            "totalRecords": records_count,
+            "totalGoals": goals_count,
+            "experience": experience,
+            "level": level_num,
+        }
+
+    def get_detail(self, user_id: str, marker_id: str) -> dict | None:
+        """marker_id 形如 record-xxx / goal-xxx / bucket-xxx / visit-xxx."""
+        source_type, source_id = _parse_marker_id(marker_id)
+        if source_type == "record":
+            row = self.records.get_by_id_with_goal(user_id, source_id)
+            if row is None:
+                return None
+            record, goal_title = row
+            return {**life_record_dict(record), "goalTitle": goal_title, "markerType": "record"}
+        if source_type == "goal":
+            goal = self.goals.get_owned(user_id, source_id)
+            return {**life_goal_dict(goal), "markerType": "goal"} if goal else None
+        if source_type == "bucket":
+            return self._bucket_detail(user_id, source_id)
+        if source_type == "visit":
+            visit = self.visits.get_owned(user_id, source_id)
+            return _visit_dict(visit) if visit else None
+        return None
+
+    # ── 内部: marker 聚合 ──────────────────────────────────────────
+    def _collect_markers(self, user_id: str) -> list[dict]:
+        markers: list[dict] = []
+
+        # 1. LifeRecord → 绿色 (已完成的人生瞬间)
+        for record in self.records.list_geotagged(user_id):
+            markers.append(
+                {
+                    "id": f"record-{record.id}",
+                    "sourceType": "record",
+                    "sourceId": record.id,
+                    "title": (record.content or "人生瞬间")[:60],
+                    "subtitle": " · ".join(filter(None, [record.country, record.city])),
+                    "coverImage": record.photo_url,
+                    "latitude": record.latitude,
+                    "longitude": record.longitude,
+                    "country": record.country,
+                    "province": None,
+                    "city": record.city,
+                    "address": None,
+                    "visitTime": record.created_at.isoformat() if record.created_at else None,
+                    "createdAt": record.created_at.isoformat() if record.created_at else None,
+                    "photosCount": 1 if record.photo_url else 0,
+                    "videosCount": 0,
+                    "status": "completed",
+                    "category": "record",
+                    "lifeGoalId": record.goal_id,
+                    "lifeRecordId": record.id,
+                    "bucketItemId": None,
+                    "weather": record.weather,
+                    "temperature": None,
+                }
+            )
+
+        # 2. LifeGoal → 按状态着色
+        for goal in self.goals.list_geotagged(user_id):
+            markers.append(
+                {
+                    "id": f"goal-{goal.id}",
+                    "sourceType": "goal",
+                    "sourceId": goal.id,
+                    "title": goal.title,
+                    "subtitle": goal.location,
+                    "coverImage": goal.cover_image,
+                    "latitude": goal.latitude,
+                    "longitude": goal.longitude,
+                    "country": None,
+                    "province": None,
+                    "city": None,
+                    "address": goal.location,
+                    "visitTime": goal.target_date.isoformat() if goal.target_date else None,
+                    "createdAt": goal.created_at.isoformat() if goal.created_at else None,
+                    "photosCount": 0,
+                    "videosCount": 0,
+                    "status": goal.status,
+                    "category": goal.category,
+                    "lifeGoalId": goal.id,
+                    "lifeRecordId": None,
+                    "bucketItemId": None,
+                    "weather": None,
+                    "temperature": None,
+                }
+            )
+
+        # 3. BucketItem (用户已加入/已完成) → 按完成状态着色
+        markers.extend(self._bucket_markers(user_id))
+
+        # 4. LifeMapVisit → 绿色 (显式访问点)
+        for visit in self.visits.list_geotagged(user_id):
+            markers.append(_visit_marker(visit))
+
+        return markers
+
+    def _bucket_markers(self, user_id: str) -> list[dict]:
+        rows = (
+            self.db.query(BucketItem, UserBucketItem)
+            .outerjoin(
+                UserBucketItem,
+                (UserBucketItem.bucket_item_id == BucketItem.id)
+                & (UserBucketItem.user_id == user_id),
+            )
+            .filter(
+                BucketItem.latitude.is_not(None),
+                BucketItem.longitude.is_not(None),
+                BucketItem.status == "published",
+            )
+            .all()
+        )
+        markers = []
+        for item, ub in rows:
+            status = "pending"  # 未加入 = 灰色
+            if ub is not None:
+                status = "completed" if ub.completed else "in_progress"
+            markers.append(
+                {
+                    "id": f"bucket-{item.id}",
+                    "sourceType": "bucket",
+                    "sourceId": item.id,
+                    "title": item.title,
+                    "subtitle": " · ".join(filter(None, [item.country, item.city])),
+                    "coverImage": item.cover_image,
+                    "latitude": item.latitude,
+                    "longitude": item.longitude,
+                    "country": item.country,
+                    "province": None,
+                    "city": item.city,
+                    "address": item.location,
+                    "visitTime": ub.completed_at.isoformat() if ub and ub.completed_at else None,
+                    "createdAt": item.created_at.isoformat() if item.created_at else None,
+                    "photosCount": 0,
+                    "videosCount": 0,
+                    "status": status,
+                    "category": "bucket",
+                    "lifeGoalId": ub.life_goal_id if ub else None,
+                    "lifeRecordId": None,
+                    "bucketItemId": item.id,
+                    "weather": None,
+                    "temperature": None,
+                }
+            )
+        return markers
+
+    def _bucket_detail(self, user_id: str, item_id: str) -> dict | None:
+        row = (
+            self.db.query(BucketItem, UserBucketItem)
+            .outerjoin(
+                UserBucketItem,
+                (UserBucketItem.bucket_item_id == BucketItem.id)
+                & (UserBucketItem.user_id == user_id),
+            )
+            .filter(BucketItem.id == item_id)
+            .first()
+        )
+        if row is None:
+            return None
+        item, ub = row
+        return {
+            "markerType": "bucket",
+            "id": item.id,
+            "title": item.title,
+            "subtitle": item.subtitle,
+            "description": item.description,
+            "coverImage": item.cover_image,
+            "latitude": item.latitude,
+            "longitude": item.longitude,
+            "country": item.country,
+            "city": item.city,
+            "address": item.location,
+            "difficulty": item.difficulty,
+            "estimatedCost": item.estimated_cost,
+            "bestSeason": item.best_season,
+            "tags": item.tags,
+            "userState": {
+                "joined": ub is not None,
+                "completed": ub.completed if ub else False,
+                "favorite": ub.favorite if ub else False,
+                "lifeGoalId": ub.life_goal_id if ub else None,
+            }
+            if ub
+            else None,
+        }
+
+    @staticmethod
+    def _filter(
+        markers: list[dict],
+        *,
+        year: int | None,
+        category: str | None,
+        country: str | None,
+        city: str | None,
+    ) -> list[dict]:
+        result = markers
+        if year is not None:
+            result = [m for m in result if (m["visitTime"] or m["createdAt"] or "").startswith(str(year))]
+        if category:
+            cat = category.lower()
+            result = [m for m in result if (m["category"] or "").lower() == cat or m["sourceType"] == cat]
+        if country:
+            result = [m for m in result if (m["country"] or "") == country]
+        if city:
+            result = [m for m in result if (m["city"] or "") == city]
+        return result
+
+
+def _parse_marker_id(marker_id: str) -> tuple[str, str]:
+    """拆分 record-xxx / goal-xxx / bucket-xxx / visit-xxx."""
+    if "-" not in marker_id:
+        return "", marker_id
+    prefix, _, rest = marker_id.partition("-")
+    return prefix, rest
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """两点球面距离 (km), 用于旅行里程统计."""
+    from math import asin, cos, radians, sin, sqrt
+
+    r = 6371.0
+    dlat = radians(lat2 - lat1)
+    dlng = radians(lng2 - lng1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
+    return 2 * r * asin(sqrt(a))
+
+
+def _visit_marker(visit: LifeMapVisit) -> dict:
+    return {
+        "id": f"visit-{visit.id}",
+        "sourceType": "visit",
+        "sourceId": visit.id,
+        "title": visit.title or "访问点",
+        "subtitle": " · ".join(filter(None, [visit.country, visit.city])),
+        "coverImage": visit.cover_image,
+        "latitude": visit.latitude,
+        "longitude": visit.longitude,
+        "country": visit.country,
+        "province": visit.province,
+        "city": visit.city,
+        "address": visit.address,
+        "visitTime": visit.visit_time.isoformat() if visit.visit_time else None,
+        "createdAt": visit.created_at.isoformat() if visit.created_at else None,
+        "photosCount": visit.photos_count,
+        "videosCount": visit.videos_count,
+        "status": "completed",
+        "category": visit.category,
+        "lifeGoalId": visit.life_goal_id,
+        "lifeRecordId": visit.life_record_id,
+        "bucketItemId": visit.bucket_item_id,
+        "weather": visit.weather,
+        "temperature": visit.temperature,
+    }
+
+
+def _visit_dict(visit: LifeMapVisit) -> dict:
+    return {
+        "markerType": "visit",
+        "id": visit.id,
+        "title": visit.title or "访问点",
+        "latitude": visit.latitude,
+        "longitude": visit.longitude,
+        "country": visit.country,
+        "province": visit.province,
+        "city": visit.city,
+        "district": visit.district,
+        "address": visit.address,
+        "visitTime": visit.visit_time.isoformat() if visit.visit_time else None,
+        "photosCount": visit.photos_count,
+        "videosCount": visit.videos_count,
+        "weather": visit.weather,
+        "temperature": visit.temperature,
+        "coverImage": visit.cover_image,
+        "category": visit.category,
+        "lifeGoalId": visit.life_goal_id,
+        "lifeRecordId": visit.life_record_id,
+        "bucketItemId": visit.bucket_item_id,
+        "createdAt": visit.created_at.isoformat() if visit.created_at else None,
+    }
 
 
 async def upload_record_file(

@@ -830,3 +830,34 @@ class UserBucketItem(Base):
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class LifeMapVisit(Base):
+    """人生地图访问点: 可显式创建, 也可关联 LifeGoal / LifeRecord / BucketItem.
+
+    地图服务会聚合 visits + 带坐标的 records/goals/bucket 统一渲染.
+    """
+
+    __tablename__ = "life_map_visits"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    life_goal_id: Mapped[str | None] = mapped_column(ForeignKey("life_goals.id", ondelete="SET NULL"), index=True)
+    life_record_id: Mapped[str | None] = mapped_column(ForeignKey("life_records.id", ondelete="SET NULL"), index=True)
+    bucket_item_id: Mapped[str | None] = mapped_column(ForeignKey("bucket_items.id", ondelete="SET NULL"), index=True)
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    country: Mapped[str | None] = mapped_column(String(80), index=True)
+    province: Mapped[str | None] = mapped_column(String(120))
+    city: Mapped[str | None] = mapped_column(String(120), index=True)
+    district: Mapped[str | None] = mapped_column(String(120))
+    address: Mapped[str | None] = mapped_column(String(300))
+    title: Mapped[str | None] = mapped_column(String(200))
+    visit_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    photos_count: Mapped[int] = mapped_column(Integer, default=0)
+    videos_count: Mapped[int] = mapped_column(Integer, default=0)
+    weather: Mapped[str | None] = mapped_column(String(120))
+    temperature: Mapped[float | None] = mapped_column(Float)
+    cover_image: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(String(40), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

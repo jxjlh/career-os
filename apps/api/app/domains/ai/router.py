@@ -25,6 +25,7 @@ from app.domains.ai.service import (
     BucketRecommendationService,
     GrowthPlanService,
     GrowthTaskGeneratorService,
+    MapInsightService,
     TravelPlanService,
     YearSummaryService,
 )
@@ -105,3 +106,11 @@ async def recommend_bucket_items(
     db: Annotated[Session, Depends(get_db)],
 ) -> BucketRecommendationResponse:
     return await BucketRecommendationService(db).recommend(current_user.id, payload)
+
+
+@router.post("/ai/map-insight")
+async def generate_map_insight(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return {"data": await MapInsightService(db).generate(current_user.id)}

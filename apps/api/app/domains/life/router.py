@@ -30,8 +30,36 @@ def life_dashboard(
 def life_map(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    year: Annotated[int | None, Query()] = None,
+    category: Annotated[str | None, Query(max_length=40)] = None,
+    country: Annotated[str | None, Query(max_length=80)] = None,
+    city: Annotated[str | None, Query(max_length=120)] = None,
 ) -> dict:
-    return {"data": LifeMapService(db).get(current_user.id)}
+    return {
+        "data": LifeMapService(db).get(
+            current_user.id, year=year, category=category, country=country, city=city
+        )
+    }
+
+
+@router.get("/life/map/statistics")
+def life_map_statistics(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return {"data": LifeMapService(db).statistics(current_user.id)}
+
+
+@router.get("/life/map/{marker_id}")
+def life_map_detail(
+    marker_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    result = LifeMapService(db).get_detail(current_user.id, marker_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Map marker not found"})
+    return {"data": result}
 
 
 @router.get("/life/goals")

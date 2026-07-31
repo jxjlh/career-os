@@ -1,30 +1,46 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 
 import L from "leaflet";
-import { useEffect } from "react";
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import "leaflet.markercluster";
+import { useEffect, useMemo } from "react";
+import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
 
-import type { LifeGoal, LifeRecord } from "@/lib/life";
+import type { MapMarker } from "@/lib/life-map";
+import { markerColor, markerIcon } from "@/lib/life-map";
 
-// 蓝色小圆点: 标记人生瞬间(带坐标的记录). 使用 divIcon 避免默认图标的资源路径问题.
-const recordIcon = L.divIcon({
-  className: "life-map-record-marker",
-  html: `<div style="width:14px;height:14px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);border:2px solid #ffffff;box-shadow:0 0 0 3px rgba(59,130,246,0.25),0 2px 6px rgba(0,0,0,0.3);"></div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-  popupAnchor: [0, -9],
-});
+// CARTO 暗色/亮色瓦片: 免费无需 API Key, 视觉高级
+const TILES = {
+  dark: {
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+  light: {
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+};
 
-// 琥珀色图钉: 标记人生目标目的地(带坐标的目标).
-const destinationIcon = L.divIcon({
-  className: "life-map-destination-marker",
-  html: `<div style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;font-size:22px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.45));">📍</div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 30],
-  popupAnchor: [0, -28],
-});
+function makeIcon(marker: MapMarker) {
+  const color = markerColor(marker.status, marker.sourceType);
+  const emoji = markerIcon(marker.sourceType);
+  return L.divIcon({
+    className: "life-map-marker",
+    html: `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:34px;height:34px;">
+      <div style="width:30px;height:30px;border-radius:50% 50% 50% 0;background:${color};border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:14px;transform:rotate(-45deg);">
+        <span style="transform:rotate(45deg);">${emoji}</span>
+      </div>
+    </div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 32],
+    popupAnchor: [0, -30],
+  });
+}
 
 function formatDate(value?: string | null): string {
   if (!value) return "";
@@ -33,7 +49,7 @@ function formatDate(value?: string | null): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// 根据全部标记自适应视野. 空数据时回到世界视图.
+// 自适应视野: 所有 marker 居中显示
 function FitBounds({ points }: { points: Array<[number, number]> }) {
   const map = useMap();
   useEffect(() => {
@@ -51,20 +67,72 @@ function FitBounds({ points }: { points: Array<[number, number]> }) {
   return null;
 }
 
-interface LifeMapViewProps {
-  records: LifeRecord[];
-  destinations: LifeGoal[];
+// 聚合图层: 通过 leaflet.markercluster 把邻近 marker 合并显示
+function ClusterLayer({ markers }: { markers: MapMarker[] }) {
+  const map = useMap();
+  useEffect(() => {
+    const cluster = L.markerClusterGroup({
+      showCoverageOnHover: false,
+      maxClusterRadius: 50,
+      iconCreateFunction: (c: { getChildCount: () => number }) =>
+        L.divIcon({
+          html: `<div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#6366F1,#8B5CF6);border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;">${c.getChildCount()}</div>`,
+          className: "life-map-cluster",
+          iconSize: [40, 40],
+        }),
+    });
+    for (const m of markers) {
+      if (m.latitude == null || m.longitude == null) continue;
+      const marker = L.marker([m.latitude, m.longitude], { icon: makeIcon(m) });
+      marker.bindPopup(
+        `<div style="min-width:180px;">
+          <p style="font-size:13px;font-weight:600;margin:0 0 4px;">${m.title}</p>
+          <p style="font-size:11px;color:#888;margin:0 0 2px;">${m.subtitle || ""}</p>
+          <p style="font-size:11px;color:#888;margin:0 0 2px;">${formatDate(m.visitTime || m.createdAt)}</p>
+          <p style="font-size:11px;color:#888;margin:0;">📸 ${m.photosCount} · 🎥 ${m.videosCount}</p>
+        </div>`,
+      );
+      cluster.addLayer(marker);
+    }
+    map.addLayer(cluster);
+    return () => {
+      map.removeLayer(cluster);
+    };
+  }, [map, markers]);
+  return null;
 }
 
-export function LifeMapView({ records, destinations }: LifeMapViewProps) {
-  const points: Array<[number, number]> = [
-    ...records
-      .filter((r) => r.latitude != null && r.longitude != null)
-      .map((r) => [r.latitude as number, r.longitude as number] as [number, number]),
-    ...destinations
-      .filter((g) => g.latitude != null && g.longitude != null)
-      .map((g) => [g.latitude as number, g.longitude as number] as [number, number]),
-  ];
+interface LifeMapViewProps {
+  markers: MapMarker[];
+  theme: "dark" | "light";
+  showPolyline?: boolean;
+  useCluster?: boolean;
+}
+
+export function LifeMapView({
+  markers,
+  theme,
+  showPolyline = true,
+  useCluster = true,
+}: LifeMapViewProps) {
+  const tiles = TILES[theme];
+  const points = useMemo(
+    () =>
+      markers
+        .filter((m) => m.latitude != null && m.longitude != null)
+        .map((m) => [m.latitude as number, m.longitude as number] as [number, number]),
+    [markers],
+  );
+
+  // Polyline: 按时间升序连接, 展示旅行路线
+  const routePoints = useMemo(() => {
+    return [...markers]
+      .filter((m) => m.latitude != null && m.longitude != null)
+      .sort((a, b) => (a.visitTime || a.createdAt || "").localeCompare(b.visitTime || b.createdAt || ""))
+      .map((m) => [m.latitude as number, m.longitude as number] as [number, number]);
+  }, [markers]);
+
+  const hasRoute = showPolyline && routePoints.length > 1;
 
   return (
     <MapContainer
@@ -72,66 +140,50 @@ export function LifeMapView({ records, destinations }: LifeMapViewProps) {
       zoom={2}
       minZoom={2}
       scrollWheelZoom
-      style={{ height: "100%", width: "100%", background: "#0b1220" }}
+      style={{ height: "100%", width: "100%", background: theme === "dark" ? "#0b1220" : "#e5e7eb" }}
       worldCopyJump
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      <TileLayer url={tiles.url} attribution={tiles.attribution} />
       <FitBounds points={points} />
 
-      {records
-        .filter((r) => r.latitude != null && r.longitude != null)
-        .map((record) => (
-          <Marker
-            key={`record-${record.id}`}
-            position={[record.latitude as number, record.longitude as number]}
-            icon={recordIcon}
-          >
-            <Popup>
-              <div className="min-w-[180px] space-y-1">
-                {record.photoUrl ? (
-                  <p className="text-[11px] text-muted">📸 人生瞬间</p>
-                ) : (
-                  <p className="text-[11px] text-muted">✨ 人生瞬间</p>
-                )}
-                <p className="text-[13px] font-medium leading-snug text-foreground">
-                  {record.content || "无内容"}
-                </p>
-                {(record.city || record.country) && (
-                  <p className="text-[11px] text-muted">
-                    {[record.country, record.city].filter(Boolean).join(" · ")}
-                  </p>
-                )}
-                {record.createdAt && (
-                  <p className="text-[11px] text-muted">{formatDate(record.createdAt)}</p>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+      {hasRoute && (
+        <Polyline
+          positions={routePoints}
+          pathOptions={{
+            color: theme === "dark" ? "#8B5CF6" : "#6366F1",
+            weight: 2,
+            opacity: 0.6,
+            dashArray: "6 8",
+          }}
+        />
+      )}
 
-      {destinations
-        .filter((g) => g.latitude != null && g.longitude != null)
-        .map((goal) => (
-          <Marker
-            key={`goal-${goal.id}`}
-            position={[goal.latitude as number, goal.longitude as number]}
-            icon={destinationIcon}
-          >
-            <Popup>
-              <div className="min-w-[180px] space-y-1">
-                <p className="text-[11px] text-muted">🎯 目的地</p>
-                <p className="text-[13px] font-medium leading-snug text-foreground">{goal.title}</p>
-                {goal.location && <p className="text-[11px] text-muted">{goal.location}</p>}
-                {goal.targetDate && (
-                  <p className="text-[11px] text-muted">目标日期 {formatDate(goal.targetDate)}</p>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+      {useCluster ? (
+        <ClusterLayer markers={markers} />
+      ) : (
+        markers
+          .filter((m) => m.latitude != null && m.longitude != null)
+          .map((m) => (
+            <Marker
+              key={m.id}
+              position={[m.latitude as number, m.longitude as number]}
+              icon={makeIcon(m)}
+            >
+              <Popup>
+                <div className="min-w-[180px] space-y-1">
+                  <p className="text-[13px] font-semibold leading-snug">{m.title}</p>
+                  {m.subtitle && <p className="text-[11px] text-muted">{m.subtitle}</p>}
+                  {(m.visitTime || m.createdAt) && (
+                    <p className="text-[11px] text-muted">{formatDate(m.visitTime || m.createdAt)}</p>
+                  )}
+                  <p className="text-[11px] text-muted">
+                    📸 {m.photosCount} · 🎥 {m.videosCount}
+                  </p>
+                </div>
+              </Popup>
+            </Marker>
+          ))
+      )}
     </MapContainer>
   );
 }

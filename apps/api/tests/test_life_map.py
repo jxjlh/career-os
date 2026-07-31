@@ -1,10 +1,10 @@
-"""GET /life/map: 聚合带经纬度的人生记录与目标目的地.
+"""GET /life/map: 聚合统一 markers (Record/Goal/Bucket/Visit) + 统计 + 详情 + 过滤.
 
-覆盖: 仅返回带坐标记录、城市聚合 recordCount、目标目的地筛选、汇总统计、用户隔离.
+覆盖: marker 聚合与着色、城市聚合、过滤(年份/国家/城市)、统计(城市/国家/公里/Bucket/XP)、
+marker 详情、用户隔离、空地图(仅种子 Bucket).
 
-测试隔离: 测试库为持久化 SQLite 文件, 带坐标记录会跨用例/跨运行累积. 每个用例在运行时
-生成一个全新 UUID 作为 X-Dev-User-Id (get_current_user 会按需自动创建 Profile),
-保证该用户此前无任何记录与目标, 从而与其它测试文件及历史运行完全隔离.
+测试隔离: 每个用例生成全新 X-Dev-User-Id, 保证零历史记录/目标. Bucket 种子为全局目录数据,
+所有用户共享(未加入=灰色 pending), 属预期行为.
 """
 
 import uuid
@@ -15,14 +15,15 @@ from app.main import app
 
 
 def _fresh_headers() -> dict[str, str]:
-    """每次调用返回一个全新用户的请求头, 确保零历史数据."""
     return {"Authorization": "Bearer dev", "X-Dev-User-Id": str(uuid.uuid4())}
 
 
 def _create_goal(client, headers, **extra) -> str:
     payload = {"title": "环游日本", "category": "travel"}
     payload.update(extra)
-    resp = client.post("/api/v1/life/goals", headers={**headers, "Content-Type": "application/json"}, json=payload)
+    resp = client.post(
+        "/api/v1/life/goals", headers={**headers, "Content-Type": "application/json"}, json=payload
+    )
     return resp.json()["data"]["id"]
 
 
@@ -33,89 +34,167 @@ def _create_record(client, goal_id, headers, **fields) -> str:
     return resp.json()["data"]["id"]
 
 
-def test_life_map_aggregates_geotagged_records_and_destinations() -> None:
+def _record_markers(markers) -> list:
+    return [m for m in markers if m["sourceType"] == "record"]
+
+
+def _goal_markers(markers) -> list:
+    return [m for m in markers if m["sourceType"] == "goal"]
+
+
+def test_life_map_aggregates_markers_from_records_and_goals() -> None:
     with TestClient(app) as client:
         headers = _fresh_headers()
         goal_id = _create_goal(
-            client,
-            headers,
-            location="东京",
-            latitude=35.68,
-            longitude=139.69,
+            client, headers, location="东京", latitude=35.68, longitude=139.69
         )
-        # 东京 2 条带坐标
         _create_record(client, goal_id, headers, content="东京塔夜景", latitude=35.66, longitude=139.74, city="Tokyo", country="Japan")
         _create_record(client, goal_id, headers, content="浅草寺祈福", latitude=35.71, longitude=139.79, city="Tokyo", country="Japan")
-        # 京都 1 条带坐标
         _create_record(client, goal_id, headers, content="伏见稻荷", latitude=34.97, longitude=135.77, city="Kyoto", country="Japan")
-        # 无坐标记录: 不应出现在地图
+        # 无坐标记录不应出现在地图
         _create_record(client, goal_id, headers, content="某处记录", city="拉萨")
-        # 另一个无坐标目标: 不应作为目的地
+        # 无坐标目标不作为目的地
         _create_goal(client, headers, title="读书目标", category="skill")
 
         resp = client.get("/api/v1/life/map", headers=headers)
         assert resp.status_code == 200
         body = resp.json()["data"]
+        markers = body["markers"]
 
-        # 仅 3 条带坐标记录
-        assert body["summary"]["totalRecords"] == 3
-        # 2 个城市
-        assert body["summary"]["totalCities"] == 2
-        # 1 个国家
-        assert body["summary"]["totalCountries"] == 1
-        # 1 个带坐标目标目的地
-        assert body["summary"]["totalDestinations"] == 1
+        # 3 条带坐标 record markers + 1 条带坐标 goal marker
+        rec_markers = _record_markers(markers)
+        assert len(rec_markers) == 3
+        goal_markers = _goal_markers(markers)
+        assert len(goal_markers) == 1
+        assert goal_markers[0]["title"] == "环游日本"
+        assert goal_markers[0]["latitude"] == 35.68
 
-        # 城市按 recordCount 降序: Tokyo(2) 在前
+        # record marker 状态为 completed (绿色)
+        assert all(m["status"] == "completed" for m in rec_markers)
+        # 无坐标记录被过滤
+        assert all(m.get("city") != "拉萨" for m in rec_markers)
+
+        # 城市聚合: Tokyo(2) > Kyoto(1)
         cities = body["cities"]
-        assert cities[0]["city"] == "Tokyo"
-        assert cities[0]["recordCount"] == 2
-        assert cities[1]["city"] == "Kyoto"
-        assert cities[1]["recordCount"] == 1
-        # 城市携带坐标与最新记录信息
-        assert cities[0]["latitude"] is not None
-        assert cities[0]["latestRecordId"] is not None
-
-        # 记录均带坐标, 无坐标记录被过滤
-        for record in body["records"]:
-            assert record["latitude"] is not None
-            assert record["longitude"] is not None
-        assert all(r.get("city") != "拉萨" for r in body["records"])
-
-        # 目的地为目标 A
-        assert body["destinations"][0]["title"] == "环游日本"
-        assert body["destinations"][0]["latitude"] == 35.68
+        tokyo = next(c for c in cities if c["city"] == "Tokyo")
+        assert tokyo["markerCount"] == 2
+        kyoto = next(c for c in cities if c["city"] == "Kyoto")
+        assert kyoto["markerCount"] == 1
 
 
 def test_life_map_user_isolation() -> None:
     with TestClient(app) as client:
-        owner_headers = _fresh_headers()
-        other_headers = _fresh_headers()
-        goal_id = _create_goal(client, owner_headers, latitude=35.68, longitude=139.69)
-        _create_record(client, goal_id, owner_headers, content="我的东京", latitude=35.7, longitude=139.7, city="Tokyo", country="Japan")
+        owner = _fresh_headers()
+        other = _fresh_headers()
+        goal_id = _create_goal(client, owner, latitude=35.68, longitude=139.69)
+        _create_record(client, goal_id, owner, content="我的东京", latitude=35.7, longitude=139.7, city="Tokyo", country="Japan")
 
-        # 其他用户看到的是自己的(空)地图, 不应包含我的记录/目的地
-        other = client.get("/api/v1/life/map", headers=other_headers)
-        assert other.status_code == 200
-        other_body = other.json()["data"]
-        assert other_body["summary"]["totalRecords"] == 0
-        assert other_body["summary"]["totalDestinations"] == 0
-        assert other_body["records"] == []
-        assert other_body["destinations"] == []
+        other_resp = client.get("/api/v1/life/map", headers=other)
+        assert other_resp.status_code == 200
+        other_markers = other_resp.json()["data"]["markers"]
+        # 其他用户看不到我的 record/goal markers (仅共享 Bucket 目录)
+        assert _record_markers(other_markers) == []
+        assert _goal_markers(other_markers) == []
+        assert all(m["sourceType"] == "bucket" for m in other_markers)
 
 
-def test_life_map_empty() -> None:
+def test_life_map_empty_only_bucket_seed() -> None:
+    """新用户地图: 无个人记录/目标, 仅有种子 Bucket 目录(灰色 pending)."""
     with TestClient(app) as client:
         headers = _fresh_headers()
         resp = client.get("/api/v1/life/map", headers=headers)
         assert resp.status_code == 200
-        body = resp.json()["data"]
-        assert body["summary"] == {
-            "totalRecords": 0,
-            "totalCities": 0,
-            "totalCountries": 0,
-            "totalDestinations": 0,
-        }
-        assert body["cities"] == []
-        assert body["records"] == []
-        assert body["destinations"] == []
+        markers = resp.json()["data"]["markers"]
+        # 全部来自 bucket 种子, 无 record/goal/visit
+        assert _record_markers(markers) == []
+        assert _goal_markers(markers) == []
+        assert all(m["sourceType"] == "bucket" for m in markers)
+        # 未加入的 bucket = pending (灰色)
+        assert all(m["status"] == "pending" for m in markers)
+
+
+def test_life_map_filter_by_country_and_city() -> None:
+    with TestClient(app) as client:
+        headers = _fresh_headers()
+        goal_id = _create_goal(client, headers, latitude=35.68, longitude=139.69)
+        _create_record(client, goal_id, headers, content="东京", latitude=35.66, longitude=139.74, city="Tokyo", country="Japan")
+        _create_record(client, goal_id, headers, content="巴黎", latitude=48.85, longitude=2.35, city="Paris", country="France")
+
+        # 按国家过滤 Japan
+        resp = client.get("/api/v1/life/map", headers=headers, params={"country": "Japan"})
+        recs = _record_markers(resp.json()["data"]["markers"])
+        assert all(m["country"] == "Japan" for m in recs)
+        assert len(recs) == 1
+
+        # 按城市过滤 Paris
+        resp2 = client.get("/api/v1/life/map", headers=headers, params={"city": "Paris"})
+        recs2 = _record_markers(resp2.json()["data"]["markers"])
+        assert all(m["city"] == "Paris" for m in recs2)
+        assert len(recs2) == 1
+
+
+def test_life_map_statistics() -> None:
+    with TestClient(app) as client:
+        headers = _fresh_headers()
+        goal_id = _create_goal(client, headers, latitude=35.68, longitude=139.69)
+        _create_record(client, goal_id, headers, content="东京", latitude=35.66, longitude=139.74, city="Tokyo", country="Japan")
+        _create_record(client, goal_id, headers, content="京都", latitude=34.97, longitude=135.77, city="Kyoto", country="Japan")
+
+        resp = client.get("/api/v1/life/map/statistics", headers=headers)
+        assert resp.status_code == 200
+        stats = resp.json()["data"]
+
+        assert stats["totalCities"] >= 2  # Tokyo + Kyoto (+ bucket seed cities)
+        assert stats["totalCountries"] >= 1  # Japan (+ bucket seed countries)
+        assert stats["totalRecords"] == 2
+        assert stats["totalGoals"] == 1
+        assert stats["totalDistance"] > 0  # 东京→京都 有距离
+        assert stats["experience"] >= 0
+        assert stats["level"] >= 1
+        assert stats["bucketCompleted"] >= 0
+
+
+def test_life_map_detail_record() -> None:
+    with TestClient(app) as client:
+        headers = _fresh_headers()
+        goal_id = _create_goal(client, headers, latitude=35.68, longitude=139.69)
+        record_id = _create_record(client, goal_id, headers, content="东京塔", latitude=35.66, longitude=139.74, city="Tokyo", country="Japan")
+
+        resp = client.get(f"/api/v1/life/map/record-{record_id}", headers=headers)
+        assert resp.status_code == 200
+        detail = resp.json()["data"]
+        assert detail["markerType"] == "record"
+        assert detail["id"] == record_id
+        assert detail["city"] == "Tokyo"
+
+
+def test_life_map_detail_goal() -> None:
+    with TestClient(app) as client:
+        headers = _fresh_headers()
+        goal_id = _create_goal(client, headers, latitude=35.68, longitude=139.69)
+
+        resp = client.get(f"/api/v1/life/map/goal-{goal_id}", headers=headers)
+        assert resp.status_code == 200
+        detail = resp.json()["data"]
+        assert detail["markerType"] == "goal"
+        assert detail["id"] == goal_id
+        assert detail["title"] == "环游日本"
+
+
+def test_life_map_detail_not_found() -> None:
+    with TestClient(app) as client:
+        headers = _fresh_headers()
+        resp = client.get("/api/v1/life/map/record-nonexistent", headers=headers)
+        assert resp.status_code == 404
+
+
+def test_life_map_detail_permission_isolation() -> None:
+    """用户 A 的 record marker, 用户 B 查详情应 404."""
+    with TestClient(app) as client:
+        owner = _fresh_headers()
+        other = _fresh_headers()
+        goal_id = _create_goal(client, owner, latitude=35.68, longitude=139.69)
+        record_id = _create_record(client, goal_id, owner, content="我的", latitude=35.7, longitude=139.7)
+
+        resp = client.get(f"/api/v1/life/map/record-{record_id}", headers=other)
+        assert resp.status_code == 404

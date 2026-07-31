@@ -1,5 +1,5 @@
 from app.core.repository import BaseRepository
-from app.db.models import LifeGoal, LifeRecord, UserLevel
+from app.db.models import LifeGoal, LifeMapVisit, LifeRecord, UserLevel
 
 
 class LifeGoalRepository(BaseRepository[LifeGoal]):
@@ -134,3 +134,42 @@ class LifeRecordRepository(BaseRepository[LifeRecord]):
         self.db.commit()
         self.db.refresh(record)
         return record
+
+
+class LifeMapVisitRepository(BaseRepository[LifeMapVisit]):
+    def __init__(self, db):
+        super().__init__(db, LifeMapVisit)
+
+    def list_by_user(self, user_id: str) -> list[LifeMapVisit]:
+        return (
+            self.db.query(LifeMapVisit)
+            .filter(LifeMapVisit.user_id == user_id)
+            .order_by(LifeMapVisit.visit_time.desc().nullslast(), LifeMapVisit.created_at.desc())
+            .all()
+        )
+
+    def list_geotagged(self, user_id: str) -> list[LifeMapVisit]:
+        return (
+            self.db.query(LifeMapVisit)
+            .filter(
+                LifeMapVisit.user_id == user_id,
+                LifeMapVisit.latitude.is_not(None),
+                LifeMapVisit.longitude.is_not(None),
+            )
+            .order_by(LifeMapVisit.visit_time.desc().nullslast(), LifeMapVisit.created_at.desc())
+            .all()
+        )
+
+    def get_owned(self, user_id: str, visit_id: str) -> LifeMapVisit | None:
+        return (
+            self.db.query(LifeMapVisit)
+            .filter(LifeMapVisit.id == visit_id, LifeMapVisit.user_id == user_id)
+            .first()
+        )
+
+    def create(self, user_id: str, **values) -> LifeMapVisit:
+        visit = LifeMapVisit(user_id=user_id, **values)
+        self.db.add(visit)
+        self.db.commit()
+        self.db.refresh(visit)
+        return visit
