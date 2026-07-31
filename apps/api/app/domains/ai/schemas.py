@@ -128,6 +128,7 @@ class YearReviewResponse(BaseModel):
     id: str
     aiContentId: str
     year: int
+    style: str | None = None
     title: str | None = None
     summary: str | None = None
     statistics: dict = {}

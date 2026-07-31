@@ -1,50 +1,38 @@
 "use client";
 
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 
-import { YearReviewForm } from "@/components/life/ai/year-review-form";
-import { YearReviewView } from "@/components/life/ai/year-review-view";
-import { Button, Card, Skeleton } from "@/components/ui";
-import { generateYearReview, getYearReview, type YearReviewResponse } from "@/lib/life";
+import { YearReviewContent } from "@/components/life/review/year-review-content";
+import { YearReviewCover } from "@/components/life/review/year-review-cover";
+import { YearReviewEmpty } from "@/components/life/review/year-review-empty";
+import { YearReviewForm } from "@/components/life/review/year-review-form";
+import { YearReviewSkeleton } from "@/components/life/review/year-review-skeleton";
+import { YearReviewStatistics } from "@/components/life/review/year-review-statistics";
+import { Button, Card } from "@/components/ui";
+import {
+  generateYearReview,
+  type YearReviewResponse,
+  type YearReviewStyle,
+} from "@/lib/life";
 
 export default function LifeReviewPage() {
-  const year = new Date().getFullYear();
   const [review, setReview] = useState<YearReviewResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  const generate = async (year: number, style: YearReviewStyle) => {
     setLoading(true);
-    getYearReview(year)
-      .then((result) => {
-        if (active) setReview(result);
-      })
-      .catch(() => {
-        if (active) setReview(null);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [year]);
-
-  const generate = useCallback(async (targetYear: number) => {
-    setGenerating(true);
     setError(null);
     try {
-      setReview(await generateYearReview(targetYear));
+      setReview(await generateYearReview({ year, style }));
     } catch {
-      setError("AI 生成失败，请重试");
+      setError("生成失败，请稍后重试");
     } finally {
-      setGenerating(false);
+      setLoading(false);
     }
-  }, []);
+  };
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -55,27 +43,40 @@ export default function LifeReviewPage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-xl font-semibold">年度人生总结</h1>
+          <h1 className="text-xl font-semibold">年度人生报告</h1>
           <p className="text-[13px] text-muted">让 AI 回顾你这一年的成长</p>
         </div>
       </div>
 
-      {loading && <Skeleton className="h-64" />}
-      {!loading && !generating && !review && <YearReviewForm onGenerate={generate} loading={false} />}
-      {generating && (
-        <Card className="flex flex-col items-center gap-3 p-10 text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm font-medium">AI 正在回顾你的一年...</p>
-        </Card>
-      )}
-      {review && <YearReviewView review={review} onRegenerate={() => generate(review.year)} />}
-      {error && !generating && (
-        <Card className="flex flex-col items-center gap-3 p-6 text-center">
+      {error && !loading && (
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
           <p className="text-sm text-danger">{error}</p>
-          <Button variant="outline" onClick={() => setError(null)}>
-            返回重试
+          <Button variant="outline" size="sm" onClick={() => setError(null)}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            重新尝试
           </Button>
         </Card>
+      )}
+
+      {loading ? (
+        <YearReviewSkeleton />
+      ) : review ? (
+        <>
+          <YearReviewCover year={review.year} title={review.title} summary={review.summary} />
+          <YearReviewStatistics statistics={review.statistics || {}} />
+          <YearReviewContent review={review} />
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setReview(null)}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              重新生成
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <YearReviewEmpty />
+          <YearReviewForm onGenerate={generate} loading={loading} />
+        </>
       )}
     </div>
   );

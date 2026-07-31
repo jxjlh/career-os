@@ -75,9 +75,9 @@ export default function LifePage() {
         <Link href="/life/review" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
           <span className="flex items-center gap-2 text-sm font-medium">
             <BarChart3 className="h-4 w-4 text-primary" />
-            年度人生总结
+            我的年度报告
           </span>
-          <span className="text-xs text-muted">年度回顾 →</span>
+          <span className="text-xs text-muted">查看报告 →</span>
         </Link>
       </div>
 

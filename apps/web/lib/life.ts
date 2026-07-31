@@ -250,26 +250,44 @@ export async function getDailyAssistant(): Promise<LifeAssistantResponse> {
   return apiFetch<LifeAssistantResponse>("/ai/assistant/daily");
 }
 
+export type YearReviewStyle = "personal" | "social" | "xiaohongshu";
+
+export interface YearReviewRequest {
+  year: number;
+  style: YearReviewStyle;
+}
+
+export interface YearReviewStatistics {
+  goalsCompleted?: number;
+  tasksCompleted?: number;
+  recordsCreated?: number;
+  xpGained?: number;
+  goals_completed?: number;
+  tasks_completed?: number;
+  records_created?: number;
+  xp_gained?: number;
+}
+
 export interface YearReviewResponse {
   id: string;
   aiContentId: string;
   year: number;
+  style: YearReviewStyle;
   title?: string | null;
   summary?: string | null;
-  highlights: string[];
-  growth: Record<string, number>;
-  versions: { normal?: string; moments?: string; xiaohongshu?: string };
-  createdAt?: string | null;
+  statistics: YearReviewStatistics;
+  achievements: string[];
+  growth: { skills?: string[]; habits?: string[] };
+  memories: Array<{ title?: string; description?: string; date?: string | null }>;
+  reflection?: string | null;
+  nextYearPlan: string[];
 }
 
-export async function generateYearReview(year?: number): Promise<YearReviewResponse> {
-  return apiFetch<YearReviewResponse>("/ai/year-summary", {
+export async function generateYearReview(
+  request: YearReviewRequest,
+): Promise<YearReviewResponse> {
+  return apiFetch<YearReviewResponse>("/ai/year-review", {
     method: "POST",
-    body: JSON.stringify({ year }),
+    body: JSON.stringify(request),
   });
-}
-
-export async function getYearReview(year?: number): Promise<YearReviewResponse> {
-  const query = year ? `?year=${year}` : "";
-  return apiFetch<YearReviewResponse>(`/ai/year-summary${query}`);
 }

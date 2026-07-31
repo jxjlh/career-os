@@ -122,6 +122,7 @@ class YearReviewService:
             id=content.id,
             aiContentId=content.id,
             year=year,
+            style=(content.input_json or {}).get("style", "personal"),
             title=parsed.get("title"),
             summary=parsed.get("summary"),
             statistics=parsed.get("statistics") or {},
