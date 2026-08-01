@@ -37,12 +37,37 @@ def get_current_user(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "Missing bearer token"})
 
-    if not settings.supabase_jwt_secret and not settings.supabase_jwks_url:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "Auth not configured"})
-
     token = authorization.removeprefix("Bearer ")
     try:
-        if settings.supabase_jwt_secret:
+        # 根据 JWT header 的 alg 选择验证方式：
+        # - ES256: Supabase 新版 JWT，用 JWKS 公钥验证（不依赖 SUPABASE_JWT_SECRET）
+        # - HS256: 旧版或自定义 JWT，用 secret 验证
+        unverified_header = jwt.get_unverified_header(token)
+        alg = unverified_header.get("alg", "")
+
+        if alg == "ES256":
+            jwks_url = settings.supabase_jwks_url
+            if not jwks_url and settings.supabase_url:
+                jwks_url = f"{settings.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+            if not jwks_url:
+                raise HTTPException(
+                    status_code=401,
+                    detail={"code": "UNAUTHORIZED", "message": "JWKS URL not configured"},
+                )
+            jwks_client = jwt.PyJWKClient(jwks_url)
+            signing_key = jwks_client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["ES256"],
+                audience="authenticated",
+            )
+        elif alg == "HS256":
+            if not settings.supabase_jwt_secret:
+                raise HTTPException(
+                    status_code=401,
+                    detail={"code": "UNAUTHORIZED", "message": "HS256 secret not configured"},
+                )
             payload = jwt.decode(
                 token,
                 settings.supabase_jwt_secret,
@@ -50,13 +75,9 @@ def get_current_user(
                 audience="authenticated",
             )
         else:
-            jwks_client = jwt.PyJWKClient(settings.supabase_jwks_url)
-            signing_key = jwks_client.get_signing_key_from_jwt(token)
-            payload = jwt.decode(
-                token,
-                signing_key.key,
-                algorithms=["ES256"],
-                audience="authenticated",
+            raise HTTPException(
+                status_code=401,
+                detail={"code": "UNAUTHORIZED", "message": f"Unsupported algorithm: {alg}"},
             )
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "Invalid token"}) from exc
