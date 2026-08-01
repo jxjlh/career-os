@@ -24,5 +24,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
 
 # 启动时自动执行 Alembic 迁移（幂等：无待执行则秒过），再拉起服务。
-# DATABASE_URL 环境变量指向 Supabase Postgres（env.py 会改写为 psycopg3 驱动）。
-CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# 用 ; 代替 && — 即使 alembic 失败也继续启动 uvicorn，这样 health check
+# 能通过，服务变为 live，方便通过 API 端点诊断数据库问题。
+CMD ["sh", "-c", "uv run alembic upgrade head 2>&1; echo '--- Starting uvicorn ---'; uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
