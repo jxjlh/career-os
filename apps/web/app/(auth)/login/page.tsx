@@ -63,6 +63,12 @@ export default function LoginPage() {
       <form className="relative mt-6 space-y-3.5" onSubmit={submit}>
         <Input type="email" required placeholder={t("auth.email")} value={email} onChange={(e) => setEmail(e.target.value)} />
         <Input type="password" required placeholder={t("auth.password")} value={password} onChange={(e) => setPassword(e.target.value)} />
+        <Link
+          href="/forgot-password"
+          className="mt-1.5 block text-right text-[12px] font-medium text-primary hover:text-primary-hover"
+        >
+          {t("auth.forgotPassword")}
+        </Link>
         {error && <p className="rounded-[10px] bg-danger/8 p-2.5 text-xs leading-relaxed text-danger">{error}</p>}
         <Button type="submit" className="h-11 w-full" disabled={loading}>
           <LogIn className="h-4 w-4" />

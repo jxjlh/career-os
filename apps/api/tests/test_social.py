@@ -121,12 +121,15 @@ def test_friend_request_idempotent_and_self_forbidden() -> None:
 
 def test_friend_search() -> None:
     a = str(uuid.uuid4())
-    _ensure_profile(a, "ZoeUnique")
+    b = str(uuid.uuid4())
+    _ensure_profile(a, "Searcher")
+    _ensure_profile(b, "ZoeUnique")
     with TestClient(app) as client:
         resp = client.get("/api/v1/social/friends/search", headers=_headers(a), params={"q": "ZoeUnique"})
         assert resp.status_code == 200
         items = resp.json()["data"]
-        assert any(i["displayName"] == "ZoeUnique" for i in items)
+        assert any(i["id"] == b for i in items)
+        assert all(i["id"] != a for i in items)
 
 
 def test_friend_remove() -> None:

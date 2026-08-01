@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";
 
-import { supabase } from "@/lib/supabase";
+import { supabase, writeSessionCookie } from "@/lib/supabase";
 
 function CallbackInner() {
   const router = useRouter();
@@ -16,6 +16,7 @@ function CallbackInner() {
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         if (!error && data.session) {
           localStorage.setItem("career_os_token", data.session.access_token);
+          writeSessionCookie(data.session.access_token);
         }
       }
       router.replace("/dashboard");
