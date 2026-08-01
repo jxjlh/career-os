@@ -1,9 +1,9 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, make_url, pool
 
-from app.core.config import get_settings, normalize_db_url
+from app.core.config import get_settings
 from app.db.base import Base
 from app.db import models  # noqa: F401
 
@@ -12,16 +12,19 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# set_main_option 不经过 ConfigParser，不需要 %% 转义
-# （仅 alembic.ini 文件中的 % 才需要转义）
-config.set_main_option("sqlalchemy.url", normalize_db_url(get_settings().database_url))
+# 用 SQLAlchemy URL 对象而非字符串，避免密码里的 + / = 等特殊字符
+# 在 render_as_string → 字符串二次解析时被误处理（psycopg3 把 + 当空格）。
+_settings = get_settings()
+_db_url = make_url(_settings.database_url)
+if _db_url.drivername and not _db_url.drivername.startswith("sqlite"):
+    if "+psycopg" not in _db_url.drivername:
+        _db_url = _db_url.set(drivername="postgresql+psycopg")
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=_db_url.render_as_string(hide_password=False),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -31,11 +34,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = create_engine(_db_url, poolclass=pool.NullPool)
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
