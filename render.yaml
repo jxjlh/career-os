@@ -58,7 +58,9 @@ services:
       - key: NODE_VERSION
         value: "20"
       - key: API_UPSTREAM
-        value: https://ai-life-os-api.onrender.com
+        # 注意：Render 因基础名 ai-life-os-api 被占用，给服务分配了带后缀 -4y3x 的 URL。
+        # 不要用 https://ai-life-os-api.onrender.com（那是占位的 503 挂起页）。
+        value: https://ai-life-os-api-4y3x.onrender.com
       # NEXT_PUBLIC_* 是浏览器端公开变量（会打进客户端 bundle），非密钥，可直接声明。
       - key: NEXT_PUBLIC_SUPABASE_URL
         value: https://odthfgmjgutpsfjkmvto.supabase.co
