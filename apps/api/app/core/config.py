@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from sqlalchemy.engine import make_url
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,12 +43,21 @@ class Settings(BaseSettings):
 
 
 def normalize_db_url(url: str) -> str:
-    # 项目依赖 psycopg3 (psycopg[binary])，但裸 postgresql:// 会被 SQLAlchemy 路由到 psycopg2
-    # （未安装，会报 No module named 'psycopg2'）。这里统一改写为 +psycopg 驱动。
-    # sqlite 与已带驱动的 URL 原样返回。
-    if url.startswith("postgresql://"):
-        return "postgresql+psycopg://" + url[len("postgresql://"):]
-    return url
+    """统一数据库 URL：改用 psycopg3 驱动 + 正确处理密码中的特殊字符。
+
+    Supabase 等服务的密码常含 ``+`` ``/`` ``=`` 等字符，Python 标准库
+    urlparse 会把 ``+`` 当成空格、把 ``==`` 截断。改用 SQLAlchemy 的
+    make_url 解析（专为数据库 URL 设计），再 render_as_string 时自动
+    对密码做正确的 percent-encode。
+    """
+    # sqlite 与已带 +psycopg 驱动的 URL 原样返回
+    if url.startswith("sqlite://") or url.startswith("postgresql+psycopg://"):
+        return url
+    if not url.startswith("postgresql://"):
+        return url
+
+    parsed = make_url(url).set(drivername="postgresql+psycopg")
+    return parsed.render_as_string(hide_password=False)
 
 
 @lru_cache
