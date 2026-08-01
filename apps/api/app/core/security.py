@@ -38,6 +38,8 @@ def get_current_user(
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "Missing bearer token"})
 
     token = authorization.removeprefix("Bearer ")
+    alg = ""
+    jwks_url = None
     try:
         # 根据 JWT header 的 alg 选择验证方式：
         # - ES256: Supabase 新版 JWT，用 JWKS 公钥验证（不依赖 SUPABASE_JWT_SECRET）
@@ -80,7 +82,19 @@ def get_current_user(
                 detail={"code": "UNAUTHORIZED", "message": f"Unsupported algorithm: {alg}"},
             )
     except jwt.PyJWTError as exc:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "Invalid token"}) from exc
+        # 临时诊断：返回详细错误信息，定位 Render 上 JWT 验证失败的真实原因
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "UNAUTHORIZED",
+                "message": "Invalid token",
+                "debug": f"{type(exc).__name__}: {str(exc)[:300]}",
+                "alg": alg,
+                "jwks_url": jwks_url,
+                "supabase_url_env": settings.supabase_url,
+                "jwks_env": settings.supabase_jwks_url,
+            },
+        ) from exc
 
     user_id = payload.get("sub", str(uuid.uuid4()))
     profile = db.get(Profile, user_id)
