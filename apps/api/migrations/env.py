@@ -12,7 +12,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", normalize_db_url(get_settings().database_url).replace("%", "%%"))
+# set_main_option 不经过 ConfigParser，不需要 %% 转义
+# （仅 alembic.ini 文件中的 % 才需要转义）
+config.set_main_option("sqlalchemy.url", normalize_db_url(get_settings().database_url))
 target_metadata = Base.metadata
 
 
