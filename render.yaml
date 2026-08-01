@@ -58,8 +58,9 @@ services:
       - key: NODE_VERSION
         value: "20"
       - key: API_UPSTREAM
-        sync: false
+        value: https://ai-life-os-api.onrender.com
+      # NEXT_PUBLIC_* 是浏览器端公开变量（会打进客户端 bundle），非密钥，可直接声明。
       - key: NEXT_PUBLIC_SUPABASE_URL
-        sync: false
+        value: https://odthfgmjgutpsfjkmvto.supabase.co
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
-        sync: false
+        value: sb_publishable_ftRAw_nGku7CG49dOwQ05w_-HTMb82N
