@@ -16,8 +16,16 @@ services:
         value: production
       - key: API_PREFIX
         value: /api/v1
-      - key: DATABASE_URL
+      # 生产必填的敏感变量（需在 Render 控制台 Environment 里填写，绝不入库）
+  # DATABASE_URL: 从 Supabase → Project Settings → Database → Connection string
+  # 选 "Pooler connection string"（端口 6543，含 ?pgbouncer=true）
+  # 形如：postgresql://postgres:<密码>@<host>.supabase.co:6543/postgres?pgbouncer=true&sslmode=require
+  #      （注意：密码里的 + / = 等特殊字符要 URL-encode，例如 @ → %40，+ → %2B）
+  - key: DATABASE_URL
         sync: false
+        # 本地/CI 默认值：避免无 DATABASE_URL 时 fallback 到 sqlite；
+        # 生产在 Render 覆盖此值。这里留空表示"必须手动填"，不写死任何真实密码。
+        value: ""
       - key: CORS_ORIGINS
         sync: false
       - key: SUPABASE_URL
@@ -26,8 +34,12 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      # 重要：SUPABASE_JWT_SECRET 留空（或完全不填）即可。
+      # 后端代码检测到它为空时，会自动走 ES256 + JWKS 公钥验证（与 Supabase 默认一致）；
+      # 填了旧 HS256 secret 反而会让验证失败。
       - key: SUPABASE_JWT_SECRET
         sync: false
+        value: ""
       - key: XFYUN_API_KEY
         sync: false
       - key: XFYUN_API_SECRET
