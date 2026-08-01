@@ -1,3 +1,4 @@
+import logging
 from logging.config import fileConfig
 
 from alembic import context
@@ -12,13 +13,33 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# 用 SQLAlchemy URL 对象而非字符串，避免密码里的 + / = 等特殊字符
-# 在 render_as_string → 字符串二次解析时被误处理（psycopg3 把 + 当空格）。
+logger = logging.getLogger("alembic.env")
+
+# 用 SQLAlchemy URL 对象而非字符串，避免密码 + / = 特殊字符二次解析问题。
+# 容错：DATABASE_URL 为空或解析失败时 fallback 到 sqlite（保证 alembic 不 crash）。
 _settings = get_settings()
-_db_url = make_url(_settings.database_url)
-if _db_url.drivername and not _db_url.drivername.startswith("sqlite"):
-    if "+psycopg" not in _db_url.drivername:
-        _db_url = _db_url.set(drivername="postgresql+psycopg")
+_db_url = None
+if _settings.database_url:
+    try:
+        _db_url = make_url(_settings.database_url)
+        if _db_url.drivername and not _db_url.drivername.startswith("sqlite"):
+            if "+psycopg" not in _db_url.drivername:
+                _db_url = _db_url.set(drivername="postgresql+psycopg")
+        logger.info(
+            "DATABASE_URL parsed OK: driver=%s host=%s port=%s",
+            _db_url.drivername, _db_url.host, _db_url.port,
+        )
+    except Exception as e:
+        logger.error(
+            "DATABASE_URL parse FAILED: %s | len=%d | prefix=%r",
+            e, len(_settings.database_url), _settings.database_url[:30],
+        )
+        _db_url = None
+
+if _db_url is None:
+    _db_url = make_url("sqlite:///./career_os.db")
+    logger.warning("Falling back to sqlite (DATABASE_URL empty or invalid)")
+
 target_metadata = Base.metadata
 
 
