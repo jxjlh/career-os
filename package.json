@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Career OS - AI Career Growth Platform",
+  "engines": {
+    "node": ">=18.18.0"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
