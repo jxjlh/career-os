@@ -10,16 +10,14 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
     "dev:web": "npm --workspace apps/web run dev",
     "dev:api": "uv run --project apps/api uvicorn app.main:app --reload --port 8000",
     "build:web": "npm --workspace apps/web run build",
     "lint": "npm --workspace apps/web run lint",
     "test": "npm --workspace apps/web run test && uv run --project apps/api pytest"
   },
-  "packageManager": "npm@11.13.0",
+  "packageManager": "npm@10.8.2",
   "devDependencies": {
     "turbo": "^2.3.3"
   },
