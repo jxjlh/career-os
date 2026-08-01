@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
@@ -6,11 +6,9 @@ from app.core.errors import AppError
 from app.db.models import (
     BucketItem,
     CheckinStreak,
-    Comment,
     FriendRequest,
     LifeGoal,
     LifeRecord,
-    Notification,
     Profile,
     SocialPost,
     UserBucketItem,
@@ -232,7 +230,7 @@ class SocialPostService:
                 user_id=post.user_id,
                 type="like",
                 title="你的动态收到一个赞",
-                body=f"有人点赞了你的动态",
+                body="有人点赞了你的动态",
                 link=f"/life/post/{post_id}",
             )
         return {"liked": liked, "likesCount": post.likes_count}
@@ -338,7 +336,7 @@ class SharedGoalService:
                     type="shared_goal_invite",
                     title="你被邀请加入共同目标",
                     body=f"一起完成「{goal.title}」吧!",
-                    link=f"/life/shared",
+                    link="/life/shared",
                 )
         members_count = len(self.shared.list_members(sg.id))
         return SharedGoalItem(
@@ -404,7 +402,7 @@ class RankingService:
     def ranking(self, user_id: str, metric: str, period: str) -> RankingResponse:
         """返回含当前用户的排行榜 (自己 + 好友). period: today/week/month/all."""
         friend_ids = [f.id for f in FriendRepository(self.db).list_friends(user_id)]
-        scope_ids = [user_id] + friend_ids
+        scope_ids = [user_id, *friend_ids]
         rows = self._compute(metric, period, scope_ids, user_id)
         return RankingResponse(metric=metric, period=period, items=rows)
 

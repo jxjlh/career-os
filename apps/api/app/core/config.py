@@ -1,7 +1,7 @@
 from functools import lru_cache
 
-from sqlalchemy.engine import make_url
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./career_os.db"
     api_prefix: str = "/api/v1"
     cors_origins: str = "http://localhost:3000"
+    media_dir: str = "media"
 
     xfyun_api_key: str = ""
     xfyun_api_secret: str = ""

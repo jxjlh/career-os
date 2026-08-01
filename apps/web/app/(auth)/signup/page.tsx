@@ -15,6 +15,7 @@ export default function SignupPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,8 +26,18 @@ export default function SignupPage() {
     setError("");
     setNotice("");
     try {
+      if (password !== confirmPassword) {
+        setError(t("auth.passwordMismatch"));
+        setLoading(false);
+        return;
+      }
       if (isSupabaseConfigured && supabase) {
-        const { error: authError } = await supabase.auth.signUp({ email, password });
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const { error: authError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${origin}/auth/callback` },
+        });
         if (authError) throw new Error(authError.message);
 
         // 开启邮箱确认时 signUp 不会立即返回 session
@@ -39,13 +50,13 @@ export default function SignupPage() {
           router.push(target);
           router.refresh();
         } else {
-          setNotice("注册成功，请查收邮箱激活账户后登录。");
+          setNotice(t("auth.verifyEmailSent"));
         }
       } else {
         // dev 模式：无 Supabase，用占位 token
         localStorage.setItem("career_os_token", "dev");
         writeSessionCookie("dev");
-        router.push("/onboarding");
+        router.push("/dashboard");
         router.refresh();
       }
     } catch (err) {
@@ -56,15 +67,16 @@ export default function SignupPage() {
   };
 
   return (
-    <Card className="p-6">
-      <h1 className="text-xl font-semibold">{t("auth.signup")}</h1>
-      <p className="mt-1 text-[13px] text-muted">{t("auth.signupSub")}</p>
+    <Card className="soft-shadow relative overflow-hidden p-7">
+      <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-gradient-to-br from-primary/16 to-accent/14 blur-2xl" />
+      <h1 className="relative text-2xl font-bold tracking-tight">{t("auth.signup")}</h1>
+      <p className="relative mt-1.5 text-[13px] leading-relaxed text-muted">{t("auth.signupSub")}</p>
       {!isSupabaseConfigured && (
-        <p className="mt-3 rounded-[6px] bg-warning/10 p-2 text-xs text-warning">
+        <p className="relative mt-4 rounded-[10px] bg-warning/10 p-2.5 text-xs leading-relaxed text-warning">
           {t("auth.devMode")}
         </p>
       )}
-      <form className="mt-5 space-y-3" onSubmit={submit}>
+      <form className="relative mt-6 space-y-3.5" onSubmit={submit}>
         <Input type="email" required placeholder={t("auth.email")} value={email} onChange={(e) => setEmail(e.target.value)} />
         <Input
           type="password"
@@ -74,15 +86,26 @@ export default function SignupPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-        {error && <p className="text-xs text-danger">{error}</p>}
-        {notice && <p className="text-xs text-primary">{notice}</p>}
-        <Button type="submit" className="w-full" disabled={loading}>
+        <Input
+          type="password"
+          required
+          minLength={6}
+          placeholder={t("auth.confirmPassword")}
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+        />
+        {error && <p className="rounded-[10px] bg-danger/8 p-2.5 text-xs leading-relaxed text-danger">{error}</p>}
+        {notice && <p className="rounded-[10px] bg-primary/8 p-2.5 text-xs leading-relaxed text-primary">{notice}</p>}
+        <Button type="submit" className="h-11 w-full" disabled={loading}>
           <UserPlus className="h-4 w-4" />
           {loading ? t("auth.signingUp") : t("auth.signupCta")}
         </Button>
       </form>
-      <p className="mt-4 text-center text-[13px] text-muted">
-        {t("auth.haveAccount")} <Link href="/login" className="text-primary">{t("auth.login")}</Link>
+      <p className="relative mt-5 text-center text-[13px] text-muted">
+        {t("auth.haveAccount")}{" "}
+        <Link href="/login" className="font-semibold text-primary hover:text-primary-hover">
+          {t("auth.login")}
+        </Link>
       </p>
     </Card>
   );

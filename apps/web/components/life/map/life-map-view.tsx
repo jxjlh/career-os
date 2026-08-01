@@ -12,17 +12,15 @@ import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-
 import type { MapMarker } from "@/lib/life-map";
 import { markerColor, markerIcon } from "@/lib/life-map";
 
-// CARTO 暗色/亮色瓦片: 免费无需 API Key, 视觉高级
+// 高德中文瓦片: 无需 API Key, 中文地名展示 (微信地图同源风格)
 const TILES = {
   dark: {
-    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    url: "https://webrd0{s}.is.autonavi.com/appmaptile?style=8&x={x}&y={y}&z={z}",
+    attribution: '&copy; <a href="https://www.amap.com/">高德地图</a>',
   },
   light: {
-    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    url: "https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}",
+    attribution: '&copy; <a href="https://www.amap.com/">高德地图</a>',
   },
 };
 

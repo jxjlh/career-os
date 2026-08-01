@@ -60,6 +60,7 @@ class UserProfile(Base):
     strengths: Mapped[list[str]] = mapped_column(JSON, default=list)
     interests: Mapped[list[str]] = mapped_column(JSON, default=list)
     career_direction: Mapped[str | None] = mapped_column(String(200))
+    life_motto: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
 
@@ -718,6 +719,12 @@ class LifeGoal(Base):
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
     cover_image: Mapped[str | None] = mapped_column(Text)
+    budget: Mapped[str | None] = mapped_column(String(120))
+    recommended_days: Mapped[int | None] = mapped_column(Integer)
+    best_season: Mapped[str | None] = mapped_column(String(80))
+    region: Mapped[str | None] = mapped_column(String(120))
+    friends: Mapped[list[str]] = mapped_column(JSON, default=list)
+    ai_plan_meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
@@ -778,6 +785,20 @@ class AIContent(Base):
     provider: Mapped[str] = mapped_column(String(64))
     model: Mapped[str] = mapped_column(String(64))
     task_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class TravelChecklistItem(Base):
+    __tablename__ = "travel_checklist_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    ai_content_id: Mapped[str] = mapped_column(ForeignKey("ai_content.id", ondelete="CASCADE"), index=True)
+    item: Mapped[str] = mapped_column(String(200))
+    note: Mapped[str | None] = mapped_column(Text)
+    checked: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(SmallInteger, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
 

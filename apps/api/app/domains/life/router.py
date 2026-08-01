@@ -1,11 +1,13 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db.models import Profile
+from app.core.storage import resolve_object_url
+from app.db.models import LifeRecord, Profile
 from app.domains.goals.service import TaskService
 from app.domains.life.schemas import LifeGoalCreate, LifeGoalUpdate
 from app.domains.life.service import (
@@ -17,6 +19,87 @@ from app.domains.life.service import (
 )
 
 router = APIRouter(tags=["life"])
+
+
+GOAL_SUGGESTIONS = [
+    {
+        "id": "travel-iceland",
+        "title": "去冰岛看一次极光",
+        "category": "travel",
+        "description": "在北极圈附近追一次极光，给自己一场硬核浪漫。",
+        "suggested": {"location": "冰岛", "budget": "20000", "recommendedDays": 7, "bestSeason": "9-3月", "region": "北欧"},
+    },
+    {
+        "id": "travel-xinjiang",
+        "title": "自驾新疆独库公路",
+        "category": "travel",
+        "description": "穿越四季的公路旅行，雪山、草原与峡谷一路切换。",
+        "suggested": {"location": "新疆独库公路", "budget": "8000", "recommendedDays": 8, "bestSeason": "6-9月", "region": "中国西北"},
+    },
+    {
+        "id": "skill-photo",
+        "title": "系统学习摄影与后期",
+        "category": "skill",
+        "description": "从构图、用光到 Lightroom 后期，建立可复用的影像能力。",
+        "suggested": {"budget": "3000", "recommendedDays": 60},
+    },
+    {
+        "id": "skill-english",
+        "title": "英语口语达到流利交流",
+        "category": "skill",
+        "description": "坚持 90 天开口练习，让英语成为可随时使用的工具。",
+        "suggested": {"budget": "1000", "recommendedDays": 90},
+    },
+    {
+        "id": "health-marathon",
+        "title": "完成一次半程马拉松",
+        "category": "health",
+        "description": "从 5 公里开始，用 16 周科学训练冲过终点线。",
+        "suggested": {"budget": "2000", "recommendedDays": 112},
+    },
+    {
+        "id": "finance-fund",
+        "title": "建立自己的理财体系",
+        "category": "finance",
+        "description": "记账、预算、定投三步走，让每一分钱都有去向。",
+        "suggested": {"budget": "500", "recommendedDays": 30},
+    },
+    {
+        "id": "relationship-family",
+        "title": "带父母完成一次长途旅行",
+        "category": "relationship",
+        "description": "趁时光正好，陪父母看一次他们念叨了很久的地方。",
+        "suggested": {"budget": "12000", "recommendedDays": 6, "bestSeason": "4-5月"},
+    },
+    {
+        "id": "career-side-project",
+        "title": "做一个能写进简历的个人项目",
+        "category": "career",
+        "description": "把一个真实问题做成可演示的作品，面试时讲出完整故事。",
+        "suggested": {"budget": "500", "recommendedDays": 45},
+    },
+    {
+        "id": "travel-tibet",
+        "title": "去西藏看一次星空",
+        "category": "travel",
+        "description": "高原的夜空没有光污染，银河会离你很近。",
+        "suggested": {"location": "西藏", "budget": "10000", "recommendedDays": 10, "bestSeason": "6-9月", "region": "中国西南"},
+    },
+]
+
+
+@router.get("/life/goal-suggestions")
+def life_goal_suggestions(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    existing = {goal["title"] for goal in LifeGoalService(db).list(current_user.id)}
+    items = [
+        item
+        for item in GOAL_SUGGESTIONS
+        if item["title"] not in existing
+    ]
+    return {"data": items}
 
 
 @router.get("/life/dashboard")
@@ -201,6 +284,32 @@ def list_life_goal_tasks(
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Life goal not found"})
     tasks = TaskService(db).list_by_life_goal(goal_id)
     return {"data": tasks}
+
+
+@router.get("/life/records/media")
+async def life_record_media(
+    path: Annotated[str, Query(min_length=1, max_length=1000)],
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    record = (
+        db.query(LifeRecord)
+        .filter(
+            or_(
+                LifeRecord.watermark_url == path,
+                LifeRecord.photo_url == path,
+                LifeRecord.video_url == path,
+                LifeRecord.thumbnail_url == path,
+            )
+        )
+        .first()
+    )
+    if record is None or record.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Media not found"})
+    url = await resolve_object_url(path)
+    if url is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Media not found"})
+    return {"data": {"url": url}}
 
 
 @router.get("/life/records")

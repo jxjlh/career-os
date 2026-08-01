@@ -49,6 +49,52 @@ class TravelPlanResponse(BaseModel):
     tips: list[str] = []
 
 
+class TravelAssistantMessage(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    role: str = "user"
+    content: str
+
+
+class TravelAssistantRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    goal_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("goalId", "goal_id"),
+    )
+    messages: list[TravelAssistantMessage] = []
+
+
+class TravelAssistantResponse(TravelPlanResponse):
+    reply: str = ""
+
+
+class TravelChecklistItemCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    item: str = Field(min_length=1, max_length=200)
+    note: str | None = None
+
+
+class TravelChecklistItemUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    item: str | None = Field(default=None, min_length=1, max_length=200)
+    note: str | None = None
+    checked: bool | None = None
+
+
+class TravelChecklistItemResponse(BaseModel):
+    id: str
+    aiContentId: str
+    item: str
+    note: str | None = None
+    checked: bool = False
+    sortOrder: int = 0
+    createdAt: str | None = None
+
+
 class GrowthPlanRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
 

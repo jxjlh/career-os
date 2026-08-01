@@ -16,12 +16,12 @@ services:
         value: production
       - key: API_PREFIX
         value: /api/v1
-      # 生产必填的敏感变量（需在 Render 控制台 Environment 里填写，绝不入库）
-  # DATABASE_URL: 从 Supabase → Project Settings → Database → Connection string
-  # 选 "Pooler connection string"（端口 6543，含 ?pgbouncer=true）
-  # 形如：postgresql://postgres:<密码>@<host>.supabase.co:6543/postgres?pgbouncer=true&sslmode=require
-  #      （注意：密码里的 + / = 等特殊字符要 URL-encode，例如 @ → %40，+ → %2B）
-  - key: DATABASE_URL
+      # 生产必填的敏感变量（需在 Render 控制台 Environment 里填写，绝不入库）。
+      # DATABASE_URL: 从 Supabase → Project Settings → Database → Connection string
+      # 选 "Pooler connection string"（端口 6543，含 ?pgbouncer=true）
+      # 形如：postgresql://postgres:<密码>@<host>.supabase.co:6543/postgres?pgbouncer=true&sslmode=require
+      #      （注意：密码里的 + / = 等特殊字符要 URL-encode，例如 @ → %40，+ → %2B）
+      - key: DATABASE_URL
         sync: false
         # 本地/CI 默认值：避免无 DATABASE_URL 时 fallback 到 sqlite；
         # 生产在 Render 覆盖此值。这里留空表示"必须手动填"，不写死任何真实密码。
@@ -55,20 +55,15 @@ services:
 
   # ---------- 前端（Node.js + Next.js 15 standalone，内部 rewrite 代理后端）----------
   # rootDir 必须为仓库根：monorepo 的 packages/* (@career-os/*) 需在构建期可解析。
-  # 渲染 Render Node 运行时会读取根 .nvmrc(=Node 20)，避免 @tailwindcss/oxide
-  # 因旧版 Node 报 "Cannot find native binding"。NODE_VERSION 作为双保险显式声明。
+  # Docker 多阶段构建 Next.js standalone，启动命令直接跑打包产物 server.js。
   - type: web
     name: ai-life-os-web
-    runtime: node
+    runtime: docker
     plan: free
-    rootDir: .
-    buildCommand: npm install && npm --workspace apps/web run build
-    startCommand: npm --workspace apps/web run start
+    dockerfilePath: ./apps/web/Dockerfile
     healthCheckPath: /
     autoDeploy: false
     envVars:
-      - key: NODE_VERSION
-        value: "20"
       - key: API_UPSTREAM
         # 注意：Render 因基础名 ai-life-os-api 被占用，给服务分配了带后缀 -4y3x 的 URL。
         # 不要用 https://ai-life-os-api.onrender.com（那是占位的 503 挂起页）。

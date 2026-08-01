@@ -26,8 +26,8 @@ from app.domains.coach.prompts import (
     COACH_SYSTEM_PROMPT,
 )
 from app.domains.coach.repository import (
-    ConversationRepository,
     CoachTaskRepository,
+    ConversationRepository,
     MemoryRepository,
     MessageRepository,
 )

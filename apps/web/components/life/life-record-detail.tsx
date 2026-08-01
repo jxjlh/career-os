@@ -1,14 +1,25 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import { LifeRecordImage } from "@/components/life/life-record-image";
 import { Badge, Card } from "@/components/ui";
-import type { LifeRecord } from "@/lib/life";
+import { getRecordMediaUrl, type LifeRecord } from "@/lib/life";
 
 export function LifeRecordDetail({ record }: { record: LifeRecord }) {
   const location = [record.country, record.city].filter(Boolean).join(" ");
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (record.videoUrl) {
+      getRecordMediaUrl(record.videoUrl).then(setVideoUrl).catch(() => setVideoUrl(null));
+    }
+  }, [record.videoUrl]);
+
   return (
     <Card className="overflow-hidden">
-      {record.watermarkUrl || record.photoUrl ? (
+      {record.recordType === "video" && videoUrl ? (
+        <video src={videoUrl} controls className="aspect-[16/9] w-full bg-black object-contain" />
+      ) : record.watermarkUrl || record.photoUrl ? (
         <LifeRecordImage path={record.watermarkUrl || record.photoUrl!} />
       ) : (
         <div className="flex h-40 items-center justify-center bg-surface-muted text-4xl">📷</div>

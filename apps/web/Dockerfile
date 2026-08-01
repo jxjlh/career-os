@@ -1,26 +1,25 @@
-FROM node:22-alpine AS deps
-WORKDIR /repo
-COPY package.json package-lock.json ./
-COPY apps/web/package.json apps/web/package.json
-RUN npm ci
+# Next.js standalone 生产镜像（Render Blueprint 使用）
+# 构建上下文必须为仓库根目录：docker build -f apps/web/Dockerfile .
+FROM node:20-alpine AS builder
 
-FROM node:22-alpine AS builder
 WORKDIR /repo
-COPY --from=deps /repo/node_modules ./node_modules
 COPY . .
+RUN npm install
 RUN npm --workspace apps/web run build
 
-FROM node:22-alpine AS runner
-WORKDIR /repo
+FROM node:20-alpine AS runner
+
 ENV NODE_ENV=production
-COPY --from=builder /repo/apps/web/.next/standalone ./
-COPY --from=builder /repo/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder /repo/apps/web/public ./apps/web/public
-RUN chown -R node:node /repo
-USER node
+WORKDIR /app
+
+COPY --from=builder /repo/apps/web/.next/standalone/apps/web ./
+COPY --from=builder /repo/apps/web/public ./public
+COPY --from=builder /repo/apps/web/.next/static ./.next/static
+
 EXPOSE 3000
+ENV HOSTNAME=0.0.0.0
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD node -e "fetch('http://127.0.0.1:3000/dashboard').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "apps/web/server.js"]
+CMD ["node", "server.js"]

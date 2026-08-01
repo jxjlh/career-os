@@ -19,6 +19,8 @@ export function TravelPlanForm({
     budget: string;
     people: string;
     interests: string[];
+    bestSeason: string;
+    region: string;
   }) => void;
   loading: boolean;
 }) {
@@ -27,6 +29,8 @@ export function TravelPlanForm({
   const [budget, setBudget] = useState("");
   const [people, setPeople] = useState("");
   const [interests, setInterests] = useState<string[]>(["摄影", "自然"]);
+  const [bestSeason, setBestSeason] = useState("");
+  const [region, setRegion] = useState("");
 
   const toggleInterest = (value: string) => {
     setInterests((prev) => (prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]));
@@ -49,6 +53,16 @@ export function TravelPlanForm({
           <div>
             <label className="mb-1 block text-xs text-muted">预算（可选）</label>
             <Input value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="如 10000" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs text-muted">最佳季节（可选）</label>
+            <Input value={bestSeason} onChange={(e) => setBestSeason(e.target.value)} placeholder="如 6-9月" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted">地区（可选）</label>
+            <Input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="如 北欧 / 中国西南" />
           </div>
         </div>
         <div>
@@ -82,6 +96,8 @@ export function TravelPlanForm({
               budget,
               people,
               interests,
+              bestSeason,
+              region,
             })
           }
         >

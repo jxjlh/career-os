@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
-from app.db.models import AIContent, GoalTask
+from app.db.models import AIContent, GoalTask, TravelChecklistItem
 from app.domains.ai.prompts.bucket_recommendation import BUCKET_RECOMMENDATION_PROMPT
 from app.domains.ai.prompts.friend_recommendation import FRIEND_RECOMMENDATION_PROMPT
 from app.domains.ai.prompts.growth_plan import GROWTH_PLAN_PROMPT
@@ -12,6 +12,7 @@ from app.domains.ai.prompts.journal import JOURNAL_PROMPT
 from app.domains.ai.prompts.map_insight import MAP_INSIGHT_PROMPT
 from app.domains.ai.prompts.photo_analysis import PHOTO_ANALYSIS_PROMPT
 from app.domains.ai.prompts.team_plan import TEAM_PLAN_PROMPT
+from app.domains.ai.prompts.travel_assistant import TRAVEL_ASSISTANT_PROMPT
 from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_PROMPT
 from app.domains.ai.prompts.year_summary import YEAR_SUMMARY_PROMPT
 from app.domains.ai.repository import AIContentRepository
@@ -37,6 +38,10 @@ from app.domains.ai.schemas import (
     TeamPlanResponse,
     TeamRiskItem,
     TeamTaskItem,
+    TravelAssistantRequest,
+    TravelAssistantResponse,
+    TravelChecklistItemCreate,
+    TravelChecklistItemUpdate,
     TravelPlanRequest,
     TravelPlanResponse,
     YearSummaryRequest,
@@ -127,6 +132,183 @@ class TravelPlanService:
             preparation=parsed.get("preparation") or [],
             tips=parsed.get("tips") or [],
         )
+
+
+class TravelAssistantService:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIService(db)
+        self.goals = LifeGoalRepository(db)
+
+    async def generate(
+        self,
+        user_id: str,
+        payload: TravelAssistantRequest,
+    ) -> TravelAssistantResponse:
+        goal_title = ""
+        if payload.goal_id:
+            goal = self.goals.get_owned(user_id, payload.goal_id)
+            if goal is None:
+                raise AppError(code="NOT_FOUND", message="Life goal not found", status=404)
+            goal_title = goal.title or ""
+
+        history = "\n".join(f"{m.role}: {m.content}" for m in payload.messages[-10:])
+        prompt = TRAVEL_ASSISTANT_PROMPT.format(
+            goal_title=goal_title or "未指定",
+            history=history or "（用户还没有提供信息）",
+        )
+        input_data = {
+            "goal_id": payload.goal_id,
+            "messages": [m.model_dump() for m in payload.messages],
+        }
+        try:
+            record, parsed = await self.ai.generate_content(
+                user_id=user_id,
+                content_type="travel_plan",
+                input_data=input_data,
+                prompt=prompt,
+            )
+        except AppError:
+            parsed = {
+                "reply": "我还在帮你整理行程。可以告诉我目的地、天数、预算和兴趣，我就能为你生成完整攻略。",
+                "title": None,
+                "summary": None,
+                "best_time": None,
+                "route": [],
+                "preparation": [],
+                "tips": [],
+            }
+            record = self.ai.repository.create(
+                user_id=user_id,
+                content_type="travel_plan",
+                input_json=input_data,
+                output_json=parsed,
+                provider="fallback",
+                model="default",
+            )
+
+        return TravelAssistantResponse(
+            id=record.id,
+            aiContentId=record.id,
+            reply=parsed.get("reply")
+            or "我已经根据你的需求整理了行程。你可以继续补充目的地、天数、预算和兴趣，我会把攻略补充完整。",
+            title=parsed.get("title"),
+            summary=parsed.get("summary"),
+            bestTime=parsed.get("best_time"),
+            route=parsed.get("route") or [],
+            preparation=parsed.get("preparation") or [],
+            tips=parsed.get("tips") or [],
+        )
+
+
+class TravelChecklistService:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.ai = AIContentRepository(db)
+
+    def _get_owned_plan(self, user_id: str, ai_content_id: str) -> AIContent:
+        content = self.ai.get_by_id(user_id, ai_content_id)
+        if content is None or content.content_type != "travel_plan":
+            raise AppError(code="NOT_FOUND", message="Travel plan not found", status=404)
+        return content
+
+    def _dict(self, row: TravelChecklistItem) -> dict:
+        return {
+            "id": row.id,
+            "aiContentId": row.ai_content_id,
+            "item": row.item,
+            "note": row.note,
+            "checked": row.checked,
+            "sortOrder": row.sort_order,
+            "createdAt": row.created_at.isoformat() if row.created_at else None,
+        }
+
+    def list(self, user_id: str, ai_content_id: str) -> list[dict]:
+        content = self._get_owned_plan(user_id, ai_content_id)
+        rows = (
+            self.db.query(TravelChecklistItem)
+            .filter(
+                TravelChecklistItem.user_id == user_id,
+                TravelChecklistItem.ai_content_id == ai_content_id,
+            )
+            .order_by(TravelChecklistItem.sort_order, TravelChecklistItem.created_at)
+            .all()
+        )
+        if not rows:
+            rows = []
+            for idx, item in enumerate(content.output_json.get("preparation") or []):
+                row = TravelChecklistItem(
+                    user_id=user_id,
+                    ai_content_id=ai_content_id,
+                    item=item,
+                    sort_order=idx,
+                )
+                self.db.add(row)
+                rows.append(row)
+            if rows:
+                self.db.commit()
+                for row in rows:
+                    self.db.refresh(row)
+        return [self._dict(row) for row in rows]
+
+    def add(
+        self,
+        user_id: str,
+        ai_content_id: str,
+        payload: TravelChecklistItemCreate,
+    ) -> dict:
+        self._get_owned_plan(user_id, ai_content_id)
+        count = (
+            self.db.query(TravelChecklistItem)
+            .filter(
+                TravelChecklistItem.user_id == user_id,
+                TravelChecklistItem.ai_content_id == ai_content_id,
+            )
+            .count()
+        )
+        row = TravelChecklistItem(
+            user_id=user_id,
+            ai_content_id=ai_content_id,
+            item=payload.item.strip(),
+            note=payload.note,
+            sort_order=count,
+        )
+        self.db.add(row)
+        self.db.commit()
+        self.db.refresh(row)
+        return self._dict(row)
+
+    def update(
+        self,
+        user_id: str,
+        item_id: str,
+        payload: TravelChecklistItemUpdate,
+    ) -> dict:
+        row = self._get_owned_item(user_id, item_id)
+        if payload.item is not None:
+            row.item = payload.item.strip()
+        if payload.note is not None:
+            row.note = payload.note
+        if payload.checked is not None:
+            row.checked = payload.checked
+        self.db.commit()
+        self.db.refresh(row)
+        return self._dict(row)
+
+    def delete(self, user_id: str, item_id: str) -> None:
+        row = self._get_owned_item(user_id, item_id)
+        self.db.delete(row)
+        self.db.commit()
+
+    def _get_owned_item(self, user_id: str, item_id: str) -> TravelChecklistItem:
+        row = (
+            self.db.query(TravelChecklistItem)
+            .filter(TravelChecklistItem.id == item_id, TravelChecklistItem.user_id == user_id)
+            .first()
+        )
+        if row is None:
+            raise AppError(code="NOT_FOUND", message="Checklist item not found", status=404)
+        return row
 
 
 class GrowthPlanService:

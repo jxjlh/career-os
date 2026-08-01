@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from app.domains.life.repository import (
     LifeGoalRepository,
     LifeRecordRepository,
-    UserLevelRepository,
 )
 
 
@@ -61,7 +60,6 @@ async def build_map_context(db: Session, user_id: str) -> str:
 
 
 async def build_friend_context(db: Session, user_id: str) -> str:
-    from app.db.models import Friend
     from app.domains.social.repository import FriendRepository
 
     repo = FriendRepository(db)
@@ -70,8 +68,9 @@ async def build_friend_context(db: Session, user_id: str) -> str:
 
 
 async def build_team_context(db: Session, user_id: str) -> str:
-    from app.db.models import GoalMember, SharedGoal
     from sqlalchemy import func
+
+    from app.db.models import GoalMember
 
     count = (
         db.query(func.count(GoalMember.id))

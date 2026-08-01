@@ -70,6 +70,12 @@ def life_goal_dict(goal: LifeGoal) -> dict:
         "latitude": goal.latitude,
         "longitude": goal.longitude,
         "coverImage": goal.cover_image,
+        "budget": goal.budget,
+        "recommendedDays": goal.recommended_days,
+        "bestSeason": goal.best_season,
+        "region": goal.region,
+        "friends": goal.friends or [],
+        "aiPlanMeta": goal.ai_plan_meta or {},
         "status": goal.status,
         "isAiGenerated": goal.is_ai_generated,
         "createdAt": goal.created_at.isoformat() if goal.created_at else None,
@@ -124,6 +130,9 @@ class LifeGoalService:
         data["start_date"] = parse_date(data.pop("startDate", None))
         data["target_date"] = parse_date(data.pop("targetDate", None))
         data["cover_image"] = data.pop("coverImage", None)
+        data["recommended_days"] = data.pop("recommendedDays", None)
+        data["best_season"] = data.pop("bestSeason", None)
+        data["ai_plan_meta"] = data.pop("aiPlanMeta", {})
         data["is_ai_generated"] = data.pop("isAiGenerated", False)
         goal = self.repository.create(user_id, **data)
         if goal.status == "completed":
@@ -154,10 +163,18 @@ class LifeGoalService:
             goal.target_date = parse_date(data.pop("targetDate"))
         if "coverImage" in data:
             goal.cover_image = data.pop("coverImage")
+        if "recommendedDays" in data:
+            goal.recommended_days = data.pop("recommendedDays")
+        if "bestSeason" in data:
+            goal.best_season = data.pop("bestSeason")
+        if "aiPlanMeta" in data:
+            goal.ai_plan_meta = data.pop("aiPlanMeta") or {}
+        if "friends" in data:
+            goal.friends = data.pop("friends") or []
         if "isAiGenerated" in data:
             goal.is_ai_generated = data.pop("isAiGenerated")
         for field, value in data.items():
-            if value is not None:
+            if value is not None and not (isinstance(value, list) and not value):
                 setattr(goal, field, value)
         self.db.commit()
         self.db.refresh(goal)

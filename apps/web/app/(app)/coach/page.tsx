@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Send, Sparkles } from "lucide-react";
+import { CalendarPlus, Loader2, Send, Sparkles } from "lucide-react";
 import { useState } from "react";
 
 import { Badge, Button, Card, Input, SectionHeader } from "@/components/ui";
@@ -50,6 +50,16 @@ export default function CoachPage() {
       queryClient.invalidateQueries({ queryKey: ["coach-messages", chatId] });
     },
   });
+  const syncPlan = useMutation({
+    mutationFn: (content: string) =>
+      apiFetch("/planner/tasks", {
+        method: "POST",
+        body: JSON.stringify({ title: content.slice(0, 60), day: 1, estimatedMinutes: 60 }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["planner-current"] });
+    },
+  });
 
   const items = messages.data?.data || [];
 
@@ -75,6 +85,16 @@ export default function CoachPage() {
                     }`}
                   >
                     {m.content}
+                    {m.role === "assistant" && (
+                      <button
+                        onClick={() => syncPlan.mutate(m.content)}
+                        disabled={syncPlan.isPending}
+                        className="mt-2 flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary"
+                      >
+                        <CalendarPlus className="h-3 w-3" />
+                        同步到学习计划
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

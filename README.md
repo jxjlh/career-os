@@ -11,6 +11,9 @@ Learn -> Practice -> Build -> Interview -> Job -> Promotion -> Repeat
 ## 功能模块
 
 - Dashboard：学习进度、技能成长、OKR、项目、成长趋势、学习日历、AI 建议
+- 人生目标：总目标 / 已完成 / 未完成三栏看板、人生格言、中文足迹地图、轨迹时间轴、清单建议
+- 人生记录：AI 相机拍照 / 录像、时间地点水印、同行好友水印、视频日志、记录时间轴
+- 职业规划：现状描述 + AI 学习建议、技能矩阵、AI 学习计划 / 手动计划、成长分析、资源库
 - Career Roadmap：3 / 5 / 10 年职业路线，AI 生成、修改、拖拽、完成
 - Skill Matrix：技能树、当前 / 目标等级、AI 建议
 - Learning Explorer：AI 学习搜索引擎，实时搜索 + AI 排序 + 总结 / Quiz / 思维导图
@@ -23,6 +26,9 @@ Learn -> Practice -> Build -> Interview -> Job -> Promotion -> Repeat
 - AI Career Coach：基于全量上下文回答下一步学什么、如何跳槽、如何涨薪
 - Resume Builder：中英文简历自动生成、版本管理、异步导出
 - Analytics：学习时间、技能增长、完成率、OKR
+
+> 上传与存储：图片 / 视频默认上传到 Supabase Storage；本地开发或 Supabase 不可用时自动回落到
+> 后端 `apps/api/media/` 目录，前端通过 `/media/*` 代理读取，上传不会中断。
 
 ## 技术栈
 

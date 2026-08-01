@@ -1,17 +1,17 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Check, Sparkles } from "lucide-react";
+import { Camera, Check, Sparkles, Users } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 
-import { CameraCapture } from "@/components/life/camera-capture";
+import { LifeCameraPanel } from "@/components/life/camera/life-camera-panel";
 import { LifeRecordImage } from "@/components/life/life-record-image";
 import { LifeTaskList } from "@/components/life/life-task-list";
 import { Badge, Button, Card, Skeleton } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
-import { CATEGORY_META, getGoalRecords, type LifeRecord } from "@/lib/life";
+import { getCategoryMeta, getGoalRecords, type LifeRecord } from "@/lib/life";
 
 type Envelope = { data: any };
 
@@ -44,7 +44,7 @@ export default function LifeGoalDetailPage() {
   if (!goal.data) return null;
 
   const data = goal.data.data;
-  const meta = CATEGORY_META[data.category] || CATEGORY_META.other;
+  const meta = getCategoryMeta(data.category);
   const items = records.data || [];
 
   return (
@@ -61,7 +61,17 @@ export default function LifeGoalDetailPage() {
               <Badge>{data.status}</Badge>
               <Badge variant="warning">{data.difficulty}★</Badge>
               <Badge variant="primary">{meta.labelZh}</Badge>
+              {data.budget && <Badge variant="warning">预算 {data.budget}</Badge>}
+              {data.recommendedDays && <Badge>推荐 {data.recommendedDays} 天</Badge>}
+              {data.bestSeason && <Badge variant="success">{data.bestSeason}</Badge>}
+              {data.region && <Badge>地区 {data.region}</Badge>}
             </div>
+            {data.friends && data.friends.length > 0 && (
+              <p className="mt-2 flex items-center gap-1 text-[12px] text-muted">
+                <Users className="h-3.5 w-3.5" />
+                同行好友：{data.friends.join("、")}
+              </p>
+            )}
             {data.description && <p className="mt-3 text-sm text-muted">{data.description}</p>}
           </div>
         </div>
@@ -91,20 +101,13 @@ export default function LifeGoalDetailPage() {
               </Button>
             </Link>
           )}
-          <Link href={`/life/goals/${goalId}/growth`}>
-            <Button variant="outline">
-              <Sparkles className="h-4 w-4" />
-              AI 成长规划
-            </Button>
-          </Link>
         </div>
       </Card>
 
       {showCamera && (
-        <CameraCapture
+        <LifeCameraPanel
           goalId={goalId}
-          goalTitle={data.title}
-          onSuccess={() => queryClient.invalidateQueries({ queryKey: ["life-goal-records", goalId] })}
+          onRecorded={() => queryClient.invalidateQueries({ queryKey: ["life-goal-records", goalId] })}
         />
       )}
 

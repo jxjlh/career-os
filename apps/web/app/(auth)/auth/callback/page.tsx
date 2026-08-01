@@ -18,7 +18,7 @@ function CallbackInner() {
           localStorage.setItem("career_os_token", data.session.access_token);
         }
       }
-      router.replace("/onboarding");
+      router.replace("/dashboard");
     };
     void run();
   }, [code, router]);

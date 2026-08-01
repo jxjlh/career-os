@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import create_engine, make_url
+from sqlalchemy import create_engine, inspect, make_url, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
@@ -15,9 +15,8 @@ _db_url = None
 if settings.database_url:
     try:
         _db_url = make_url(settings.database_url)
-        if _db_url.drivername and not _db_url.drivername.startswith("sqlite"):
-            if "+psycopg" not in _db_url.drivername:
-                _db_url = _db_url.set(drivername="postgresql+psycopg")
+        if _db_url.drivername and not _db_url.drivername.startswith("sqlite") and "+psycopg" not in _db_url.drivername:
+            _db_url = _db_url.set(drivername="postgresql+psycopg")
         logger.info(
             "DATABASE_URL parsed OK: driver=%s host=%s port=%s db=%s",
             _db_url.drivername, _db_url.host, _db_url.port, _db_url.database,
@@ -36,6 +35,32 @@ if _db_url is None:
 connect_args = {"check_same_thread": False} if (_db_url.drivername or "").startswith("sqlite") else {}
 engine = create_engine(_db_url, connect_args=connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+
+
+def ensure_columns() -> None:
+    """开发环境幂等补列: 老库没有新列时直接添加, 不依赖 Alembic 版本链."""
+    additions = {
+        "life_goals": {
+            "budget": "VARCHAR(120)",
+            "recommended_days": "INTEGER",
+            "best_season": "VARCHAR(80)",
+            "region": "VARCHAR(120)",
+            "friends": "JSON",
+            "ai_plan_meta": "JSON",
+        },
+        "user_profiles": {
+            "life_motto": "VARCHAR(300)",
+        },
+    }
+    tables = set(inspect(engine).get_table_names())
+    with engine.begin() as conn:
+        for table, columns in additions.items():
+            if table not in tables:
+                continue
+            existing = {col["name"] for col in inspect(conn).get_columns(table)}
+            for name, ddl in columns.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 def get_db():

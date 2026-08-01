@@ -6,13 +6,14 @@
 
 | 层 | 方案 | 说明 |
 |----|------|------|
-| 前端 | **Vercel** | Next.js 原生托管，含 `/api/v1/*` → 后端的 rewrite 代理，浏览器只访问前端域名 |
-| 后端 | **Render** | 免费 Docker Web Service，15 分钟无访问休眠，冷启动 ~30s |
+| 前端 | **Render（推荐）** | `render.yaml` Blueprint 自动部署 Next.js standalone，内置 `/api/v1/*` → 后端 rewrite 代理；也可选 Vercel |
+| 后端 | **Render** | 免费 Docker Web Service，自动跑 Alembic 迁移，15 分钟无访问休眠，冷启动 ~30s |
 | 数据库 / 认证 | **Supabase**（已配置） | 免费 500MB Postgres + Auth + JWT |
 | iPhone App | **PWA**（添加到主屏幕） | 无需 Xcode / $99 开发者账号 |
 | AI | **讯飞星火**（已配置） | 免费额度 |
 
 > 后端备选：Fly.io / Koyeb（同为免费 Docker 托管），env 配置不变。
+> 前端备选：Vercel 部署方式见本文件 D3（Root Directory 选 `apps/web`）。
 > ⚠️ 之前 `render.yaml` 曾把 Supabase service_role_key / anon_key / DB 密码以明文提交到仓库——**已泄露，部署前请先去 Supabase 控制台轮换这些密钥**（Settings → API → Reset）。
 
 ---
@@ -23,34 +24,37 @@
 2. （自测）关闭 "Confirm email"，或保持开启走邮箱确认流程。
 3. **轮换密钥**（必做，因曾泄露）：Project Settings → API → 对 `anon key`、`service_role key` 点 Reset；Database 设新密码。
 4. 取 `Database → Connection string`（**pooler 模式**，端口 6543，带 `?pgbouncer=true`）作为后端 `DATABASE_URL`。
-5. 取 Project Settings → API → `JWT secret` 作为后端 `SUPABASE_JWT_SECRET`。
+5. Project Settings → API → `JWT secret` 可不填：后端留空时自动用 ES256 + JWKS 公钥验证 Supabase 默认签发的 JWT。
 6. 记下 `Project URL`、`anon key`（前端要用）。
 
 ---
 
-## D2. 后端 → Render
+## D2. 全栈 → Render Blueprint（推荐）
 
-1. Render Dashboard → **New → Blueprint** → 连接 GitHub 仓库 → 自动读取根目录 `render.yaml`。
-2. 服务 `ai-life-os-api` 创建后，进入 Environment 填写 `sync: false` 的变量（值不写入仓库）：
+1. Render Dashboard → **New → Blueprint** → 连接 GitHub 仓库 → 自动读取根目录 `render.yaml`，一次创建 `ai-life-os-api` 与 `ai-life-os-web` 两个服务。
+2. 服务创建后，进入 Environment 填写 `sync: false` 的变量（值不写入仓库）：
 
    | 变量 | 取值来源 |
    |------|---------|
    | `DATABASE_URL` | D1.4 的 pooler 连接串 |
-   | `CORS_ORIGINS` | D3 完成后的 Vercel 域名（先留空，部署完前端回来填） |
+   | `CORS_ORIGINS` | D3 完成后的前端域名（先留空，部署完前端回来填） |
    | `SUPABASE_URL` | `https://odthfgmjgutpsfjkmvto.supabase.co` |
    | `SUPABASE_ANON_KEY` | D1.6 |
    | `SUPABASE_SERVICE_ROLE_KEY` | D1.3 轮换后的新值 |
-   | `SUPABASE_JWT_SECRET` | D1.5 |
+   | `SUPABASE_JWT_SECRET` | **留空**：后端自动走 ES256 + JWKS 公钥验证，与 Supabase 默认签发的 JWT 一致 |
    | `XFYUN_API_KEY` / `XFYUN_API_SECRET` / `XFYUN_APP_ID` | 讯飞控制台 |
 
-3. 部署完成后访问 `https://<service>.onrender.com/health` 应返回 `ok`。
-4. **跑数据库迁移**：Render Shell 执行 `alembic upgrade head`（或修改启动命令为 `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`）。
+3. 后端 Dockerfile 已支持 Render 注入的 `$PORT`（未注入时默认 8000），启动命令包含 `alembic upgrade head`，无需手动迁移。
+4. 部署完成后访问 `https://<service>.onrender.com/health` 应返回 `ok`，访问 `/ready` 应显示 `"postgres": "ok"`。
+5. 前端服务名 `ai-life-os-web`，构建产物为 Next.js standalone（`apps/web/Dockerfile`），无需额外配置。
 
 > 免费档 15 分钟无访问会休眠，首请求冷启动 ~30s。可用免费 cron（如 cron-job.org）每 10 分钟 ping `/health` 保活。
 
 ---
 
-## D3. 前端 → Vercel
+## D3. 前端 → Vercel（可选）
+
+> 使用 Render Blueprint 时跳过本节；只有想单独把前端放 Vercel 时才按下面操作。
 
 1. Vercel → **New Project** → 导入仓库 → **Root Directory 选 `apps/web`**。
 2. Framework Preset 自动识别为 Next.js。Build/Output 用默认。
@@ -67,27 +71,48 @@
 
 ---
 
-## D4. iPhone 安装为 App
+## D4. 联网搜索（学习搜索引擎）
+
+`学习搜索` 模块已经内置多数据源。免费无需 key 的有 **Wikipedia** 与 **GitHub**；需要免费 key 的按需填写：
+
+| 变量 | 用途 | 免费额度 |
+|------|------|---------|
+| `TAVILY_API_KEY` | Tavily 网页搜索 | 每月 1000 次 |
+| `EXA_API_KEY` | Exa 语义搜索 | 每月 1000 次 |
+| `GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_CX` | Google 自定义搜索 | 每天 100 次 |
+| `BING_API_KEY` | Bing 搜索 | 每月 1000 次 |
+| `YOUTUBE_API_KEY` | YouTube 学习视频 | 每天 10000 配额 |
+
+在 Render 服务的 Environment 里填入对应变量即可，无需改代码。
+
+> 关于 Streamlit：本项目是 Next.js + FastAPI 架构，Streamlit Community Cloud 只能部署 Python 数据应用，无法托管 Next.js 前端，因此网站不能部署到 Streamlit。仓库的 `render.yaml`（Render Blueprint）已把前端与后端一起免费部署，是等效且更合适的方案。
+
+---
+
+## D5. iPhone 安装为 App
 
 1. iPhone **Safari**（必须 Safari，Chrome 不支持"添加到主屏幕"全屏）打开 Vercel 域名 → 登录。
 2. 点底部 **分享按钮** → **"添加到主屏幕"** → 命名"AI Life OS" → 添加。
 3. 主屏出现"AI Life OS"图标，点击即**全屏独立运行**（无 Safari 地址栏）。
 4. 长按图标可看到快捷操作：AI 对话 / 今日建议 / 长期记忆（来自 manifest shortcuts）。
+5. 图标已重设计：`public/icons/career-os-appicon.png`（512）、`career-os-appicon-192.png`（192）、`apple-touch-icon.png`（180）。
 
 ---
 
 ## 验证清单
 
 - [ ] `curl https://<render域名>/health` 返回 ok
+- [ ] `curl https://<render域名>/ready` 返回 `"postgres": "ok"`
 - [ ] Render Shell `alembic current` 显示最新 head
-- [ ] Vercel 域名打开 → 注册/登录成功
+- [ ] 前端域名打开 → 注册/登录成功
 - [ ] 未登录访问 `/dashboard` → 自动重定向到 `/login`
 - [ ] `/life/coach` 能发起 AI 对话（经 rewrite 代理 → Render → Supabase → 讯飞）
+- [ ] `学习搜索` 能返回 Wikipedia / GitHub 结果（联网生效）
 - [ ] iPhone Safari → 添加到主屏幕 → 全屏运行、图标正确、状态栏样式正确
 
 ## 已知限制（免费档）
 
 - **Render 冷启动**：15 分钟无访问休眠，首请求慢 ~30s（可定时 ping 缓解）。
-- **Vercel rewrite 超时**：AI 长请求（>30s）可能被边缘超时。讯飞通常 <10s 可接受；超长任务（年度复盘）建议前端轮询。
+- **rewrite 超时**：AI 长请求（>30s）可能被托管平台边缘超时。讯飞通常 <10s 可接受；超长任务（年度复盘）建议前端轮询。
 - **PWA 不上架 App Store**：仅"添加到主屏幕"。如需上架需 Capacitor + $99/年开发者账号（非免费）。
 - **Supabase 免费档**：500MB 数据库、5 万月活认证用户，个人使用充足。

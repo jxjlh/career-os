@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Aperture,
-  ArrowLeft,
   Camera as CameraIcon,
   Check,
   Image as ImageIcon,
@@ -16,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AICamera } from "@/components/life/camera/ai-camera";
 import { CameraControls } from "@/components/life/camera/camera-controls";
@@ -26,19 +25,26 @@ import { RecordingPulse, ShutterAnimation } from "@/components/life/camera/shutt
 import { UploadProgress, type UploadState } from "@/components/life/camera/upload-progress";
 import { WatermarkSettings } from "@/components/life/camera/watermark-settings";
 import { createWatermarkImage, DEFAULT_WATERMARK_OPTIONS, type WatermarkOptions } from "@/components/life/watermark-canvas";
-import { Button, EmptyState, Skeleton } from "@/components/ui";
+import { Button, Card, EmptyState, Skeleton } from "@/components/ui";
 import {
   analyzePhoto,
   createLifeRecord,
   getLifeGoals,
   type PhotoAnalysisResponse,
 } from "@/lib/life";
-import { getCurrentLocation, getCurrentWeather, formatGps, reverseGeocode } from "@/lib/location";
+import { getCurrentWeather, formatGps, getLocationState, reverseGeocode } from "@/lib/location";
+import { listFriends } from "@/lib/social";
 
 const COUNTDOWN_OPTIONS = [0, 3, 5, 10];
 const ASPECT_OPTIONS = ["1:1", "4:3", "16:9"] as const;
 
-export default function CameraPage() {
+export function LifeCameraPanel({
+  goalId,
+  onRecorded,
+}: {
+  goalId?: string;
+  onRecorded?: () => void;
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const cameraRef = useRef<AICameraHandle>(null);
@@ -65,36 +71,43 @@ export default function CameraPage() {
   const [location, setLocation] = useState<{ latitude: number; longitude: number; altitude?: number | null } | null>(null);
   const [place, setPlace] = useState<{ city?: string; country?: string } | null>(null);
   const [weather, setWeather] = useState<{ weather: string; temperature: number } | null>(null);
+  const [locationState, setLocationState] = useState<"locating" | "ready" | "denied" | "failed">("locating");
   const [locationStatus, setLocationStatus] = useState("正在获取定位…");
+  const [locationError, setLocationError] = useState<string | null>(null);
 
-  const [selectedGoalId, setSelectedGoalId] = useState<string>("");
+  const [selectedGoalId, setSelectedGoalId] = useState<string>(goalId || "");
+  const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
 
   const goalsQuery = useQuery({ queryKey: ["life-goals"], queryFn: getLifeGoals });
+  const friendsQuery = useQuery({ queryKey: ["friends"], queryFn: listFriends });
 
-  // 获取定位 + 反向地理编码 + 天气 (拍照前预加载, 失败不阻塞)
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const loc = await getCurrentLocation();
-      if (!mounted) return;
-      if (loc) {
-        setLocation(loc);
-        setLocationStatus(`已定位 ${formatGps(loc.latitude, loc.longitude)}`);
-        const [p, w] = await Promise.all([
-          reverseGeocode(loc.latitude, loc.longitude),
-          getCurrentWeather(loc.latitude, loc.longitude),
-        ]);
-        if (!mounted) return;
-        if (p) setPlace(p);
-        if (w) setWeather(w);
-      } else {
-        setLocationStatus("未获取定位");
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
+  // 获取定位 + 反向地理编码 + 天气 (拍照前预加载, 失败不阻塞, 可手动重试)
+  const locate = useCallback(async () => {
+    setLocationState("locating");
+    setLocationStatus("正在获取定位…");
+    setLocationError(null);
+    const result = await getLocationState();
+    if (result.status === "ready" && result.location) {
+      setLocation(result.location);
+      setLocationState("ready");
+      setLocationStatus(`已定位 ${formatGps(result.location.latitude, result.location.longitude)}`);
+      const [p, w] = await Promise.all([
+        reverseGeocode(result.location.latitude, result.location.longitude),
+        getCurrentWeather(result.location.latitude, result.location.longitude),
+      ]);
+      if (p) setPlace(p);
+      if (w) setWeather(w);
+    } else {
+      setLocation(null);
+      setLocationState(result.status === "denied" ? "denied" : "failed");
+      setLocationStatus(result.status === "denied" ? "定位权限被拒绝" : "定位失败");
+      setLocationError(result.error || "未能获取定位");
+    }
   }, []);
+
+  useEffect(() => {
+    void locate();
+  }, [locate]);
 
   const countdown = COUNTDOWN_OPTIONS[countdownIdx];
 
@@ -170,6 +183,7 @@ export default function CameraPage() {
           weather: weather?.weather,
           temperature: weather?.temperature ?? null,
           altitude: location?.altitude ?? null,
+          friends: selectedFriends,
         },
         watermarkOptions,
       );
@@ -192,6 +206,7 @@ export default function CameraPage() {
       queryClient.invalidateQueries({ queryKey: ["life-checkin"] });
       queryClient.invalidateQueries({ queryKey: ["life-dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["life-map"] });
+      onRecorded?.();
       setTimeout(() => {
         setUploadState("idle");
         setCapturedBlob(null);
@@ -220,7 +235,7 @@ export default function CameraPage() {
 
   if (goalsQuery.isLoading) {
     return (
-      <div className="mx-auto max-w-2xl space-y-4">
+      <div className="space-y-4">
         <Skeleton className="h-10" />
         <Skeleton className="aspect-[4/3] rounded-[16px]" />
       </div>
@@ -231,20 +246,16 @@ export default function CameraPage() {
   const activeGoal = goals.find((g) => g.id === selectedGoalId) ?? goals[0];
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
-      <ShutterAnimation flash={flash} />
-
-      <div className="flex items-center gap-2">
-        <Link href="/life">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <h1 className="flex items-center gap-2 text-lg font-semibold">
-          <CameraIcon className="h-5 w-5" />
+    <Card className="overflow-hidden p-4 sm:p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <CameraIcon className="h-4 w-4 text-primary" />
           AI 相机
-        </h1>
+        </h2>
+        <span className="text-[11px] text-muted">拍照 / 录像 · 水印 · 场景识别</span>
       </div>
+
+      <ShutterAnimation flash={flash} />
 
       {/* 目标选择 */}
       {goals.length === 0 ? (
@@ -277,45 +288,64 @@ export default function CameraPage() {
       )}
 
       {/* 定位状态 */}
-      <div className="flex items-center gap-1.5 text-xs text-muted">
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-surface px-3 py-2 text-xs text-muted">
         <MapPin className="h-3.5 w-3.5" />
         <span>{locationStatus}</span>
         {place?.city && <span>· {place.country} {place.city}</span>}
         {weather && <span>· {weather.weather} {weather.temperature}°C</span>}
+        <button
+          onClick={() => void locate()}
+          disabled={locationState === "locating"}
+          className="ml-auto flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-60"
+        >
+          {locationState === "locating" ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3 w-3" />
+          )}
+          {locationState === "locating" ? "定位中" : "重新定位"}
+        </button>
       </div>
+      {locationError && (
+        <p className="mt-1.5 text-[11px] text-danger">{locationError}（在浏览器设置中允许位置权限后，可点击重新定位）</p>
+      )}
 
       {goals.length > 0 && (
         <>
-          <AICamera
-            ref={cameraRef}
-            mode={mode}
-            aspectRatio={aspectRatio}
-            showGrid={showGrid}
-            facingMode={facingMode}
-            countdown={countdown}
-            onRecordingStateChange={setRecording}
-          />
+          <div className="mt-3">
+            <AICamera
+              ref={cameraRef}
+              mode={mode}
+              aspectRatio={aspectRatio}
+              showGrid={showGrid}
+              facingMode={facingMode}
+              countdown={countdown}
+              onRecordingStateChange={setRecording}
+            />
+          </div>
 
-          <CameraControls
-            mode={mode}
-            aspectRatio={aspectRatio}
-            showGrid={showGrid}
-            facingMode={facingMode}
-            countdown={countdown}
-            onToggleMode={() => setMode((m) => (m === "photo" ? "video" : "photo"))}
-            onCycleAspectRatio={() =>
-              setAspectRatio((a) => {
-                const idx = ASPECT_OPTIONS.indexOf(a);
-                return ASPECT_OPTIONS[(idx + 1) % ASPECT_OPTIONS.length];
-              })
-            }
-            onToggleGrid={() => setShowGrid((s) => !s)}
-            onToggleFacing={() => setFacingMode((f) => (f === "user" ? "environment" : "user"))}
-            onCycleCountdown={() => setCountdownIdx((i) => (i + 1) % COUNTDOWN_OPTIONS.length)}
-          />
+          <div className="mt-3">
+            <CameraControls
+              mode={mode}
+              aspectRatio={aspectRatio}
+              showGrid={showGrid}
+              facingMode={facingMode}
+              countdown={countdown}
+              onToggleMode={() => setMode((m) => (m === "photo" ? "video" : "photo"))}
+              onCycleAspectRatio={() =>
+                setAspectRatio((a) => {
+                  const idx = ASPECT_OPTIONS.indexOf(a);
+                  return ASPECT_OPTIONS[(idx + 1) % ASPECT_OPTIONS.length];
+                })
+              }
+              onToggleGrid={() => setShowGrid((s) => !s)}
+              onToggleFacing={() => setFacingMode((f) => (f === "user" ? "environment" : "user"))}
+              onCycleCountdown={() => setCountdownIdx((i) => (i + 1) % COUNTDOWN_OPTIONS.length)}
+            />
+          </div>
 
           {/* 快门按钮 */}
-          <div className="flex items-center justify-center gap-4">
+          <div className="mt-3 flex items-center justify-center gap-4">
             <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} title="从相册选择">
               <ImageIcon className="h-5 w-5" />
             </Button>
@@ -351,7 +381,7 @@ export default function CameraPage() {
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="space-y-3"
+              className="mt-3 space-y-3"
             >
               <img
                 src={capturedUrl}
@@ -410,17 +440,49 @@ export default function CameraPage() {
 
           {/* 水印设置 (始终展示, 拍照前可调) */}
           {!capturedUrl && (
-            <WatermarkSettings options={watermarkOptions} onChange={setWatermarkOptions} />
+            <>
+              <div className="mt-3">
+                <WatermarkSettings options={watermarkOptions} onChange={setWatermarkOptions} />
+              </div>
+              <div className="mt-3 rounded-[10px] border border-border bg-surface p-3">
+                <p className="mb-2 text-xs font-medium text-muted">同行好友（水印中显示名字）</p>
+                {friendsQuery.data && friendsQuery.data.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {friendsQuery.data.map((friend) => {
+                      const name = friend.profile.displayName;
+                      const active = selectedFriends.includes(name);
+                      return (
+                        <button
+                          key={friend.profile.id}
+                          onClick={() =>
+                            setSelectedFriends((prev) =>
+                              active ? prev.filter((n) => n !== name) : [...prev, name],
+                            )
+                          }
+                          className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                            active ? "bg-primary text-white" : "bg-surface-muted text-muted"
+                          }`}
+                        >
+                          {name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-muted">暂无好友，可前往人生社交添加。</p>
+                )}
+              </div>
+            </>
           )}
 
-          {error && <p className="text-xs text-danger">{error}</p>}
+          {error && <p className="mt-2 text-xs text-danger">{error}</p>}
 
-          <p className="text-center text-xs text-muted">
+          <p className="mt-2 text-center text-xs text-muted">
             {mode === "photo" ? "点击快门拍照, 自动添加水印并上传" : "点击开始录像, 再次点击停止"}
             {activeGoal && ` · 关联「${activeGoal.title}」`}
           </p>
         </>
       )}
-    </div>
+    </Card>
   );
 }

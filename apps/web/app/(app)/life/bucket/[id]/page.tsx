@@ -86,7 +86,7 @@ export default function BucketDetailPage() {
   const item = query.data;
   const gallery = [item.coverImage, ...item.galleryImages].filter(Boolean) as string[];
   const hasLocation = item.latitude != null && item.longitude != null;
-  // 旅行类(有国家/城市或旅行标签)展示旅行攻略, 否则展示成长规划
+  // 旅行类(有国家/城市或旅行标签)展示 AI 旅行攻略
   const travelTags = ["旅行", "travel", "海岛", "潜水", "极光"];
   const isTravel = (item.tags ?? []).some((t) => travelTags.includes(t)) || !!item.country;
   const joined = item.userState?.joined ?? false;
@@ -214,26 +214,28 @@ export default function BucketDetailPage() {
         </div>
       )}
 
-      {/* AI 规划入口 */}
-      <div className="rounded-[14px] border border-ai/20 bg-gradient-to-br from-ai/5 to-transparent p-4">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-ai" />
-          <span className="text-sm font-semibold">AI 智能规划</span>
+      {/* AI 旅行攻略入口 */}
+      {isTravel && (
+        <div className="rounded-[14px] border border-ai/20 bg-gradient-to-br from-ai/5 to-transparent p-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-ai" />
+            <span className="text-sm font-semibold">AI 智能规划</span>
+          </div>
+          <p className="mt-1 text-[12px] text-muted">让 AI 为这次旅行定制详细攻略与每日行程。</p>
+          {joined && lifeGoalId ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link href={`/life/goals/${lifeGoalId}/ai`}>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  生成 AI 旅行攻略
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <p className="mt-3 text-[11px] text-muted">加入人生目标后即可生成 AI 攻略</p>
+          )}
         </div>
-        <p className="mt-1 text-[12px] text-muted">
-          {isTravel ? "让 AI 为你定制详细旅行攻略与每日行程" : "让 AI 为你制定成长计划与阶段性任务"}
-        </p>
-        {joined && lifeGoalId ? (
-          <Link href={isTravel ? `/life/goals/${lifeGoalId}/ai` : `/life/goals/${lifeGoalId}/growth`}>
-            <Button variant="outline" size="sm" className="mt-3 gap-1.5">
-              <Sparkles className="h-3.5 w-3.5" />
-              {isTravel ? "生成 AI 旅行攻略" : "生成 AI 成长规划"}
-            </Button>
-          </Link>
-        ) : (
-          <p className="mt-3 text-[11px] text-muted">加入人生目标后即可生成 AI 规划</p>
-        )}
-      </div>
+      )}
 
       {/* 加入按钮 (sticky) */}
       <div className="sticky bottom-4 z-10 flex items-center justify-between gap-3 rounded-[14px] border border-border bg-surface/95 p-3 shadow-[0_4px_20px_rgba(0,0,0,0.1)] backdrop-blur">

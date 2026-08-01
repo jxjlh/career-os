@@ -16,6 +16,7 @@ def to_response(profile: UserProfile) -> ProfileResponse:
         strengths=profile.strengths or [],
         interests=profile.interests or [],
         careerDirection=profile.career_direction,
+        lifeMotto=profile.life_motto,
         createdAt=profile.created_at.isoformat() if profile.created_at else None,
         updatedAt=profile.updated_at.isoformat() if profile.updated_at else None,
     )

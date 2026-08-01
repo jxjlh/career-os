@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 
+import { TravelChecklist } from "@/components/life/ai/travel-checklist";
 import { TravelPreparation } from "@/components/life/ai/travel-preparation";
 import { TravelRouteCard } from "@/components/life/ai/travel-route-card";
 import { TravelTips } from "@/components/life/ai/travel-tips";
@@ -25,6 +26,7 @@ export function TravelPlanView({ plan }: { plan: TravelPlanResponse }) {
         ))}
       </div>
       <TravelPreparation items={plan.preparation} />
+      <TravelChecklist aiContentId={plan.aiContentId} />
       <TravelTips items={plan.tips} />
     </motion.div>
   );

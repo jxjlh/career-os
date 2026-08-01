@@ -78,11 +78,6 @@ export default function CheckinPage() {
             <p className="mt-1 text-xs text-muted">
               每一次记录都会自动打卡, 坚持是成长的开始。
             </p>
-            {!data.checkedInToday && (
-              <Link href="/life/camera" className="mt-3 inline-block">
-                <Button>去记录这一刻</Button>
-              </Link>
-            )}
           </motion.div>
 
           {/* 上次打卡时间 */}

@@ -23,6 +23,7 @@ class ProfileUpdate(BaseModel):
     strengths: list[str] = Field(default_factory=list, max_length=50)
     interests: list[str] = Field(default_factory=list, max_length=50)
     career_direction: str | None = Field(default=None, max_length=200)
+    life_motto: str | None = Field(default=None, max_length=300)
 
 
 class ProfileResponse(BaseModel):
@@ -35,5 +36,6 @@ class ProfileResponse(BaseModel):
     strengths: list[str]
     interests: list[str]
     careerDirection: str | None
+    lifeMotto: str | None
     createdAt: str | None
     updatedAt: str | None

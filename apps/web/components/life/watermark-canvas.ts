@@ -3,6 +3,7 @@ export interface WatermarkMeta {
   time?: string;
   location?: string;
   goalTitle: string;
+  friends?: string[];
   city?: string;
   country?: string;
   gps?: string;
@@ -128,6 +129,12 @@ export async function createWatermarkImage(
   const detailLine = buildDetailLine(meta, options);
   if (detailLine) {
     ctx.fillText(detailLine, pad, cursorY);
+  }
+
+  const friendsLine = (meta.friends || []).join(" · ");
+  if (friendsLine) {
+    cursorY += lineHeight;
+    ctx.fillText(`同行好友：${friendsLine}`, pad, cursorY);
   }
 
   return new Promise((resolve) => {

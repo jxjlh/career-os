@@ -1,51 +1,109 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Brain, Camera, Images, ListChecks, MapPin, RefreshCw, Users } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { MapPin, PencilLine, RefreshCw, Sparkles, X } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
-import { DailyAssistantCard } from "@/components/life/assistant/daily-assistant-card";
+import { CareerPlanningSection } from "@/components/career/career-planning-section";
 import { CheckinStreakCard } from "@/components/life/checkin-streak-card";
-import { SocialOverviewCard } from "@/components/life/social/social-overview-card";
-import { LifeCategoryCard } from "@/components/life/life-category-card";
-import { LifeHeader } from "@/components/life/life-header";
-import { LifeLevelCard } from "@/components/life/life-level-card";
-import { LifeProgressCard } from "@/components/life/life-progress-card";
-import { RecentCompletedCard } from "@/components/life/recent-completed-card";
-import { Button, Skeleton } from "@/components/ui";
+import { LifeGoalBoard } from "@/components/life/life-goal-board";
+import { LifeMapClient } from "@/components/life/map/life-map-client";
+import { MapTimeline } from "@/components/life/map/map-timeline";
+import { Button, Card, Input, Skeleton } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
-import { getLevelInfo, getLifeDashboard } from "@/lib/life";
+import { getLifeGoals, getGoalSuggestions, createLifeGoal, type GoalSuggestion } from "@/lib/life";
+import { getLifeMap } from "@/lib/life-map";
 
-type Envelope = { data: any };
+const SUGGESTIONS_HIDDEN_KEY = "life-goal-suggestions-hidden";
 
-export default function LifePage() {
-  const dashboard = useQuery({
-    queryKey: ["life-dashboard"],
-    queryFn: getLifeDashboard,
-  });
-  const profile = useQuery<Envelope>({
+export default function LifeGoalsPage() {
+  const queryClient = useQueryClient();
+  const [editingMotto, setEditingMotto] = useState(false);
+  const [motto, setMotto] = useState("");
+  const [suggestionsHidden, setSuggestionsHidden] = useState(false);
+
+  const profile = useQuery({
     queryKey: ["life-profile"],
-    queryFn: () => apiFetch("/profile"),
+    queryFn: () => apiFetch<{ data: any }>("/profile"),
+  });
+  const goals = useQuery({
+    queryKey: ["life-goals"],
+    queryFn: getLifeGoals,
+  });
+  const map = useQuery({
+    queryKey: ["life-map"],
+    queryFn: () => getLifeMap(),
+  });
+  const suggestions = useQuery({
+    queryKey: ["life-goal-suggestions"],
+    queryFn: getGoalSuggestions,
   });
 
-  if (dashboard.isLoading || profile.isLoading) {
+  useEffect(() => {
+    setSuggestionsHidden(localStorage.getItem(SUGGESTIONS_HIDDEN_KEY) === "1");
+  }, []);
+
+  useEffect(() => {
+    if (profile.data?.data?.lifeMotto) setMotto(profile.data.data.lifeMotto);
+  }, [profile.data]);
+
+  const saveMotto = useMutation({
+    mutationFn: () =>
+      apiFetch("/profile", {
+        method: "PUT",
+        body: JSON.stringify({ lifeMotto: motto }),
+      }),
+    onSuccess: () => {
+      setEditingMotto(false);
+      queryClient.invalidateQueries({ queryKey: ["life-profile"] });
+    },
+  });
+
+  const quickAdd = useMutation({
+    mutationFn: (item: GoalSuggestion) =>
+      createLifeGoal({
+        title: item.title,
+        category: item.category,
+        description: item.description,
+        location: item.suggested.location,
+        budget: item.suggested.budget,
+        recommendedDays: item.suggested.recommendedDays,
+        bestSeason: item.suggested.bestSeason,
+        region: item.suggested.region,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["life-goals"] });
+      queryClient.invalidateQueries({ queryKey: ["life-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["life-map"] });
+      queryClient.invalidateQueries({ queryKey: ["life-goal-suggestions"] });
+    },
+  });
+
+  const hideSuggestions = () => {
+    localStorage.setItem(SUGGESTIONS_HIDDEN_KEY, "1");
+    setSuggestionsHidden(true);
+  };
+
+  if (goals.isLoading || profile.isLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-20" />
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Skeleton className="h-44" />
-          <Skeleton className="h-44" />
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Skeleton className="h-56" />
+          <Skeleton className="h-56" />
+          <Skeleton className="h-56" />
         </div>
-        <Skeleton className="h-64" />
+        <Skeleton className="h-96" />
       </div>
     );
   }
 
-  if (dashboard.isError) {
+  if (goals.isError) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
-        <p className="text-sm text-muted">加载人生数据失败</p>
-        <Button onClick={() => dashboard.refetch()}>
+        <p className="text-sm text-muted">加载人生目标失败</p>
+        <Button onClick={() => goals.refetch()}>
           <RefreshCw className="h-4 w-4" />
           重试
         </Button>
@@ -53,112 +111,134 @@ export default function LifePage() {
     );
   }
 
-  if (!dashboard.data) return null;
-  const data = dashboard.data;
-  const nickname = profile.data?.data?.nickname || "我的人生";
-  const avatar = profile.data?.data?.avatar;
-  const levelInfo = getLevelInfo(data.level, data.experience);
-  const categories = Object.entries(data.categoryStats || {});
+  const goalItems = goals.data || [];
+  const markers = map.data?.markers || [];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <LifeHeader nickname={nickname} avatar={avatar} level={data.level} />
+    <div className="mx-auto max-w-6xl space-y-5">
+      {/* 人生格言 */}
+      <Card className="overflow-hidden">
+        <div className="relative bg-gradient-to-r from-primary/12 via-accent/8 to-transparent p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">人生格言</p>
+              {editingMotto ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Input
+                    value={motto}
+                    onChange={(e) => setMotto(e.target.value)}
+                    placeholder="写下你的人生格言..."
+                    className="max-w-md"
+                  />
+                  <Button size="sm" onClick={() => saveMotto.mutate()} disabled={saveMotto.isPending}>
+                    保存
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditingMotto(false)}>
+                    取消
+                  </Button>
+                </div>
+              ) : (
+                <p className="mt-1.5 text-lg font-semibold leading-snug sm:text-xl">
+                  {motto || "给自己一句人生格言，让每个目标都有方向。"}
+                </p>
+              )}
+            </div>
+            <Button variant="ghost" size="icon" onClick={() => setEditingMotto((v) => !v)} aria-label="编辑格言">
+              <PencilLine className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </Card>
 
-      <DailyAssistantCard showHeader />
-
-      {/* Sprint 7: 连续打卡卡 */}
       <CheckinStreakCard />
 
-      {/* Sprint 8: 人生社交概览 */}
-      <SocialOverviewCard />
+      {/* 三栏目标看板 */}
+      <LifeGoalBoard goals={goalItems} />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Link href="/life/coach" className="flex items-center justify-between rounded-[12px] border border-border bg-gradient-to-br from-violet-500/15 to-indigo-500/10 p-4 transition-colors hover:border-primary/40">
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <Brain className="h-4 w-4 text-violet-500" />
-            Life AI Coach
-          </span>
-          <span className="text-xs text-muted">对话 →</span>
-        </Link>
-        <Link href="/life/social" className="flex items-center justify-between rounded-[12px] border border-border bg-gradient-to-br from-indigo-500/10 to-pink-500/5 p-4 transition-colors hover:border-primary/40">
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <Users className="h-4 w-4 text-primary" />
-            人生社交
-          </span>
-          <span className="text-xs text-muted">分享成长 →</span>
-        </Link>
-        <Link href="/life/camera" className="flex items-center justify-between rounded-[12px] border border-border bg-gradient-to-br from-rose-500/10 to-orange-500/5 p-4 transition-colors hover:border-primary/40">
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <Camera className="h-4 w-4 text-primary" />
-            AI 相机
-          </span>
-          <span className="text-xs text-muted">记录此刻 →</span>
-        </Link>
-        <Link href="/life/bucket" className="flex items-center justify-between rounded-[12px] border border-border bg-gradient-to-br from-indigo-500/5 to-pink-500/5 p-4 transition-colors hover:border-primary/40">
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <ListChecks className="h-4 w-4 text-primary" />
-            人生必做清单
-          </span>
-          <span className="text-xs text-muted">探索 →</span>
-        </Link>
-        <Link href="/life/records" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <Images className="h-4 w-4 text-primary" />
-            我的人生记录
-          </span>
-          <span className="text-xs text-muted">时间轴 →</span>
-        </Link>
-        <Link href="/life/map" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <MapPin className="h-4 w-4 text-primary" />
-            人生地图
-          </span>
-          <span className="text-xs text-muted">查看足迹 →</span>
-        </Link>
-        <Link href="/life/review" className="flex items-center justify-between rounded-[12px] border border-border bg-surface p-4 transition-colors hover:border-primary/40">
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <BarChart3 className="h-4 w-4 text-primary" />
-            我的年度报告
-          </span>
-          <span className="text-xs text-muted">查看报告 →</span>
-        </Link>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <LifeLevelCard
-          level={data.level}
-          experience={data.experience}
-          progressPercent={levelInfo.progressPercent}
-          remaining={levelInfo.remaining}
-        />
-        <LifeProgressCard
-          total={data.totalGoals}
-          completed={data.completedGoals}
-          rate={data.completionRate}
-        />
-      </div>
-
-      {data.totalGoals === 0 ? (
-        <div className="rounded-[12px] border border-dashed border-border bg-surface p-8 text-center">
-          <p className="text-lg font-semibold">你的第一个人生目标，从今天开始。</p>
-          <p className="mt-1 text-[13px] text-muted">创建旅行、成长、职业或关系目标，开始记录你的人生进度。</p>
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-            {categories.map(([category, stat]) => (
-              <LifeCategoryCard
-                key={category}
-                category={category}
-                total={stat.total}
-                completed={stat.completed}
-              />
-            ))}
+      {/* 地图 + 时间轴 */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-semibold">
+              <MapPin className="h-4 w-4 text-primary" />
+              人生地图
+            </h2>
+            <p className="text-[12px] text-muted">自动关联人生清单中出现的地点，点击标记查看完成详情。</p>
           </div>
-          <RecentCompletedCard items={data.recentCompleted} />
-        </>
+          <Link href="/life/map" className="text-xs font-medium text-primary">
+            完整地图 →
+          </Link>
+        </div>
+        <div className="overflow-hidden rounded-[14px] border border-border">
+          <div className="h-[380px] w-full sm:h-[440px]">
+            {map.isLoading ? <Skeleton className="h-full w-full" /> : <LifeMapClient markers={markers} showPolyline useCluster />}
+          </div>
+        </div>
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">轨迹时间轴</h3>
+          <MapTimeline markers={markers} />
+        </div>
+      </div>
+
+      {/* 清单建议 */}
+      {!suggestionsHidden && (
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <Sparkles className="h-4 w-4 text-ai" />
+                人生清单建议
+              </h2>
+              <p className="mt-0.5 text-[12px] text-muted">点击可直接加入你的目标清单。</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={hideSuggestions} aria-label="关闭建议">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          {suggestions.isLoading ? (
+            <Skeleton className="mt-3 h-24" />
+          ) : (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {(suggestions.data || []).slice(0, 6).map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => quickAdd.mutate(item)}
+                  disabled={quickAdd.isPending}
+                  className="rounded-[10px] border border-border bg-surface p-3 text-left transition-colors hover:border-primary/40"
+                >
+                  <p className="text-[13px] font-semibold">{item.title}</p>
+                  <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted">{item.description}</p>
+                  {item.suggested.bestSeason && (
+                    <p className="mt-1.5 text-[11px] text-primary">{item.suggested.bestSeason} · 推荐</p>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </Card>
       )}
 
+      {/* 职业规划 */}
+      <CareerPlanningSection />
+
+      {/* 快捷入口 */}
+      <div className="flex flex-wrap gap-2">
+        <Link href="/life/bucket">
+          <Button variant="outline" size="sm">
+            人生必做清单
+          </Button>
+        </Link>
+        <Link href="/life/records">
+          <Button variant="outline" size="sm">
+            我的人生记录
+          </Button>
+        </Link>
+        <Link href="/life/review">
+          <Button variant="outline" size="sm">
+            年度报告
+          </Button>
+        </Link>
+      </div>
     </div>
   );
 }

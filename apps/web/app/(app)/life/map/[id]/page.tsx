@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
+import { LifeRecordImage } from "@/components/life/life-record-image";
 import { LifeMapClient } from "@/components/life/map/life-map-client";
 import { Badge, Button, EmptyState, Skeleton } from "@/components/ui";
 import { getMapMarkerDetail } from "@/lib/life-map";
@@ -81,7 +82,10 @@ export default function MapDetailPage() {
   const difficulty = detail.difficulty as number | null | undefined;
   const estimatedCost = detail.estimatedCost as string | null | undefined;
   const bestSeason = detail.bestSeason as string | null | undefined;
-  const isTravel = markerType === "bucket" || markerType === "goal";
+  const category = detail.category as string | null | undefined;
+  const tags = Array.isArray(detail.tags) ? (detail.tags as string[]) : [];
+  const travelTags = ["旅行", "travel", "海岛", "潜水", "极光"];
+  const isTravel = category === "travel" || tags.some((t) => travelTags.includes(t));
 
   // 用于地图单点展示的合成 marker
   const mapMarker: MapMarker = {
@@ -129,7 +133,7 @@ export default function MapDetailPage() {
       {/* 封面/照片 */}
       {(coverImage || photoUrl) && (
         <div className="overflow-hidden rounded-[14px] border border-border">
-          <img src={coverImage || photoUrl || ""} alt={title} className="aspect-[16/10] w-full object-cover" />
+          <LifeRecordImage path={coverImage || photoUrl || ""} />
         </div>
       )}
 
@@ -198,24 +202,24 @@ export default function MapDetailPage() {
         </div>
       )}
 
-      {/* AI 规划入口 */}
-      {isTravel && lifeGoalId ? (
+      {/* AI 旅行攻略入口 */}
+      {lifeGoalId && isTravel && (
         <div className="rounded-[14px] border border-ai/20 bg-gradient-to-br from-ai/5 to-transparent p-4">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-ai" />
             <span className="text-sm font-semibold">AI 智能规划</span>
           </div>
-          <p className="mt-1 text-[12px] text-muted">
-            {isTravel ? "为这个目的地生成 AI 旅行攻略与行程" : "生成 AI 成长规划"}
-          </p>
-          <Link href={`/life/goals/${lifeGoalId}/ai`}>
-            <Button variant="outline" size="sm" className="mt-3 gap-1.5">
-              <Compass className="h-3.5 w-3.5" />
-              生成 AI 旅行攻略
-            </Button>
-          </Link>
+          <p className="mt-1 text-[12px] text-muted">让 AI 为这个目的地定制详细攻略与每日行程。</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href={`/life/goals/${lifeGoalId}/ai`}>
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <Compass className="h-3.5 w-3.5" />
+                生成 AI 旅行攻略
+              </Button>
+            </Link>
+          </div>
         </div>
-      ) : null}
+      )}
 
       {/* 人生记录入口 */}
       {lifeGoalId && (

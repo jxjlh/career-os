@@ -51,25 +51,29 @@ export default function LoginPage() {
   };
 
   return (
-    <Card className="p-6">
-      <h1 className="text-xl font-semibold">{t("auth.login")}</h1>
-      <p className="mt-1 text-[13px] text-muted">{t("auth.loginSub")}</p>
+    <Card className="soft-shadow relative overflow-hidden p-7">
+      <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-gradient-to-br from-primary/16 to-accent/14 blur-2xl" />
+      <h1 className="relative text-2xl font-bold tracking-tight">{t("auth.login")}</h1>
+      <p className="relative mt-1.5 text-[13px] leading-relaxed text-muted">{t("auth.loginSub")}</p>
       {!isSupabaseConfigured && (
-        <p className="mt-3 rounded-[6px] bg-warning/10 p-2 text-xs text-warning">
+        <p className="relative mt-4 rounded-[10px] bg-warning/10 p-2.5 text-xs leading-relaxed text-warning">
           {t("auth.devMode")}
         </p>
       )}
-      <form className="mt-5 space-y-3" onSubmit={submit}>
+      <form className="relative mt-6 space-y-3.5" onSubmit={submit}>
         <Input type="email" required placeholder={t("auth.email")} value={email} onChange={(e) => setEmail(e.target.value)} />
         <Input type="password" required placeholder={t("auth.password")} value={password} onChange={(e) => setPassword(e.target.value)} />
-        {error && <p className="text-xs text-danger">{error}</p>}
-        <Button type="submit" className="w-full" disabled={loading}>
+        {error && <p className="rounded-[10px] bg-danger/8 p-2.5 text-xs leading-relaxed text-danger">{error}</p>}
+        <Button type="submit" className="h-11 w-full" disabled={loading}>
           <LogIn className="h-4 w-4" />
           {loading ? t("auth.loggingIn") : t("auth.loginCta")}
         </Button>
       </form>
-      <p className="mt-4 text-center text-[13px] text-muted">
-        {t("auth.noAccount")} <Link href="/signup" className="text-primary">{t("auth.signup")}</Link>
+      <p className="relative mt-5 text-center text-[13px] text-muted">
+        {t("auth.noAccount")}{" "}
+        <Link href="/signup" className="font-semibold text-primary hover:text-primary-hover">
+          {t("auth.signup")}
+        </Link>
       </p>
     </Card>
   );

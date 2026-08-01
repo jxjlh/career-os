@@ -11,9 +11,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY apps/api/pyproject.toml apps/api/uv.lock ./
-COPY apps/api/app ./app
-COPY apps/api/migrations ./migrations
-COPY apps/api/alembic.ini ./alembic.ini
+COPY apps/api/app ./app/app
+COPY apps/api/migrations ./app/migrations
+COPY apps/api/alembic.ini ./app/alembic.ini
+
+WORKDIR /app/app
 
 # 安装含 dev 组（提供 alembic，容器启动时自动迁移）
 RUN uv sync --frozen
@@ -23,7 +25,7 @@ USER app
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
+  CMD python -c "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('PORT', '8000')}/health\")"
 
 # 启动时自动 alembic upgrade head（幂等），再跑 uvicorn
-CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

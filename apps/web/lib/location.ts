@@ -15,28 +15,90 @@ export interface WeatherInfo {
   temperature: number;
 }
 
+export type LocationStatus =
+  | "locating"
+  | "ready"
+  | "denied"
+  | "unavailable"
+  | "error";
+
+export interface LocationState {
+  status: LocationStatus;
+  location: GeoLocation | null;
+  error: string | null;
+}
+
+function requestPosition(
+  options: PositionOptions,
+): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+function toGeoLocation(position: GeolocationPosition): GeoLocation {
+  return {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+    altitude: position.coords.altitude ?? null,
+    accuracy: position.coords.accuracy ?? null,
+  };
+}
+
+function describeLocationError(error: GeolocationPositionError | null): string {
+  if (!error) return "未能获取定位，请稍后重试";
+  switch (error.code) {
+    case error.PERMISSION_DENIED:
+      return "定位权限被拒绝，请在浏览器设置中允许位置权限后重试";
+    case error.POSITION_UNAVAILABLE:
+      return "暂时无法获取位置信号，请到开阔地带后重试";
+    case error.TIMEOUT:
+      return "定位超时，请检查 GPS/网络信号后重试";
+    default:
+      return error.message || "定位失败，请稍后重试";
+  }
+}
+
+/**
+ * 获取当前 GPS 定位 (含海拔)，带状态与错误原因。
+ * 先尝试高精度定位；失败或超时自动降级为标准精度，权限被拒则不重试。
+ */
+export async function getLocationState(): Promise<LocationState> {
+  if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+    return {
+      status: "unavailable",
+      location: null,
+      error: "当前环境不支持定位（需要 HTTPS 或 localhost 访问）",
+    };
+  }
+
+  const attempts: PositionOptions[] = [
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 },
+    { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 },
+  ];
+  let lastError: GeolocationPositionError | null = null;
+
+  for (const options of attempts) {
+    try {
+      const position = await requestPosition(options);
+      return { status: "ready", location: toGeoLocation(position), error: null };
+    } catch (e) {
+      lastError = e as GeolocationPositionError;
+      if (lastError?.code === lastError?.PERMISSION_DENIED) break;
+    }
+  }
+
+  return {
+    status: lastError?.code === lastError?.PERMISSION_DENIED ? "denied" : "error",
+    location: null,
+    error: describeLocationError(lastError),
+  };
+}
+
 /** 获取当前 GPS 定位 (含海拔). 失败或不可用返回 null. */
 export async function getCurrentLocation(): Promise<GeoLocation | null> {
-  if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
-    return null;
-  }
-  try {
-    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 8000,
-        maximumAge: 60000,
-      });
-    });
-    return {
-      latitude: position.coords.latitude,
-      longitude: position.coords.longitude,
-      altitude: position.coords.altitude ?? null,
-      accuracy: position.coords.accuracy ?? null,
-    };
-  } catch {
-    return null;
-  }
+  const state = await getLocationState();
+  return state.location;
 }
 
 /**

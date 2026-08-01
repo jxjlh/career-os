@@ -22,6 +22,11 @@ from app.domains.ai.schemas import (
     PhotoAnalysisResponse,
     TeamPlanRequest,
     TeamPlanResponse,
+    TravelAssistantRequest,
+    TravelAssistantResponse,
+    TravelChecklistItemCreate,
+    TravelChecklistItemResponse,
+    TravelChecklistItemUpdate,
     TravelPlanRequest,
     TravelPlanResponse,
     YearReviewRequest,
@@ -38,6 +43,8 @@ from app.domains.ai.service import (
     MapInsightService,
     PhotoAnalysisService,
     TeamPlanService,
+    TravelAssistantService,
+    TravelChecklistService,
     TravelPlanService,
     YearSummaryService,
 )
@@ -53,6 +60,60 @@ async def generate_travel_plan(
     db: Annotated[Session, Depends(get_db)],
 ) -> TravelPlanResponse:
     return await TravelPlanService(db).generate(current_user.id, payload)
+
+
+@router.post("/ai/travel-assistant", response_model=TravelAssistantResponse)
+async def travel_assistant(
+    payload: TravelAssistantRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> TravelAssistantResponse:
+    return await TravelAssistantService(db).generate(current_user.id, payload)
+
+
+@router.get("/ai/travel-plan/{ai_content_id}/checklist", response_model=list[TravelChecklistItemResponse])
+def travel_checklist(
+    ai_content_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[TravelChecklistItemResponse]:
+    return TravelChecklistService(db).list(current_user.id, ai_content_id)
+
+
+@router.post(
+    "/ai/travel-plan/{ai_content_id}/checklist",
+    response_model=TravelChecklistItemResponse,
+    status_code=201,
+)
+def add_travel_checklist_item(
+    ai_content_id: str,
+    payload: TravelChecklistItemCreate,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> TravelChecklistItemResponse:
+    return TravelChecklistService(db).add(current_user.id, ai_content_id, payload)
+
+
+@router.patch(
+    "/ai/travel-plan/checklist/{item_id}",
+    response_model=TravelChecklistItemResponse,
+)
+def update_travel_checklist_item(
+    item_id: str,
+    payload: TravelChecklistItemUpdate,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> TravelChecklistItemResponse:
+    return TravelChecklistService(db).update(current_user.id, item_id, payload)
+
+
+@router.delete("/ai/travel-plan/checklist/{item_id}", status_code=204)
+def delete_travel_checklist_item(
+    item_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    TravelChecklistService(db).delete(current_user.id, item_id)
 
 
 @router.post("/ai/growth-plan", response_model=GrowthPlanResponse)

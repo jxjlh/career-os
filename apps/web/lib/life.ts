@@ -1,5 +1,4 @@
 import { apiFetch } from "@/lib/api";
-import { supabase } from "@/lib/supabase";
 
 export interface LifeGoal {
   id: string;
@@ -13,10 +12,52 @@ export interface LifeGoal {
   latitude?: number | null;
   longitude?: number | null;
   coverImage?: string | null;
+  budget?: string | null;
+  recommendedDays?: number | null;
+  bestSeason?: string | null;
+  region?: string | null;
+  friends?: string[];
+  aiPlanMeta?: Record<string, unknown>;
   status: string;
   isAiGenerated: boolean;
   createdAt?: string | null;
   updatedAt?: string | null;
+}
+
+export interface LifeGoalInput {
+  title: string;
+  category: string;
+  description?: string;
+  difficulty?: number;
+  targetDate?: string;
+  location?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  budget?: string;
+  recommendedDays?: number;
+  bestSeason?: string;
+  region?: string;
+  friends?: string[];
+  status?: string;
+}
+
+export async function createLifeGoal(payload: LifeGoalInput): Promise<LifeGoal> {
+  const res = await apiFetch<{ data: LifeGoal }>("/life/goals", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return res.data;
+}
+
+export async function updateLifeGoal(
+  goalId: string,
+  payload: Partial<LifeGoalInput>,
+): Promise<LifeGoal> {
+  const res = await apiFetch<{ data: LifeGoal }>(`/life/goals/${goalId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return res.data;
 }
 
 export interface CategoryStat {
@@ -69,6 +110,18 @@ export const CATEGORY_META: Record<
   finance: { icon: "💰", labelZh: "财富人生", labelEn: "Finance", gradient: "from-yellow-400/15 to-lime-500/10" },
   other: { icon: "✨", labelZh: "其他目标", labelEn: "Other", gradient: "from-slate-400/15 to-slate-500/10" },
 };
+
+export function getCategoryMeta(category?: string | null) {
+  const key = category || "other";
+  return (
+    CATEGORY_META[key] ?? {
+      icon: "✨",
+      labelZh: category || "其他目标",
+      labelEn: "Custom",
+      gradient: "from-slate-400/15 to-slate-500/10",
+    }
+  );
+}
 
 export interface LifeRecord {
   id: string;
@@ -331,9 +384,37 @@ export async function getLifeRecordDetail(id: string): Promise<LifeRecord> {
 }
 
 export async function getRecordMediaUrl(path: string): Promise<string | null> {
-  if (!supabase) return null;
-  const { data } = await supabase.storage.from("life-records").createSignedUrl(path, 3600);
-  return data?.signedUrl ?? null;
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  if (path.startsWith("/media/")) return path;
+  // 后端负责校验归属并签名 Supabase 对象或回退到本地 /media.
+  try {
+    const res = await apiFetch<{ data: { url: string } }>(
+      `/life/records/media?path=${encodeURIComponent(path)}`,
+    );
+    return res.data.url;
+  } catch {
+    return null;
+  }
+}
+
+/** 生成目标建议卡片可直接创建的输入. */
+export interface GoalSuggestion {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  suggested: {
+    location?: string;
+    budget?: string;
+    recommendedDays?: number;
+    bestSeason?: string;
+    region?: string;
+  };
+}
+
+export async function getGoalSuggestions(): Promise<GoalSuggestion[]> {
+  const res = await apiFetch<{ data: GoalSuggestion[] }>("/life/goal-suggestions");
+  return res.data;
 }
 
 export interface LifeMapSummary {
@@ -391,6 +472,28 @@ export interface TravelPlanResponse {
   tips: string[];
 }
 
+export interface TravelAssistantMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface TravelAssistantResponse extends TravelPlanResponse {
+  reply: string;
+}
+
+export async function travelAssistant(payload: {
+  goalId?: string;
+  messages: TravelAssistantMessage[];
+}): Promise<TravelAssistantResponse> {
+  return apiFetch<TravelAssistantResponse>("/ai/travel-assistant", {
+    method: "POST",
+    body: JSON.stringify({
+      goalId: payload.goalId,
+      messages: payload.messages,
+    }),
+  });
+}
+
 export async function generateTravelPlan(payload: TravelPlanRequest): Promise<TravelPlanResponse> {
   return apiFetch<TravelPlanResponse>("/ai/travel-plan", {
     method: "POST",
@@ -405,56 +508,53 @@ export async function generateTravelPlan(payload: TravelPlanRequest): Promise<Tr
   });
 }
 
-export interface GrowthPhase {
-  name: string;
-  days: string;
-  tasks: string[];
-}
-
-export interface GrowthDay {
-  day: number;
-  tasks: string[];
-}
-
-export interface GrowthPlanResponse {
+export interface TravelChecklistItem {
   id: string;
   aiContentId: string;
-  title?: string | null;
-  summary?: string | null;
-  phases: GrowthPhase[];
-  dailyPlan: GrowthDay[];
-  milestones: string[];
-  tips: string[];
+  item: string;
+  note?: string | null;
+  checked: boolean;
+  sortOrder: number;
+  createdAt?: string | null;
 }
 
-export interface GenerateTasksResponse {
-  createdCount: number;
-  taskIds: string[];
+export async function getTravelChecklist(aiContentId: string): Promise<TravelChecklistItem[]> {
+  const res = await apiFetch<{ data: TravelChecklistItem[] }>(
+    `/ai/travel-plan/${aiContentId}/checklist`,
+  );
+  return res.data;
 }
 
-export async function generateGrowthPlan(payload: {
-  goalId?: string;
-  targetDescription: string;
-  currentStatus?: string;
-  availableTime?: string;
-  difficulty?: string;
-}): Promise<GrowthPlanResponse> {
-  return apiFetch<GrowthPlanResponse>("/ai/growth-plan", {
-    method: "POST",
-    body: JSON.stringify({
-      goal_id: payload.goalId,
-      target_description: payload.targetDescription,
-      current_status: payload.currentStatus,
-      available_time: payload.availableTime,
-      difficulty: payload.difficulty,
-    }),
-  });
+export async function addTravelChecklistItem(
+  aiContentId: string,
+  payload: { item: string; note?: string },
+): Promise<TravelChecklistItem> {
+  const res = await apiFetch<{ data: TravelChecklistItem }>(
+    `/ai/travel-plan/${aiContentId}/checklist`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+  return res.data;
 }
 
-export async function generateGrowthTasks(aiContentId: string): Promise<GenerateTasksResponse> {
-  return apiFetch<GenerateTasksResponse>(`/ai/growth-plan/${aiContentId}/generate-tasks`, {
-    method: "POST",
-  });
+export async function updateTravelChecklistItem(
+  itemId: string,
+  payload: Partial<Pick<TravelChecklistItem, "item" | "note" | "checked">>,
+): Promise<TravelChecklistItem> {
+  const res = await apiFetch<{ data: TravelChecklistItem }>(
+    `/ai/travel-plan/checklist/${itemId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+  return res.data;
+}
+
+export async function deleteTravelChecklistItem(itemId: string): Promise<void> {
+  await apiFetch(`/ai/travel-plan/checklist/${itemId}`, { method: "DELETE" });
 }
 
 export interface LifeAssistantResponse {

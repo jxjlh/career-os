@@ -23,6 +23,9 @@ __pycache__/
 *.db
 *.sqlite3
 
+# Local upload fallback
+apps/api/media/
+
 # OS / editor
 .DS_Store
 *.log

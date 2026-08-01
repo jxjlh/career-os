@@ -140,7 +140,7 @@ class SocialPostRepository(BaseRepository[SocialPost]):
 
     def feed_for_user(self, user_id: str, friend_ids: list[str], offset: int, limit: int) -> list[SocialPost]:
         """Feed: 自己 + 好友的 public/friends 可见动态, 按时间倒序."""
-        visible_ids = [user_id] + friend_ids
+        visible_ids = [user_id, *friend_ids]
         return (
             self.db.query(SocialPost)
             .filter(

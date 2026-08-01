@@ -1,8 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Link2, Loader2, Sparkles } from "lucide-react";
-import Link from "next/link";
+import { Check, ListChecks, Loader2 } from "lucide-react";
 
 import { Badge, Button, Card, Skeleton } from "@/components/ui";
 import { completeLifeTask, getLifeGoalTasks, reopenLifeTask, type LifeTask } from "@/lib/life";
@@ -66,20 +65,11 @@ export function LifeTaskList({ goalId }: { goalId: string }) {
       <Card className="p-5">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">成长任务</h2>
-          <Badge variant="ai">AI 规划</Badge>
         </div>
         <div className="mt-4 flex flex-col items-center gap-2 py-6 text-center">
-          <Sparkles className="h-5 w-5 text-ai" />
+          <ListChecks className="h-5 w-5 text-muted" />
           <p className="text-sm font-medium">还没有成长任务</p>
-          <p className="max-w-sm text-[13px] text-muted">
-            让 AI 根据这个目标生成一份分阶段成长计划与每日任务，跟踪你的推进进度。
-          </p>
-          <Link href={`/life/goals/${goalId}/growth`}>
-            <Button variant="outline" size="sm" className="mt-1">
-              <Sparkles className="h-4 w-4" />
-              生成 AI 成长规划
-            </Button>
-          </Link>
+          <p className="max-w-sm text-[13px] text-muted">任务生成后会显示在这里。</p>
         </div>
       </Card>
     );
@@ -94,7 +84,6 @@ export function LifeTaskList({ goalId }: { goalId: string }) {
             {done}/{total} 已完成
           </span>
         </div>
-        <Badge variant="ai">AI 规划</Badge>
       </div>
 
       <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-muted">
@@ -158,14 +147,6 @@ export function LifeTaskList({ goalId }: { goalId: string }) {
         })}
       </ul>
 
-      <div className="mt-4 flex items-center justify-end">
-        <Link href={`/life/goals/${goalId}/growth`}>
-          <Button variant="ghost" size="sm">
-            <Link2 className="h-4 w-4" />
-            查看完整成长规划
-          </Button>
-        </Link>
-      </div>
     </Card>
   );
 }

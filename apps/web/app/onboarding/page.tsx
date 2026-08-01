@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button, Card, Input } from "@/components/ui";
+import { BrandMark } from "@/components/brand-mark";
 import { apiFetch } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
@@ -58,13 +59,18 @@ export default function OnboardingPage() {
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
       <div className="mb-6 flex items-center gap-2">
-        <img src="/icons/career-os-appicon.png" alt="Career OS" className="h-8 w-8 rounded-[8px]" />
-        <span className="text-sm font-bold">Career OS Onboarding</span>
+        <BrandMark className="h-9 w-9" />
+        <span className="text-sm font-bold tracking-tight">
+          Career<span className="text-gradient">OS</span>
+        </span>
       </div>
+      <p className="mb-4 rounded-[10px] border border-border/70 bg-surface/60 p-3 text-[13px] leading-relaxed text-muted">
+        {t("onboarding.optionalTip")}
+      </p>
       <div className="mb-6 flex items-center gap-2">
         {steps.map((label, index) => (
           <div key={label} className="flex flex-1 flex-col gap-1">
-            <div className={`h-1 rounded-full ${index <= step ? "bg-primary" : "bg-surface-muted"}`} />
+            <div className={`h-1.5 rounded-full transition-colors ${index <= step ? "bg-gradient-to-r from-primary to-accent" : "bg-surface-muted"}`} />
             <span className="text-[11px] text-muted">{label}</span>
           </div>
         ))}
@@ -177,6 +183,11 @@ export default function OnboardingPage() {
           )}
         </div>
       </Card>
+      <div className="mt-4 text-center">
+        <Button variant="ghost" onClick={() => router.push("/dashboard")}>
+          {t("onboarding.skip")}
+        </Button>
+      </div>
     </div>
   );
 }

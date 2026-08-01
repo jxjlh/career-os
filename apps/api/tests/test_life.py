@@ -67,9 +67,10 @@ def test_life_goal_permission_and_validation() -> None:
         )
         assert invalid.status_code == 422
 
-        invalid_category = client.post(
+        custom_category = client.post(
             "/api/v1/life/goals",
             headers=HEADERS,
-            json={"title": "错误分类", "category": "unknown"},
+            json={"title": "自定义分类目标", "category": "家庭"},
         )
-        assert invalid_category.status_code == 422
+        assert custom_category.status_code == 201
+        assert custom_category.json()["data"]["category"] == "家庭"

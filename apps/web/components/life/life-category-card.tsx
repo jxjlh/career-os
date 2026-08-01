@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 
-import { CATEGORY_META } from "@/lib/life";
+import { getCategoryMeta } from "@/lib/life";
 
 export function LifeCategoryCard({
   category,
@@ -13,7 +13,7 @@ export function LifeCategoryCard({
   total: number;
   completed: number;
 }) {
-  const meta = CATEGORY_META[category] || CATEGORY_META.other;
+  const meta = getCategoryMeta(category);
   const percent = total ? Math.round((completed / total) * 100) : 0;
   return (
     <motion.div

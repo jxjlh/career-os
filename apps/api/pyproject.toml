@@ -42,6 +42,7 @@ ignore = [
   "FURB162",
   "RUF001",
   "RUF002",
+  "RUF003",
 ]
 
 [tool.pytest.ini_options]

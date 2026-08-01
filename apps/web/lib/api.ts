@@ -11,7 +11,7 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
@@ -48,15 +48,9 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 /**
  * 登录/注册成功后决定跳转目标：
  *  - 有 next 参数（来自 middleware 的回跳）→ 优先 next
- *  - 否则查 /auth/me：已完成 onboarding → /dashboard，否则 /onboarding
- *  - 查询失败 → 保守跳 /onboarding
+ *  - 否则直接进入系统主界面；onboarding 是可选流程，不再强制
  */
 export async function redirectAfterAuth(next?: string | null): Promise<string> {
   if (next) return next;
-  try {
-    const me = await apiFetch<{ data: { onboardingCompleted: boolean } }>("/auth/me");
-    return me.data.onboardingCompleted ? "/dashboard" : "/onboarding";
-  } catch {
-    return "/onboarding";
-  }
+  return "/dashboard";
 }

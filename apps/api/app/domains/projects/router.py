@@ -1,12 +1,16 @@
+from collections import defaultdict
+from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.storage import resolve_object_url, upload_object
 from app.db.models import Profile, Project, ProjectAnalysis, ProjectFile
 from app.providers.ai import registry as ai_registry
 from app.providers.ai.base import extract_json
@@ -30,7 +34,7 @@ class FileCreate(BaseModel):
     sizeBytes: int | None = None
 
 
-def project_dict(project: Project) -> dict:
+def project_dict(project: Project, files: list[ProjectFile] | None = None) -> dict:
     return {
         "id": project.id,
         "title": project.title,
@@ -40,6 +44,19 @@ def project_dict(project: Project) -> dict:
         "repoUrl": project.repo_url,
         "tags": project.tags,
         "highlight": project.highlight,
+        "files": [
+            {
+                "id": f.id,
+                "projectId": f.project_id,
+                "originalName": f.original_name,
+                "fileType": f.file_type,
+                "mimeType": f.mime_type,
+                "sizeBytes": f.size_bytes,
+                "storagePath": f.storage_path,
+                "createdAt": f.created_at.isoformat() if f.created_at else None,
+            }
+            for f in (files or [])
+        ],
     }
 
 
@@ -72,7 +89,21 @@ def list_projects(
         .order_by(Project.created_at.desc())
         .all()
     )
-    return {"data": [project_dict(p) for p in projects]}
+    project_ids = [p.id for p in projects]
+    files_by_project: dict[str, list[ProjectFile]] = defaultdict(list)
+    if project_ids:
+        file_rows = (
+            db.query(ProjectFile)
+            .filter(
+                ProjectFile.user_id == current_user.id,
+                ProjectFile.project_id.in_(project_ids),
+            )
+            .order_by(ProjectFile.created_at.desc())
+            .all()
+        )
+        for f in file_rows:
+            files_by_project[f.project_id].append(f)
+    return {"data": [project_dict(p, files_by_project.get(p.id, [])) for p in projects]}
 
 
 @router.post("/projects", status_code=201)
@@ -92,7 +123,7 @@ def create_project(
     db.add(project)
     db.commit()
     db.refresh(project)
-    return {"data": project_dict(project)}
+    return {"data": project_dict(project, [])}
 
 
 @router.get("/projects/{project_id}")
@@ -101,7 +132,14 @@ def get_project(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    return {"data": project_dict(get_owned_project(db, current_user.id, project_id))}
+    project = get_owned_project(db, current_user.id, project_id)
+    files = (
+        db.query(ProjectFile)
+        .filter(ProjectFile.project_id == project.id, ProjectFile.user_id == current_user.id)
+        .order_by(ProjectFile.created_at.desc())
+        .all()
+    )
+    return {"data": project_dict(project, files)}
 
 
 @router.delete("/projects/{project_id}", status_code=204)
@@ -136,6 +174,79 @@ def add_project_file(
     db.commit()
     db.refresh(file)
     return {"data": {"id": file.id, "storagePath": file.storage_path, "originalName": file.original_name}}
+
+
+@router.post("/projects/{project_id}/files/upload", status_code=201)
+async def upload_project_file(
+    project_id: str,
+    file: Annotated[UploadFile, File()],
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    project = get_owned_project(db, current_user.id, project_id)
+    content = await file.read()
+    original_name = file.filename or "resource"
+    suffix = Path(original_name).suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"}:
+        file_type = "image"
+    elif suffix in {".mp4", ".webm", ".mov", ".avi", ".mkv"}:
+        file_type = "video"
+    elif suffix in {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".md", ".txt"}:
+        file_type = "document"
+    else:
+        file_type = "other"
+
+    safe_name = Path(original_name).name
+    path = f"{current_user.id}/projects/{project.id}/{uuid4().hex[:10]}-{safe_name}"
+    storage_path = await upload_object(path, content, file.content_type or "application/octet-stream")
+    row = ProjectFile(
+        project_id=project.id,
+        user_id=current_user.id,
+        storage_path=storage_path,
+        original_name=safe_name,
+        file_type=file_type,
+        mime_type=file.content_type,
+        size_bytes=len(content),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "data": {
+            "id": row.id,
+            "projectId": row.project_id,
+            "originalName": row.original_name,
+            "fileType": row.file_type,
+            "mimeType": row.mime_type,
+            "sizeBytes": row.size_bytes,
+            "storagePath": row.storage_path,
+        }
+    }
+
+
+@router.get("/projects/{project_id}/files/{file_id}/download")
+async def project_file_download(
+    project_id: str,
+    file_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    project = get_owned_project(db, current_user.id, project_id)
+    row = (
+        db.query(ProjectFile)
+        .filter(
+            ProjectFile.id == file_id,
+            ProjectFile.project_id == project.id,
+            ProjectFile.user_id == current_user.id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Project file not found"})
+    url = await resolve_object_url(row.storage_path)
+    if url is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Project file not found"})
+    return {"data": {"url": url}}
 
 
 @router.post("/projects/{project_id}/analyze")

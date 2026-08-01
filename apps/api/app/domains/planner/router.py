@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -16,6 +16,13 @@ class GeneratePlanRequest(BaseModel):
     weekStart: date | None = None
     weeklyStudyMinutes: int = 420
     prioritySkills: list[str] = []
+
+
+class ManualTaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    day: int = Field(default=1, ge=1, le=7)
+    estimatedMinutes: int = Field(default=60, ge=10, le=600)
+    notes: str | None = None
 
 
 def _week_start(day: date | None = None) -> date:
@@ -116,3 +123,44 @@ def generate_plan(
     db.commit()
     db.refresh(plan)
     return {"data": _plan_dict(db, plan)}
+
+
+@router.post("/planner/tasks", status_code=201)
+def add_manual_task(
+    payload: ManualTaskCreate,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """用户手动添加学习计划任务 (也可由 AI 教练同步)."""
+    plan = (
+        db.query(WeeklyPlan)
+        .filter(WeeklyPlan.user_id == current_user.id, WeeklyPlan.week_start == _week_start())
+        .first()
+    )
+    if plan is None:
+        plan = WeeklyPlan(user_id=current_user.id, week_start=_week_start(), title="本周计划", status="active")
+        db.add(plan)
+        db.flush()
+    task = PlanTask(
+        plan_id=plan.id,
+        user_id=current_user.id,
+        title=payload.title,
+        day=payload.day,
+        estimated_minutes=payload.estimatedMinutes,
+        status="todo",
+        sort_order=db.query(PlanTask).filter(PlanTask.plan_id == plan.id).count() + 1,
+        notes=payload.notes,
+    )
+    db.add(task)
+    plan.status = "active"
+    db.commit()
+    db.refresh(task)
+    return {
+        "data": {
+            "id": task.id,
+            "title": task.title,
+            "day": task.day,
+            "estimatedMinutes": task.estimated_minutes,
+            "status": task.status,
+        }
+    }

@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
-from app.core.database import SessionLocal, engine
+from app.core.database import SessionLocal, engine, ensure_columns
 from app.core.errors import AppError, app_error_handler, unhandled_error_handler
 from app.core.logging import setup_logging
 from app.core.middleware import RateLimitMiddleware, RequestContextMiddleware
@@ -14,8 +16,9 @@ from app.domains.analytics.router import router as analytics_router
 from app.domains.auth.router import router as auth_router
 from app.domains.bucket.router import router as bucket_router
 from app.domains.bucket.seed import seed_bucket_data
-from app.domains.coach.router import router as coach_router
+from app.domains.career.router import router as career_router
 from app.domains.coach.life_router import router as life_coach_router
+from app.domains.coach.router import router as coach_router
 from app.domains.dashboard.router import router as dashboard_router
 from app.domains.explorer.router import router as explorer_router
 from app.domains.goals.router import router as goals_router
@@ -42,6 +45,7 @@ async def lifespan(app: FastAPI):
     setup_logging()
     # dev 与 test 环境自动建表, 便于本地启动与单测隔离; 生产仅依赖 Alembic migration
     if settings.app_env in ("dev", "test"):
+        ensure_columns()
         Base.metadata.create_all(bind=engine)
         # 幂等写入 Bucket List 种子目录, 保证页面有可消费内容
         with SessionLocal() as db:
@@ -55,6 +59,11 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# 本地媒体回退目录: 未配置 Supabase 或上传失败时, 图片/视频落盘于此.
+media_dir = Path(settings.media_dir)
+media_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=media_dir), name="media")
 
 app.add_middleware(
     CORSMiddleware,
@@ -79,6 +88,7 @@ app.include_router(skills_router, prefix=settings.api_prefix)
 app.include_router(explorer_router, prefix=settings.api_prefix)
 app.include_router(goals_router, prefix=settings.api_prefix)
 app.include_router(planner_router, prefix=settings.api_prefix)
+app.include_router(career_router, prefix=settings.api_prefix)
 app.include_router(profile_router, prefix=settings.api_prefix)
 app.include_router(library_router, prefix=settings.api_prefix)
 app.include_router(life_router, prefix=settings.api_prefix)

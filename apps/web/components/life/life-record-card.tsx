@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { Play } from "lucide-react";
 import Link from "next/link";
 
 import { LifeRecordImage } from "@/components/life/life-record-image";
@@ -20,7 +21,16 @@ export function LifeRecordCard({ record }: { record: LifeRecord }) {
       className="overflow-hidden rounded-[14px] border border-border bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
     >
       <Link href={`/life/records/${record.id}`} className="block">
-        {mediaPath ? (
+        {record.recordType === "video" && (record.thumbnailUrl || record.videoUrl) ? (
+          <div className="relative">
+            <LifeRecordImage path={record.thumbnailUrl || mediaPath || ""} />
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur">
+                <Play className="h-5 w-5 fill-white" />
+              </span>
+            </span>
+          </div>
+        ) : mediaPath ? (
           <LifeRecordImage path={mediaPath} />
         ) : (
           <div className="flex h-36 items-center justify-center bg-surface-muted text-4xl">{meta.icon}</div>

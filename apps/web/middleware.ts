@@ -12,7 +12,25 @@ import type { NextRequest } from "next/server";
  */
 const TOKEN_COOKIE = "career_os_token";
 
-const APP_PREFIXES = ["/dashboard", "/life", "/onboarding"];
+const APP_PREFIXES = [
+  "/analytics",
+  "/coach",
+  "/career",
+  "/dashboard",
+  "/explore",
+  "/interviews",
+  "/jobs",
+  "/library",
+  "/life",
+  "/onboarding",
+  "/planner",
+  "/projects",
+  "/resume",
+  "/roadmap",
+  "/salary",
+  "/settings",
+  "/skills",
+];
 const AUTH_PATHS = ["/login", "/signup"];
 
 export function middleware(request: NextRequest) {

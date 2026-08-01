@@ -217,13 +217,7 @@ function VideoLogContent() {
               className="flex h-48 w-full flex-col items-center justify-center gap-3 rounded-[16px] border border-dashed border-border bg-surface-muted text-muted"
             >
               <Film className="h-8 w-8" />
-              <span className="text-sm">选择视频或前往相机录制</span>
-              <Link href="/life/camera">
-                <Button variant="outline" size="sm">
-                  <VideoIcon className="h-3.5 w-3.5" />
-                  打开相机
-                </Button>
-              </Link>
+              <span className="text-sm">选择一段视频文件</span>
             </button>
           )}
           <input

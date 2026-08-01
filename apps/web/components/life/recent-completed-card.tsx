@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 
-import { CATEGORY_META, type LifeGoal } from "@/lib/life";
+import { getCategoryMeta, type LifeGoal } from "@/lib/life";
 
 export function RecentCompletedCard({ items }: { items: LifeGoal[] }) {
   return (
@@ -18,7 +18,7 @@ export function RecentCompletedCard({ items }: { items: LifeGoal[] }) {
       ) : (
         <div className="space-y-2">
           {items.map((goal) => {
-            const meta = CATEGORY_META[goal.category] || CATEGORY_META.other;
+            const meta = getCategoryMeta(goal.category);
             return (
               <div key={goal.id} className="flex items-center gap-3 rounded-[10px] border border-border p-2.5">
                 {goal.coverImage ? (

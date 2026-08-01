@@ -5,8 +5,8 @@ coach 在构建对话上下文时, 可按用户意图调用工具 enrich 数据.
 未来新增工具只需在此注册, 无需改动 coach 主流程.
 """
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable
 
 from sqlalchemy.orm import Session
 
