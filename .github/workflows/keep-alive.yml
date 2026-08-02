@@ -1,7 +1,7 @@
 # Render 免费版服务闲置 15 分钟后会自动休眠，再次访问需要 50+ 秒冷启动，
 # iPhone Safari 等不到响应会报"服务器已停止响应"。
-# 这个 workflow 每 10 分钟 ping 一次后端 /ready，把休眠计时器重置，保持服务常驻。
-name: Keep Render backend warm
+# 这个 workflow 每 10 分钟 ping 一次后端和前端，把休眠计时器重置，保持服务常驻。
+name: Keep Render services warm
 
 on:
   schedule:
@@ -13,9 +13,15 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping backend
+      - name: Ping backend (API)
         run: |
-          # --max-time 90 容忍冷启动；返回 200 即视为存活
           curl -fsS --max-time 90 \
-            -w "\nHTTP %{http_code} | %{time_total}s\n" \
+            -w "\n[API] HTTP %{http_code} | %{time_total}s\n" \
             https://ai-life-os-api-4y3x.onrender.com/ready || true
+
+      - name: Ping frontend (Web)
+        run: |
+          curl -fsS --max-time 90 \
+            -w "\n[WEB] HTTP %{http_code} | %{time_total}s\n" \
+            -o /dev/null \
+            https://ai-life-os-web.onrender.com/ || true
