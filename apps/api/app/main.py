@@ -52,14 +52,17 @@ async def lifespan(app: FastAPI):
         with SessionLocal() as db:
             seed_bucket_data(db)
     else:
-        # 生产自愈补列：Alembic 迁移漏了 ensure_columns 后续新增的列
-        # (life_goals.budget/recommended_days/best_season/region/friends/ai_plan_meta,
-        #  user_profiles.life_motto)，导致 ORM 查询报 "column does not exist" → 500。
-        # 这里幂等补列修复 drift；建表仍由 Alembic 负责（仅补列，不建表）。
+        # 生产自愈：补建缺失的表 + 补已存在表缺失的列。
+        # 根因：Alembic 从未在生产跑过（alembic_version 表不存在），早期表由更早版本
+        # 的 create_all 建好，但后续 ORM 新增的表（life_goals、user_profiles 等）从未
+        # 被创建 → /life/* 与 /profile 查询报 "relation does not exist" → 500。
+        # create_all 仅 CREATE IF NOT EXISTS（不改已有表/列），ensure_columns 再幂等补
+        # 已有表缺失的列。两者都对已存在对象 no-op，安全重复执行。
         try:
+            Base.metadata.create_all(bind=engine)
             ensure_columns()
         except Exception as e:  # noqa: BLE001
-            logger.error("ensure_columns self-heal failed: %s", e, exc_info=True)
+            logger.error("production schema self-heal failed: %s", e, exc_info=True)
     yield
 
 
