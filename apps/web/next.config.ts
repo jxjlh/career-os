@@ -6,6 +6,9 @@ const API_UPSTREAM = process.env.API_UPSTREAM || "http://127.0.0.1:8000";
 const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   async rewrites() {
     return [
       {

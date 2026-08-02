@@ -20,7 +20,6 @@
     "lint": "npm --workspace apps/web run lint",
     "test": "npm --workspace apps/web run test && uv run --project apps/api pytest"
   },
-  "packageManager": "npm@10.8.2",
   "devDependencies": {
     "turbo": "^2.3.3"
   },

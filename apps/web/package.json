@@ -17,8 +17,13 @@
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
     "@supabase/supabase-js": "^2.111.0",
+    "@tailwindcss/postcss": "^4.0.0",
     "@tanstack/react-query": "^5.66.0",
+    "@types/leaflet": "^1.9.21",
     "@types/leaflet.markercluster": "^1.5.6",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "echarts": "^5.6.0",
@@ -33,20 +38,15 @@
     "react-hook-form": "^7.54.2",
     "react-leaflet": "^5.0.0",
     "tailwind-merge": "^3.0.1",
+    "typescript": "^5.7.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.0.0",
-    "@types/leaflet": "^1.9.21",
-    "@types/node": "^22.10.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "^15.5.22",
     "postcss": "^8.5.1",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.0.0",
-    "turbo": "^2.10.7",
-    "typescript": "^5.7.3"
+    "turbo": "^2.10.7"
   }
 }
