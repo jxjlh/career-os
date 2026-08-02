@@ -1,4 +1,4 @@
-import { getAccessToken } from "@/lib/supabase";
+import { getAccessToken, isSupabaseConfigured, writeSessionCookie } from "@/lib/supabase";
 
 export class ApiError extends Error {
   code?: string;
@@ -18,9 +18,21 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   if (!(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  const token = typeof window !== "undefined" ? localStorage.getItem("career_os_token") : null;
-  const sessionToken = token ? token : await getAccessToken();
-  headers.set("Authorization", sessionToken ? `Bearer ${sessionToken}` : "Bearer dev");
+
+  // 关键修复：必须用 Supabase session 里的新鲜 token，而非登录时写死的 localStorage。
+  // access_token 1 小时过期；旧实现读旧值 → 后端 401 → 所有功能失效。
+  let token: string | null = null;
+  if (isSupabaseConfigured) {
+    token = await getAccessToken();
+    if (token && typeof window !== "undefined") {
+      // 同步到 localStorage + cookie，让 Edge middleware 路由守卫与下次请求一致
+      localStorage.setItem("career_os_token", token);
+      writeSessionCookie(token);
+    }
+  } else if (typeof window !== "undefined") {
+    token = localStorage.getItem("career_os_token");
+  }
+  headers.set("Authorization", token ? `Bearer ${token}` : "Bearer dev");
 
   const url = path.startsWith("/api/v1") ? path : `${API_BASE}${path}`;
   const res = await fetch(url, {

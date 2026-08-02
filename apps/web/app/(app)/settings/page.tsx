@@ -1,13 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Languages, Moon, Save, Sun } from "lucide-react";
+import { Languages, LogOut, Moon, Save, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useState } from "react";
 
 import { Button, Card, Input, SectionHeader } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { signOut } from "@/lib/supabase";
 
 type Envelope = { data: any };
 
@@ -113,6 +114,21 @@ export default function SettingsPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </Card>
+        <Card className="p-5 lg:col-span-2">
+          <h2 className="mb-4 text-sm font-semibold">账号</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-medium text-text">
+                {profile?.email || "当前账号"}
+              </p>
+              <p className="mt-0.5 text-[12px] text-muted">退出后可登录其他账号（切换账号）</p>
+            </div>
+            <Button variant="ghost" onClick={() => signOut()}>
+              <LogOut className="h-4 w-4" />
+              退出登录
+            </Button>
           </div>
         </Card>
       </div>

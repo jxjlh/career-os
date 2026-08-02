@@ -35,6 +35,7 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { CommandPalette } from "@/components/command-palette";
 import { NotificationBell } from "@/components/notification-bell";
 import { BrandMark } from "@/components/brand-mark";
+import { UserMenu } from "@/components/user-menu";
 
 type NavItem = {
   key: string;
@@ -171,8 +172,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
-            <div className="ml-1 flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary via-[#7a5cd6] to-accent text-xs font-bold text-white shadow-[0_8px_18px_-8px_rgba(91,91,214,0.7)]">
-              U
+            <div className="ml-1">
+              <UserMenu />
             </div>
           </div>
         </header>
