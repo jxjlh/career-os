@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -38,18 +39,27 @@ from app.domains.skills.router import router as skills_router
 from app.domains.social.router import router as social_router
 
 settings = get_settings()
+logger = logging.getLogger("app.main")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    # dev 与 test 环境自动建表, 便于本地启动与单测隔离; 生产仅依赖 Alembic migration
     if settings.app_env in ("dev", "test"):
         ensure_columns()
         Base.metadata.create_all(bind=engine)
         # 幂等写入 Bucket List 种子目录, 保证页面有可消费内容
         with SessionLocal() as db:
             seed_bucket_data(db)
+    else:
+        # 生产自愈补列：Alembic 迁移漏了 ensure_columns 后续新增的列
+        # (life_goals.budget/recommended_days/best_season/region/friends/ai_plan_meta,
+        #  user_profiles.life_motto)，导致 ORM 查询报 "column does not exist" → 500。
+        # 这里幂等补列修复 drift；建表仍由 Alembic 负责（仅补列，不建表）。
+        try:
+            ensure_columns()
+        except Exception as e:  # noqa: BLE001
+            logger.error("ensure_columns self-heal failed: %s", e, exc_info=True)
     yield
 
 
