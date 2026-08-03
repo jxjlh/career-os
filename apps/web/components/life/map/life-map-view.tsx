@@ -12,15 +12,22 @@ import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-
 import type { MapMarker } from "@/lib/life-map";
 import { markerColor, markerIcon } from "@/lib/life-map";
 
-// 高德中文瓦片: 无需 API Key, 中文地名展示 (微信地图同源风格)
-const TILES = {
+// 瓦片源: OpenStreetMap Carto（全球稳定、无需 Key）+ 高德作为备选
+// 高德仅在中文需求时使用，但其存在反爬机制可能导致 Connection reset
+const TILES: Record<string, { url: string; subdomains: string[]; attribution: string; maxZoom: number }> = {
   dark: {
-    url: "https://webrd0{s}.is.autonavi.com/appmaptile?style=8&x={x}&y={y}&z={z}",
-    attribution: '&copy; <a href="https://www.amap.com/">高德地图</a>',
+    // Carto Dark Matter —— 暗色主题，全球可用（去掉 {r} 避免某些瓦片返回空白）
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+    subdomains: ["a", "b", "c", "d"],
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    maxZoom: 19,
   },
   light: {
-    url: "https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}",
-    attribution: '&copy; <a href="https://www.amap.com/">高德地图</a>',
+    // OpenStreetMap 标准瓦片 —— 亮色主题，全球可用
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    subdomains: ["a", "b", "c"],
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
   },
 };
 
@@ -141,7 +148,12 @@ export function LifeMapView({
       style={{ height: "100%", width: "100%", background: theme === "dark" ? "#0b1220" : "#e5e7eb" }}
       worldCopyJump
     >
-      <TileLayer url={tiles.url} attribution={tiles.attribution} />
+      <TileLayer
+        url={tiles.url}
+        subdomains={tiles.subdomains}
+        attribution={tiles.attribution}
+        maxZoom={tiles.maxZoom}
+      />
       <FitBounds points={points} />
 
       {hasRoute && (

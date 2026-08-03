@@ -2,60 +2,111 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================================================
+   CareerOS Design System —— dark-first
+   主背景 #09090B，紫色仅做 Accent，editorial 字体驱动记忆点。
+   ============================================================================ */
 :root {
-  --background: #f6f5fb;
-  --surface: #ffffff;
-  --surface-muted: #f0eefb;
-  --border: #e5e2f2;
-  --text: #17151f;
-  --muted: #6f6a80;
-  --primary: #5b5bd6;
-  --primary-hover: #4646c2;
-  --accent: #d45f9b;
-  --accent-2: #18b6b2;
-  --success: #0da678;
-  --warning: #e8930c;
-  --danger: #e5484d;
-  --ai: #8b5cf6;
+  /* 背景层 */
+  --background: #09090b;
+  --surface: #111114;
+  --surface-elevated: #16161a;
+  --surface-muted: #1c1c21;
+  --border: #232329;
+  --border-subtle: #1a1a1f;
+
+  /* 文字 */
+  --text: #f5f5f7;
+  --text-secondary: #8e8e99;
+  --text-tertiary: #5c5c66;
+
+  /* Accent —— 紫色仅做点缀，不做大面积背景 */
+  --primary: #8b5cf6;
+  --primary-hover: #a78bfa;
+  --primary-glow: #c084fc;
+  --accent: #8b5cf6;
+  --ai: #a78bfa;
+
+  /* 状态色 —— 少而精，不彩虹化 */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #22d3ee;
+
+  /* 旧字段保留兼容（不破坏现有 className 引用） */
+  --accent-2: #22d3ee;
+  --muted: #8e8e99;
+
+  /* 圆角：克制三档 */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* 阴影：ambient + glow，去厚重色块 */
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 0 1px rgba(139, 92, 246, 0.18), 0 0 32px -8px rgba(139, 92, 246, 0.35);
+  --shadow-ambient: 0 24px 80px -32px rgba(139, 92, 246, 0.18);
 }
 
-.dark {
-  --background: #0e0d14;
-  --surface: #171522;
-  --surface-muted: #211e30;
-  --border: #2c2840;
-  --text: #f4f2fb;
-  --muted: #a49fb8;
-  --primary: #8b8bf0;
-  --primary-hover: #a5a5f5;
-  --accent: #e77bb4;
-  --accent-2: #3fd4cf;
-  --success: #2fd39a;
-  --warning: #f5b544;
-  --danger: #f2555a;
-  --ai: #a78bfa;
+/* light 反向覆盖（保留切换能力） */
+.light {
+  --background: #fafafb;
+  --surface: #ffffff;
+  --surface-elevated: #f4f4f6;
+  --surface-muted: #efeff2;
+  --border: #e6e6ea;
+  --border-subtle: #eeeef1;
+
+  --text: #09090b;
+  --text-secondary: #5c5c66;
+  --text-tertiary: #8e8e99;
+
+  --primary: #7c3aed;
+  --primary-hover: #6d28d9;
+  --primary-glow: #a78bfa;
+  --accent: #7c3aed;
+  --ai: #8b5cf6;
+
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --info: #0891b2;
+
+  --accent-2: #0891b2;
+  --muted: #5c5c66;
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.04), 0 16px 44px -22px rgba(23, 21, 31, 0.18);
+  --shadow-glow: 0 0 0 1px rgba(124, 58, 237, 0.14), 0 12px 40px -14px rgba(124, 58, 237, 0.3);
+  --shadow-ambient: 0 24px 80px -32px rgba(124, 58, 237, 0.12);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
   --color-surface-muted: var(--surface-muted);
   --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
   --color-text: var(--text);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
   --color-muted: var(--muted);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+  --color-primary-glow: var(--primary-glow);
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-info: var(--info);
   --color-ai: var(--ai);
 }
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: var(--border);
   }
 
   html {
@@ -63,19 +114,23 @@
   }
 
   body {
-    @apply bg-background text-text antialiased;
+    background-color: var(--background);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
     font-family:
-      "Inter",
+      var(--font-inter),
       "SF Pro Display",
       "HarmonyOS Sans",
       "PingFang SC",
+      "Noto Sans SC",
       "Microsoft YaHei",
       system-ui,
       sans-serif;
+    /* 极克制的三色 ambient —— 紫粉青，透明度极低 */
     background-image:
-      radial-gradient(1100px 480px at 88% -12%, rgba(124, 92, 246, 0.16), transparent 62%),
-      radial-gradient(900px 420px at -10% 4%, rgba(212, 95, 155, 0.12), transparent 58%),
-      radial-gradient(760px 420px at 54% 116%, rgba(24, 182, 178, 0.1), transparent 60%);
+      radial-gradient(1100px 480px at 88% -12%, rgba(139, 92, 246, 0.08), transparent 62%),
+      radial-gradient(900px 420px at -10% 4%, rgba(192, 132, 252, 0.06), transparent 58%),
+      radial-gradient(760px 420px at 54% 116%, rgba(34, 211, 238, 0.05), transparent 60%);
     background-attachment: fixed;
     letter-spacing: 0;
   }
@@ -88,7 +143,7 @@
   h2,
   h3,
   h4 {
-    letter-spacing: 0;
+    letter-spacing: -0.01em;
   }
 }
 
@@ -100,43 +155,74 @@
     display: none;
   }
 
+  /* glass —— 更轻：72% surface + 24px blur，避免厚重玻璃拟态 */
   .glass {
-    background: color-mix(in srgb, var(--surface) 86%, transparent);
-    backdrop-filter: blur(18px) saturate(1.3);
-    -webkit-backdrop-filter: blur(18px) saturate(1.3);
+    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
   }
 
+  /* text-gradient —— 白紫青 editorial，不再是紫粉青 SaaS 渐变 */
   .text-gradient {
-    background: linear-gradient(100deg, var(--primary) 8%, var(--accent) 52%, var(--accent-2) 96%);
+    background: linear-gradient(120deg, #f5f5f7 0%, #c084fc 60%, #22d3ee 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
 
   .ring-glow {
-    box-shadow:
-      0 0 0 1px rgba(91, 91, 214, 0.18),
-      0 12px 40px -14px rgba(91, 91, 214, 0.45);
+    box-shadow: var(--shadow-glow);
   }
 
   .soft-shadow {
-    box-shadow:
-      0 1px 2px rgba(23, 21, 31, 0.04),
-      0 16px 44px -22px rgba(23, 21, 31, 0.22);
+    box-shadow: var(--shadow-soft);
   }
 
-  .dark .soft-shadow {
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.2),
-      0 18px 48px -22px rgba(0, 0, 0, 0.55);
+  .ambient-glow {
+    box-shadow: var(--shadow-ambient);
   }
 
+  /* grid-fade —— 透明度极低，仅作背景肌理 */
   .grid-fade {
     background-image:
-      linear-gradient(rgba(91, 91, 214, 0.07) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(91, 91, 214, 0.07) 1px, transparent 1px);
+      linear-gradient(rgba(139, 92, 246, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(139, 92, 246, 0.04) 1px, transparent 1px);
     background-size: 34px 34px;
     mask-image: radial-gradient(680px 340px at 50% 0%, black, transparent 78%);
     -webkit-mask-image: radial-gradient(680px 340px at 50% 0%, black, transparent 78%);
+  }
+
+  /* noise —— 极轻噪点纹理，破除纯色背景的塑料感 */
+  .noise {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' /%3E%3C/svg%3E");
+  }
+
+  /* editorial —— Editorial / Fashion 风格大字（GOALS / 07 DAYS / LEVEL 03） */
+  .editorial {
+    font-family: var(--font-display), "PingFang SC", sans-serif;
+    letter-spacing: -0.02em;
+    line-height: 0.95;
+  }
+
+  .font-display {
+    font-family: var(--font-display), "PingFang SC", sans-serif;
+  }
+
+  .font-manrope {
+    font-family: var(--font-manrope), "PingFang SC", sans-serif;
+  }
+
+  .font-mono-num {
+    font-family: var(--font-display), sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* hairline —— 1px 极弱分隔 */
+  .hairline {
+    border: 1px solid var(--border-subtle);
   }
 }

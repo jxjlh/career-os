@@ -384,15 +384,33 @@ export async function getLifeRecordDetail(id: string): Promise<LifeRecord> {
 }
 
 export async function getRecordMediaUrl(path: string): Promise<string | null> {
+  if (!path) return null;
+  // 绝对 URL 直接返回
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  if (path.startsWith("/media/")) return path;
+  // /media/ 相对路径 —— 确保有正确的 host
+  if (path.startsWith("/media/")) {
+    // SSR / 静态生成阶段 window 不存在时返回相对路径（由 rewrites 代理）
+    if (typeof window === "undefined") return path;
+    return path;
+  }
+
   // 后端负责校验归属并签名 Supabase 对象或回退到本地 /media.
   try {
     const res = await apiFetch<{ data: { url: string } }>(
       `/life/records/media?path=${encodeURIComponent(path)}`,
     );
-    return res.data.url;
-  } catch {
+    const url = res.data.url;
+    if (url) {
+      // 后端可能返回 /media/... 相对路径
+      if (url.startsWith("/media/") && typeof window !== "undefined") {
+        return url; // Next.js rewrite 会代理 /media/ 到后端
+      }
+      return url;
+    }
+    console.warn("getRecordMediaUrl: empty url from API", { path });
+    return null;
+  } catch (err) {
+    console.warn("getRecordMediaUrl: failed", { path, error: err });
     return null;
   }
 }

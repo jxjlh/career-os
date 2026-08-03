@@ -292,6 +292,12 @@ async def life_record_media(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info("life_record_media: requesting media", extra={"path": path, "user_id": current_user.id})
+
+    # 1. 精确匹配
     record = (
         db.query(LifeRecord)
         .filter(
@@ -304,11 +310,46 @@ async def life_record_media(
         )
         .first()
     )
+
+    # 2. 如果精确匹配失败，尝试模糊匹配（path 包含子串）
+    if record is None:
+        logger.warning("life_record_media: exact match failed, trying fuzzy match", extra={"path": path})
+        # 从路径中提取文件名进行模糊匹配
+        filename = path.split("/")[-1] if "/" in path else path
+        record = (
+            db.query(LifeRecord)
+            .filter(
+                LifeRecord.user_id == current_user.id,
+                or_(
+                    LifeRecord.watermark_url.contains(filename),
+                    LifeRecord.photo_url.contains(filename),
+                    LifeRecord.video_url.contains(filename),
+                    LifeRecord.thumbnail_url.contains(filename),
+                ),
+            )
+            .first()
+        )
+
     if record is None or record.user_id != current_user.id:
+        logger.error("life_record_media: record not found", extra={"path": path})
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Media not found"})
+
     url = await resolve_object_url(path)
     if url is None:
+        # 尝试从 record 中找可用的 URL
+        for field_name, field_value in [
+            ("watermark_url", record.watermark_url),
+            ("photo_url", record.photo_url),
+            ("video_url", record.video_url),
+            ("thumbnail_url", record.thumbnail_url),
+        ]:
+            if field_value and field_value.startswith(("http://", "https://", "/media/")):
+                logger.info("life_record_media: using fallback URL", extra={"field": field_name})
+                return {"data": {"url": field_value}}
+
+        logger.error("life_record_media: resolve_object_url failed and no fallback", extra={"path": path})
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Media not found"})
+
     return {"data": {"url": url}}
 
 

@@ -4,19 +4,25 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { motion } from "framer-motion";
 import { cn } from "@career-os/utils";
 
+import { useMagneticHover } from "@/lib/motion";
+
 export { cn };
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-[10px] text-sm font-semibold transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
+        // default —— 克制：surface-elevated 底 + 细边框，紫色仅 hover 时浮现
         default:
-          "bg-gradient-to-r from-primary to-[#7a5cd6] text-white shadow-[0_10px_24px_-10px_rgba(91,91,214,0.75)] hover:brightness-105 hover:shadow-[0_14px_30px_-10px_rgba(91,91,214,0.85)] active:scale-[0.98]",
+          "border border-border-subtle bg-surface-elevated text-text hover:border-primary/40 hover:bg-surface hover:text-primary active:scale-[0.98]",
+        // primary —— 紫色仅关键 CTA；不用大面积渐变，用纯色 + glow
+        primary:
+          "bg-primary text-white shadow-[0_8px_24px_-12px_rgba(139,92,246,0.6)] hover:bg-primary-hover hover:shadow-[0_12px_28px_-12px_rgba(139,92,246,0.75)] active:scale-[0.98]",
         outline:
-          "border border-border bg-surface/80 text-text shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-primary/35 hover:bg-surface hover:shadow-[0_8px_20px_-12px_rgba(91,91,214,0.5)]",
-        ghost: "text-muted hover:bg-primary/8 hover:text-primary",
-        danger: "bg-gradient-to-r from-danger to-[#f0676c] text-white shadow-[0_10px_24px_-12px_rgba(229,72,77,0.7)] hover:brightness-105 active:scale-[0.98]",
+          "border border-border bg-surface/60 text-text hover:border-primary/35 hover:bg-surface-elevated",
+        ghost: "text-text-secondary hover:bg-surface-elevated/60 hover:text-text",
+        danger: "bg-danger text-white hover:brightness-105 active:scale-[0.98]",
       },
       size: {
         sm: "h-8 px-3 text-xs",
@@ -33,14 +39,23 @@ export interface ButtonProps
     VariantProps<typeof buttonVariants> {}
 
 export function Button({ className, variant, size, ...props }: ButtonProps) {
-  return <button className={cn(buttonVariants({ variant, size }), className)} {...props} />;
+  // primary / danger 这种关键 CTA 启用 magnetic hover，其他 variant 保持普通
+  const magnetic = variant === "primary" || variant === "danger";
+  const ref = useMagneticHover<HTMLButtonElement>();
+  return (
+    <button
+      ref={magnetic ? ref : undefined}
+      className={cn(buttonVariants({ variant, size }), magnetic && "will-change-transform", className)}
+      {...props}
+    />
+  );
 }
 
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        "rounded-[14px] border border-border/80 bg-surface/70 shadow-[0_1px_2px_rgba(23,21,31,0.04)] backdrop-blur-sm",
+        "rounded-[16px] border border-border-subtle bg-surface/60 backdrop-blur-sm",
         className,
       )}
       {...props}
@@ -114,16 +129,17 @@ export function StatCard({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="relative flex h-[110px] flex-col justify-between overflow-hidden rounded-[14px] border border-border/80 bg-surface/70 p-4 shadow-[0_1px_2px_rgba(23,21,31,0.04)] backdrop-blur-sm"
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      className="relative flex h-[110px] flex-col justify-between overflow-hidden rounded-[16px] border border-border-subtle bg-surface/60 p-4 backdrop-blur-sm"
     >
-      <div className="pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full bg-gradient-to-br from-primary/14 to-accent/12 blur-xl" />
       <div className="flex items-center justify-between">
-        <span className="relative text-[13px] font-medium text-muted">{label}</span>
+        <span className="text-[12px] font-medium uppercase tracking-[0.1em] text-text-secondary">{label}</span>
         {icon}
       </div>
-      <div className="relative flex items-end gap-1">
-        <span className="text-[26px] font-bold leading-none tracking-tight">{value}</span>
-        {unit && <span className="text-xs text-muted">{unit}</span>}
+      <div className="flex items-end gap-1">
+        {/* editorial 字体 —— 数字成为视觉焦点 */}
+        <span className="font-display text-[28px] font-semibold leading-none tracking-tight text-text">{value}</span>
+        {unit && <span className="text-xs text-text-tertiary">{unit}</span>}
       </div>
       {trend && <div className="text-xs text-success">{trend}</div>}
     </motion.div>
@@ -156,16 +172,25 @@ export function SectionHeader({
   title,
   subtitle,
   action,
+  editorial,
 }: {
   title: string;
   subtitle?: string;
   action?: React.ReactNode;
+  /** editorial 模式：英文大写小字 + 极简，用于 YOUR LIFE RIGHT NOW / LIFE STATS 等 */
+  editorial?: boolean;
 }) {
   return (
     <div className="mb-4 flex items-center justify-between gap-3">
       <div>
-        <h1 className="text-[22px] font-bold tracking-tight">{title}</h1>
-        {subtitle && <p className="mt-1 text-[13px] leading-relaxed text-muted">{subtitle}</p>}
+        {editorial ? (
+          <h2 className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
+            {title}
+          </h2>
+        ) : (
+          <h1 className="font-display text-[22px] font-bold tracking-tight text-text">{title}</h1>
+        )}
+        {subtitle && <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">{subtitle}</p>}
       </div>
       {action}
     </div>

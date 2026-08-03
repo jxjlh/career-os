@@ -5,7 +5,6 @@ import { MapPin, PencilLine, RefreshCw, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { CareerPlanningSection } from "@/components/career/career-planning-section";
 import { CheckinStreakCard } from "@/components/life/checkin-streak-card";
 import { LifeGoalBoard } from "@/components/life/life-goal-board";
 import { LifeMapClient } from "@/components/life/map/life-map-client";
@@ -217,9 +216,6 @@ export default function LifeGoalsPage() {
           )}
         </Card>
       )}
-
-      {/* 职业规划 */}
-      <CareerPlanningSection />
 
       {/* 快捷入口 */}
       <div className="flex flex-wrap gap-2">
