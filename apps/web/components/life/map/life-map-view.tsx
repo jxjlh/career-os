@@ -11,23 +11,24 @@ import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-
 
 import type { MapMarker } from "@/lib/life-map";
 import { markerColor, markerIcon } from "@/lib/life-map";
+import { wgs84ToGcj02 } from "@/lib/geo-coord";
 
-// 瓦片源: OpenStreetMap Carto（全球稳定、无需 Key）+ 高德作为备选
-// 高德仅在中文需求时使用，但其存在反爬机制可能导致 Connection reset
+// 瓦片源: 高德地图（中文标注，国内访问快）
+// 高德瓦片使用 GCJ-02 坐标系，marker 坐标需从 WGS-84 转换
 const TILES: Record<string, { url: string; subdomains: string[]; attribution: string; maxZoom: number }> = {
   dark: {
-    // Carto Dark Matter —— 暗色主题，全球可用（去掉 {r} 避免某些瓦片返回空白）
-    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-    subdomains: ["a", "b", "c", "d"],
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    maxZoom: 19,
+    // 高德矢量地图 —— 深色滤镜模拟暗色主题
+    url: "https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
+    subdomains: ["1", "2", "3", "4"],
+    attribution: '&copy; 高德地图',
+    maxZoom: 18,
   },
   light: {
-    // OpenStreetMap 标准瓦片 —— 亮色主题，全球可用
-    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    subdomains: ["a", "b", "c"],
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19,
+    // 高德矢量地图 —— 标准亮色主题
+    url: "https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}",
+    subdomains: ["1", "2", "3", "4"],
+    attribution: '&copy; 高德地图',
+    maxZoom: 18,
   },
 };
 
@@ -88,7 +89,9 @@ function ClusterLayer({ markers }: { markers: MapMarker[] }) {
     });
     for (const m of markers) {
       if (m.latitude == null || m.longitude == null) continue;
-      const marker = L.marker([m.latitude, m.longitude], { icon: makeIcon(m) });
+      // WGS-84 → GCJ-02 坐标转换（高德瓦片用 GCJ-02）
+      const [lng, lat] = wgs84ToGcj02(m.longitude, m.latitude);
+      const marker = L.marker([lat, lng], { icon: makeIcon(m) });
       marker.bindPopup(
         `<div style="min-width:180px;">
           <p style="font-size:13px;font-weight:600;margin:0 0 4px;">${m.title}</p>
@@ -125,7 +128,10 @@ export function LifeMapView({
     () =>
       markers
         .filter((m) => m.latitude != null && m.longitude != null)
-        .map((m) => [m.latitude as number, m.longitude as number] as [number, number]),
+        .map((m) => {
+          const [lng, lat] = wgs84ToGcj02(m.longitude as number, m.latitude as number);
+          return [lat, lng] as [number, number];
+        }),
     [markers],
   );
 
@@ -134,7 +140,10 @@ export function LifeMapView({
     return [...markers]
       .filter((m) => m.latitude != null && m.longitude != null)
       .sort((a, b) => (a.visitTime || a.createdAt || "").localeCompare(b.visitTime || b.createdAt || ""))
-      .map((m) => [m.latitude as number, m.longitude as number] as [number, number]);
+      .map((m) => {
+        const [lng, lat] = wgs84ToGcj02(m.longitude as number, m.latitude as number);
+        return [lat, lng] as [number, number];
+      });
   }, [markers]);
 
   const hasRoute = showPolyline && routePoints.length > 1;
@@ -173,10 +182,12 @@ export function LifeMapView({
       ) : (
         markers
           .filter((m) => m.latitude != null && m.longitude != null)
-          .map((m) => (
+          .map((m) => {
+            const [lng, lat] = wgs84ToGcj02(m.longitude as number, m.latitude as number);
+            return (
             <Marker
               key={m.id}
-              position={[m.latitude as number, m.longitude as number]}
+              position={[lat, lng]}
               icon={makeIcon(m)}
             >
               <Popup>
@@ -192,7 +203,8 @@ export function LifeMapView({
                 </div>
               </Popup>
             </Marker>
-          ))
+          )
+          })
       )}
     </MapContainer>
   );
