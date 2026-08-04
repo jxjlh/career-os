@@ -9,6 +9,7 @@ import {
   Images,
   Library,
   MapPin,
+  MessageSquare,
   NotebookPen,
   Search,
   Settings,
@@ -41,6 +42,7 @@ const NAV: NavItem[] = [
   { key: "lifeMap", href: "/life/map", icon: MapPin, group: "now" },
   { key: "lifeRecords", href: "/life/records", icon: Images, group: "now" },
   { key: "journal", href: "/journal", icon: NotebookPen, group: "now" },
+  { key: "chat", href: "/chat", icon: MessageSquare, group: "now" },
   // GROW —— 成长
   { key: "skills", href: "/skills", icon: Target, group: "grow" },
   { key: "planner", href: "/planner", icon: CalendarDays, group: "grow" },

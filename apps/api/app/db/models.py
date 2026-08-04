@@ -1124,6 +1124,77 @@ class CoachTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
+# ── Sprint 12 好友聊天与群组 ─────────────────────────────────────
+class ChatConversation(Base):
+    """聊天会话: 私聊 (direct) 和群聊 (group). 私聊会话两人共享一个会话ID."""
+
+    __tablename__ = "chat_conversations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    conversation_type: Mapped[str] = mapped_column(String(16), default="direct", index=True)  # direct | group
+    name: Mapped[str | None] = mapped_column(String(120))  # 群聊名称
+    avatar_url: Mapped[str | None] = mapped_column(Text)  # 群聊头像
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("profiles.id", ondelete="SET NULL"), index=True)  # 群主
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_message_preview: Mapped[str | None] = mapped_column(String(500))  # 最后一条消息预览
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class ConversationMember(Base):
+    """会话成员: 私聊两人, 群聊多人. 用于查询用户的所有会话."""
+
+    __tablename__ = "conversation_members"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "user_id", name="uq_conversation_members_pair"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("chat_conversations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(16), default="member")  # owner | admin | member
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 最后已读时间
+    muted: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否静音
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class ChatMessage(Base):
+    """聊天消息: 支持文本、图片、系统消息. 图片存储路径可下载."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("chat_conversations.id", ondelete="CASCADE"), index=True)
+    sender_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="SET NULL"), index=True)
+    message_type: Mapped[str] = mapped_column(String(16), default="text", index=True)  # text | image | system
+    content: Mapped[str | None] = mapped_column(Text)  # 文本内容或图片URL
+    # 图片相关
+    image_url: Mapped[str | None] = mapped_column(Text)  # 图片URL (Supabase Storage)
+    image_width: Mapped[int | None] = mapped_column(Integer)
+    image_height: Mapped[int | None] = mapped_column(Integer)
+    # 系统消息类型
+    system_action: Mapped[str | None] = mapped_column(String(40))  # added_member | removed_member | renamed | ...
+    system_meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 引用回复
+    reply_to_id: Mapped[str | None] = mapped_column(ForeignKey("chat_messages.id", ondelete="SET NULL"))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 软删除
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+class MessageRead(Base):
+    """消息已读状态: 记录每条消息的已读用户, 用于显示"已读"状态."""
+
+    __tablename__ = "message_reads"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", name="uq_message_reads_pair"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    message_id: Mapped[str] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 # ── Sprint 11 Daily Journal ────────────────────────────────────────
 class DailyJournal(Base):
     """每日小记: 记录当天心情 + 内容, 可关联目标/技能. 一人一天一条."""

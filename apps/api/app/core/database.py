@@ -89,6 +89,34 @@ def ensure_columns() -> None:
             "skill_id": "VARCHAR(36)",
             "updated_at": "DATETIME",
         },
+        # ── Sprint 12: Chat & Groups ──
+        "chat_conversations": {
+            "name": "VARCHAR(120)",
+            "avatar_url": "TEXT",
+            "owner_id": "VARCHAR(36)",
+            "last_message_at": "DATETIME",
+            "last_message_preview": "VARCHAR(500)",
+            "updated_at": "DATETIME",
+        },
+        "conversation_members": {
+            "role": "VARCHAR(16) DEFAULT 'member'",
+            "last_read_at": "DATETIME",
+            "muted": "BOOLEAN DEFAULT 0",
+            "joined_at": "DATETIME",
+        },
+        "chat_messages": {
+            "message_type": "VARCHAR(16) DEFAULT 'text'",
+            "image_url": "TEXT",
+            "image_width": "INTEGER",
+            "image_height": "INTEGER",
+            "system_action": "VARCHAR(40)",
+            "system_meta": "JSON",
+            "reply_to_id": "VARCHAR(36)",
+            "deleted_at": "DATETIME",
+        },
+        "message_reads": {
+            "read_at": "DATETIME",
+        },
     }
     tables = set(inspect(engine).get_table_names())
     with engine.begin() as conn:

@@ -40,6 +40,8 @@ from app.domains.salary.router import router as salary_router
 from app.domains.skills.router import router as skills_router
 from app.domains.social.router import router as social_router
 
+from app.domains.chat.router import router as chat_router
+
 settings = get_settings()
 logger = logging.getLogger("app.main")
 
@@ -121,6 +123,8 @@ app.include_router(resume_router, prefix=settings.api_prefix)
 app.include_router(interviews_router, prefix=settings.api_prefix)
 app.include_router(salary_router, prefix=settings.api_prefix)
 app.include_router(social_router, prefix=settings.api_prefix)
+
+app.include_router(chat_router, prefix=settings.api_prefix)
 
 # ---------- 前端静态文件托管 ----------
 # 将 Next.js 构建产物 (apps/web/out) 作为静态资源提供服务，
