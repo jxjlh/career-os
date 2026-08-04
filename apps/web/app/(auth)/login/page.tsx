@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { Button, Card, Input } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
 import { redirectAfterAuth } from "@/lib/api";
 import { isSupabaseConfigured, supabase, writeSessionCookie } from "@/lib/supabase";
@@ -51,36 +51,40 @@ export default function LoginPage() {
   };
 
   return (
-    <Card className="soft-shadow relative overflow-hidden p-7">
-      <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-gradient-to-br from-primary/16 to-accent/14 blur-2xl" />
-      <h1 className="relative text-2xl font-bold tracking-tight">{t("auth.login")}</h1>
-      <p className="relative mt-1.5 text-[13px] leading-relaxed text-muted">{t("auth.loginSub")}</p>
+    <div className="rounded-[20px] border border-border-subtle bg-surface/60 p-7 backdrop-blur-sm">
+      {/* editorial 风格小标题 */}
+      <p className="font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-text-secondary">
+        {t("auth.loginSub")}
+      </p>
+      <h1 className="mt-2 font-display text-[24px] font-bold tracking-tight text-text">
+        {t("auth.login")}
+      </h1>
       {!isSupabaseConfigured && (
-        <p className="relative mt-4 rounded-[10px] bg-warning/10 p-2.5 text-xs leading-relaxed text-warning">
+        <p className="mt-4 rounded-[10px] border border-warning/20 bg-warning/8 p-2.5 text-xs leading-relaxed text-warning">
           {t("auth.devMode")}
         </p>
       )}
-      <form className="relative mt-6 space-y-3.5" onSubmit={submit}>
+      <form className="mt-6 space-y-3" onSubmit={submit}>
         <Input type="email" required placeholder={t("auth.email")} value={email} onChange={(e) => setEmail(e.target.value)} />
         <Input type="password" required placeholder={t("auth.password")} value={password} onChange={(e) => setPassword(e.target.value)} />
         <Link
           href="/forgot-password"
-          className="mt-1.5 block text-right text-[12px] font-medium text-primary hover:text-primary-hover"
+          className="block text-right text-[12px] font-medium text-text-secondary transition-colors hover:text-primary-glow"
         >
           {t("auth.forgotPassword")}
         </Link>
-        {error && <p className="rounded-[10px] bg-danger/8 p-2.5 text-xs leading-relaxed text-danger">{error}</p>}
-        <Button type="submit" className="h-11 w-full" disabled={loading}>
+        {error && <p className="rounded-[10px] border border-danger/20 bg-danger/8 p-2.5 text-xs leading-relaxed text-danger">{error}</p>}
+        <Button type="submit" variant="primary" className="h-11 w-full" disabled={loading}>
           <LogIn className="h-4 w-4" />
           {loading ? t("auth.loggingIn") : t("auth.loginCta")}
         </Button>
       </form>
-      <p className="relative mt-5 text-center text-[13px] text-muted">
+      <p className="mt-5 text-center text-[13px] text-text-secondary">
         {t("auth.noAccount")}{" "}
-        <Link href="/signup" className="font-semibold text-primary hover:text-primary-hover">
+        <Link href="/signup" className="font-semibold text-primary-glow hover:text-primary">
           {t("auth.signup")}
         </Link>
       </p>
-    </Card>
+    </div>
   );
 }
