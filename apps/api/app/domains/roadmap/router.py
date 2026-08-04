@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db.models import Profile, Roadmap, RoadmapMilestone
+from app.db.models import PlanTask, Profile, Roadmap, RoadmapMilestone, WeeklyPlan
 
 router = APIRouter(tags=["roadmap"])
 
@@ -238,3 +239,55 @@ def delete_milestone(
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Milestone not found"})
     db.delete(milestone)
     db.commit()
+
+
+@router.get("/roadmaps/milestones/{milestone_id}/weekly-tasks")
+def list_milestone_weekly_tasks(
+    milestone_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """返回关联到该里程碑的本周 PlanTask, 用于里程碑详情页展示「本周推进」."""
+    milestone = (
+        db.query(RoadmapMilestone)
+        .filter(RoadmapMilestone.id == milestone_id, RoadmapMilestone.user_id == current_user.id)
+        .first()
+    )
+    if milestone is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Milestone not found"})
+
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    rows = (
+        db.query(PlanTask)
+        .join(WeeklyPlan, WeeklyPlan.id == PlanTask.plan_id)
+        .filter(
+            WeeklyPlan.user_id == current_user.id,
+            WeeklyPlan.week_start == week_start,
+            PlanTask.milestone_id == milestone_id,
+        )
+        .order_by(PlanTask.day, PlanTask.sort_order)
+        .all()
+    )
+    return {
+        "data": {
+            "milestoneId": milestone_id,
+            "milestoneTitle": milestone.title,
+            "weekStart": week_start.isoformat(),
+            "total": len(rows),
+            "done": sum(1 for t in rows if t.status == "done"),
+            "tasks": [
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "day": t.day,
+                    "status": t.status,
+                    "taskType": t.task_type,
+                    "priority": t.priority,
+                    "estimatedMinutes": t.estimated_minutes,
+                    "planId": t.plan_id,
+                }
+                for t in rows
+            ],
+        }
+    }

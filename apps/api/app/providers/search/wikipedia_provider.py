@@ -20,7 +20,9 @@ class WikipediaProvider(SearchProvider):
             "format": "json",
             "utf8": "1",
         }
-        async with httpx.AsyncClient(timeout=10) as client:
+        # Wikipedia 强制要求 User-Agent, 否则 403
+        headers = {"User-Agent": "CareerOS/1.0 (https://career-os.pages.dev; learning search)"}
+        async with httpx.AsyncClient(timeout=10, headers=headers) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()

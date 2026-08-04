@@ -12,6 +12,7 @@ import {
   LifeStats,
   MoodPicker,
   StreakCard,
+  WeeklyPlanProgress,
 } from "@/components/dashboard";
 
 type Envelope = { data: any };
@@ -64,13 +65,16 @@ export default function DashboardPage() {
       {/* 3. Active Goals —— 轻量 Row 列表 */}
       <ActiveGoals />
 
-      {/* 4. Life Map —— 人生轨迹预览 */}
+      {/* 4. Weekly Plan Progress —— 本周计划进度 (AI 周计划入口) */}
+      <WeeklyPlanProgress />
+
+      {/* 5. Life Map —— 人生轨迹预览 */}
       <LifeMapPreview />
 
-      {/* 5. Mood —— 今日心情 */}
+      {/* 6. Mood —— 今日心情 */}
       <MoodPicker />
 
-      {/* 6. Life Stats —— 杂志排版数字 */}
+      {/* 7. Life Stats —— 杂志排版数字 */}
       <LifeStats />
 
       {/* 7. AI 提示 —— 保留功能，极轻量，不再做成 Card */}

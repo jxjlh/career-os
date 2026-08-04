@@ -57,9 +57,55 @@ def test_planner_generate() -> None:
             json={"weeklyStudyMinutes": 420},
         )
         assert resp.status_code == 200
-        tasks = resp.json()["data"]["tasks"]
-        assert len(tasks) == 7
-        assert tasks[0]["day"] == 1
+        body = resp.json()["data"]
+        # AI 生成的周计划应包含寄语/rationale/tips 等元信息
+        assert body["weeklyFocus"]
+        assert body["rationale"]
+        assert isinstance(body["tips"], list)
+        # 至少有任务且 day 在 1-7 范围内
+        tasks = body["tasks"]
+        assert len(tasks) >= 1
+        assert all(1 <= t["day"] <= 7 for t in tasks)
+        # 新字段齐备
+        first = tasks[0]
+        assert "taskType" in first
+        assert "difficulty" in first
+        assert "priority" in first
+        assert "aiGenerated" in first
+        # 统计字段已重算
+        assert body["totalMinutes"] >= 0
+        assert body["completionRate"] == 0  # 刚生成, 没人完成
+
+
+def test_planner_toggle_and_progress() -> None:
+    """任务完成切换 + 进度重算 + /planner/progress 端点."""
+    with client() as c:
+        # 先生成计划
+        gen = c.post(
+            "/api/v1/planner/generate",
+            headers=HEADERS,
+            json={"weeklyStudyMinutes": 420},
+        )
+        assert gen.status_code == 200
+        task_id = gen.json()["data"]["tasks"][0]["id"]
+
+        # 切换完成
+        toggle = c.patch(f"/api/v1/planner/tasks/{task_id}/toggle", headers=HEADERS)
+        assert toggle.status_code == 200
+        assert toggle.json()["data"]["status"] == "done"
+        assert toggle.json()["data"]["completedAt"]
+
+        # 再切回 todo
+        toggle2 = c.patch(f"/api/v1/planner/tasks/{task_id}/toggle", headers=HEADERS)
+        assert toggle2.json()["data"]["status"] == "todo"
+        assert toggle2.json()["data"]["completedAt"] is None
+
+        # progress 端点
+        prog = c.get("/api/v1/planner/progress", headers=HEADERS)
+        assert prog.status_code == 200
+        pdata = prog.json()["data"]
+        assert pdata["totalTasks"] >= 1
+        assert pdata["weekStart"]
 
 
 def test_roadmap_generate() -> None:

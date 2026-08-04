@@ -51,6 +51,36 @@ def ensure_columns() -> None:
         "user_profiles": {
             "life_motto": "VARCHAR(300)",
         },
+        # ── Sprint 10: AI 周计划增强 ──
+        "weekly_plans": {
+            "weekly_focus": "TEXT",
+            "rationale": "TEXT",
+            "tips": "JSON",
+            "summary": "TEXT",
+            "reflection": "TEXT",
+            "completion_rate": "FLOAT DEFAULT 0",
+            "total_minutes": "INTEGER DEFAULT 0",
+            "completed_minutes": "INTEGER DEFAULT 0",
+            "goal_ids": "JSON",
+            "skill_ids": "JSON",
+            "context_snapshot": "JSON",
+            "ai_content_id": "VARCHAR(36)",
+            "updated_at": "DATETIME",
+        },
+        "plan_tasks": {
+            "description": "TEXT",
+            "task_type": "VARCHAR(24) DEFAULT 'learning'",
+            "difficulty": "VARCHAR(16) DEFAULT 'medium'",
+            "priority": "VARCHAR(16) DEFAULT 'medium'",
+            "completed_at": "DATETIME",
+            "ai_generated": "BOOLEAN DEFAULT 0",
+            "resource_url": "TEXT",
+            "estimated_outcome": "VARCHAR(200)",
+            "goal_id": "VARCHAR(36)",
+            "life_goal_id": "VARCHAR(36)",
+            "skill_id": "VARCHAR(36)",
+            "milestone_id": "VARCHAR(36)",
+        },
     }
     tables = set(inspect(engine).get_table_names())
     with engine.begin() as conn:

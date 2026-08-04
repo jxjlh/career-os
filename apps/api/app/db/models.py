@@ -253,6 +253,20 @@ class WeeklyPlan(Base):
     title: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(32), default="active")
     ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    # ── Sprint 10: AI 周计划增强 ──
+    weekly_focus: Mapped[str | None] = mapped_column(Text)          # AI 本周寄语
+    rationale: Mapped[str | None] = mapped_column(Text)             # AI 为什么这么安排
+    tips: Mapped[list] = mapped_column(JSON, default=list)           # AI 建议
+    summary: Mapped[str | None] = mapped_column(Text)               # 本周总结
+    reflection: Mapped[str | None] = mapped_column(Text)            # 用户反思
+    completion_rate: Mapped[float] = mapped_column(Float, default=0)
+    total_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    completed_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    goal_ids: Mapped[list] = mapped_column(JSON, default=list)      # 关联目标 ID
+    skill_ids: Mapped[list] = mapped_column(JSON, default=list)    # 关联技能 ID
+    context_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    ai_content_id: Mapped[str | None] = mapped_column(ForeignKey("ai_content.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -270,6 +284,19 @@ class PlanTask(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    # ── Sprint 10: AI 周计划增强 ──
+    description: Mapped[str | None] = mapped_column(Text)            # AI 生成的"为什么做+怎么做"
+    task_type: Mapped[str] = mapped_column(String(24), default="learning")  # learning/practice/project/review/rest
+    difficulty: Mapped[str] = mapped_column(String(16), default="medium")   # easy/medium/hard
+    priority: Mapped[str] = mapped_column(String(16), default="medium")     # low/medium/high
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    resource_url: Mapped[str | None] = mapped_column(Text)
+    estimated_outcome: Mapped[str | None] = mapped_column(String(200))      # 预期产出
+    goal_id: Mapped[str | None] = mapped_column(ForeignKey("goals.id", ondelete="SET NULL"), index=True)
+    life_goal_id: Mapped[str | None] = mapped_column(ForeignKey("life_goals.id", ondelete="SET NULL"), index=True)
+    skill_id: Mapped[str | None] = mapped_column(ForeignKey("skills.id", ondelete="SET NULL"), index=True)
+    milestone_id: Mapped[str | None] = mapped_column(ForeignKey("roadmap_milestones.id", ondelete="SET NULL"), index=True)
 
 
 class AiChat(Base):

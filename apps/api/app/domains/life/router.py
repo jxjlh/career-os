@@ -286,6 +286,55 @@ def list_life_goal_tasks(
     return {"data": tasks}
 
 
+@router.get("/life/goals/{goal_id}/weekly-tasks")
+def list_life_goal_weekly_tasks(
+    goal_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """返回关联到该人生目标的本周 PlanTask, 用于目标详情页展示「本周推进」."""
+    from datetime import date, timedelta
+
+    from app.db.models import PlanTask, WeeklyPlan
+
+    if LifeGoalService(db).get(current_user.id, goal_id) is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Life goal not found"})
+
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    rows = (
+        db.query(PlanTask)
+        .join(WeeklyPlan, WeeklyPlan.id == PlanTask.plan_id)
+        .filter(
+            WeeklyPlan.user_id == current_user.id,
+            WeeklyPlan.week_start == week_start,
+            PlanTask.life_goal_id == goal_id,
+        )
+        .order_by(PlanTask.day, PlanTask.sort_order)
+        .all()
+    )
+    return {
+        "data": {
+            "weekStart": week_start.isoformat(),
+            "total": len(rows),
+            "done": sum(1 for t in rows if t.status == "done"),
+            "tasks": [
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "day": t.day,
+                    "status": t.status,
+                    "taskType": t.task_type,
+                    "priority": t.priority,
+                    "estimatedMinutes": t.estimated_minutes,
+                    "planId": t.plan_id,
+                }
+                for t in rows
+            ],
+        }
+    }
+
+
 @router.get("/life/records/media")
 async def life_record_media(
     path: Annotated[str, Query(min_length=1, max_length=1000)],

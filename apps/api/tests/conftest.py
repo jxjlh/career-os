@@ -28,6 +28,7 @@ def _force_mock_providers(monkeypatch):
     )
     monkeypatch.setattr("app.domains.ai.service.get_ai_provider", lambda: MockAIProvider())
     monkeypatch.setattr("app.domains.coach.service.get_ai_provider", lambda: MockAIProvider())
+    monkeypatch.setattr("app.domains.planner.service.get_ai_provider", lambda: MockAIProvider())
     # 搜索: 仅用 mock provider, 避免命中真实 Wikipedia/GitHub 导致单测变慢或受网络抖动影响
     monkeypatch.setattr(
         "app.domains.explorer.router.get_search_providers",

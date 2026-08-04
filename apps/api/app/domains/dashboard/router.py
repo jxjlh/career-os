@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db.models import PlanTask, Profile, Project, UserSkill
+from app.db.models import PlanTask, Profile, Project, UserSkill, WeeklyPlan
 
 router = APIRouter(tags=["dashboard"])
 
@@ -18,7 +18,52 @@ def dashboard_summary(
 ) -> dict:
     skill_count = db.query(UserSkill).filter(UserSkill.user_id == current_user.id).count()
     project_count = db.query(Project).filter(Project.user_id == current_user.id).count()
-    done_tasks = db.query(PlanTask).filter(PlanTask.user_id == current_user.id, PlanTask.status == "done").count()
+
+    # 本周计划进度 (供 Dashboard 首页展示)
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    today_weekday = today.weekday() + 1
+    plan = (
+        db.query(WeeklyPlan)
+        .filter(WeeklyPlan.user_id == current_user.id, WeeklyPlan.week_start == week_start)
+        .first()
+    )
+    if plan is not None:
+        plan_tasks = db.query(PlanTask).filter(PlanTask.plan_id == plan.id).all()
+        total_tasks = len(plan_tasks)
+        completed_tasks = sum(1 for t in plan_tasks if t.status == "done")
+        total_minutes = sum(t.estimated_minutes for t in plan_tasks)
+        completed_minutes = sum(t.estimated_minutes for t in plan_tasks if t.status == "done")
+        today_tasks_rows = [t for t in plan_tasks if t.day == today_weekday]
+        today_total = len(today_tasks_rows)
+        today_done = sum(1 for t in today_tasks_rows if t.status == "done")
+        completion_rate = round(completed_tasks / total_tasks, 4) if total_tasks else 0.0
+        weekly_plan_progress = {
+            "planId": plan.id,
+            "title": plan.title,
+            "weeklyFocus": plan.weekly_focus,
+            "completionRate": completion_rate,
+            "completedTasks": completed_tasks,
+            "totalTasks": total_tasks,
+            "completedMinutes": completed_minutes,
+            "totalMinutes": total_minutes,
+            "todayTasks": today_total,
+            "todayDone": today_done,
+        }
+    else:
+        weekly_plan_progress = {
+            "planId": None,
+            "title": None,
+            "weeklyFocus": None,
+            "completionRate": 0.0,
+            "completedTasks": 0,
+            "totalTasks": 0,
+            "completedMinutes": 0,
+            "totalMinutes": 0,
+            "todayTasks": 0,
+            "todayDone": 0,
+        }
+
     return {
         "data": {
             "weeklyMinutes": current_user.weekly_study_minutes or 0,
@@ -26,8 +71,9 @@ def dashboard_summary(
             "skillsCompleted": skill_count,
             "projectCount": project_count,
             "okrProgress": 0,
-            "todayTasks": 4,
-            "todayTasksDone": done_tasks,
+            "todayTasks": weekly_plan_progress["todayTasks"],
+            "todayTasksDone": weekly_plan_progress["todayDone"],
+            "weeklyPlanProgress": weekly_plan_progress,
         }
     }
 
