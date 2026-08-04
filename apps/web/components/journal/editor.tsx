@@ -1,0 +1,242 @@
+"use client";
+
+import { motion } from "framer-motion";
+import { useState } from "react";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import type { Journal } from "@/lib/journal";
+import { journalApi } from "@/lib/journal";
+import { useI18n } from "@/lib/i18n";
+
+const MOOD_EMOJIS = ["😵", "😐", "🙂", "😎", "✨"] as const;
+const QUICK_TAGS = ["工作", "学习", "生活", "思考", "休息"];
+
+interface JournalEditorProps {
+  date: string; // YYYY-MM-DD
+  onSaved?: () => void;
+}
+
+/**
+ * 每日小记编辑器: 心情选择 + 内容输入 + 标签.
+ * 替代原 MoodPicker 的 localStorage 实现, 改为真正的 CRUD.
+ */
+export function JournalEditor({ date, onSaved }: JournalEditorProps) {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+
+  // 获取当前日期的日记
+  const { data: journalData, isLoading } = useQuery<{ data: Journal | null }>({
+    queryKey: ["journal", date],
+    queryFn: () => journalApi.getByDate(date),
+    staleTime: 0,
+  });
+
+  const existing = journalData?.data;
+
+  const [moodIndex, setMoodIndex] = useState<number | null>(existing?.moodIndex ?? null);
+  const [content, setContent] = useState(existing?.content ?? "");
+  const [tags, setTags] = useState<string[]>(existing?.tags ?? []);
+
+  // 当 existing 变化时更新本地状态
+  const loadExisting = existing?.id;
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useState(() => {
+    if (existing) {
+      setMoodIndex(existing.moodIndex);
+      setContent(existing.content ?? "");
+      setTags(existing.tags ?? []);
+    }
+  });
+
+  const isEditing = !!existing;
+
+  const upsertMutation = useMutation({
+    mutationFn: () => {
+      if (!moodIndex) throw new Error("请选择今天的心情");
+      const payload = {
+        mood_index: moodIndex,
+        content: content.trim() || undefined,
+        tags: tags.length > 0 ? tags : undefined,
+      };
+      if (isEditing && existing) {
+        return journalApi.update(existing.id, payload);
+      }
+      return journalApi.create(payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["journal"] });
+      queryClient.invalidateQueries({ queryKey: ["journal-month"] });
+      onSaved?.();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => {
+      if (!existing) throw new Error("No journal to delete");
+      return journalApi.remove(existing.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["journal"] });
+      queryClient.invalidateQueries({ queryKey: ["journal-month"] });
+      setMoodIndex(null);
+      setContent("");
+      setTags([]);
+      onSaved?.();
+    },
+  });
+
+  const toggleTag = (tag: string) => {
+    setTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const handleSave = () => {
+    if (!moodIndex) return;
+    upsertMutation.mutate();
+  };
+
+  const formatDate = (d: string) => {
+    const dateObj = new Date(d + "T00:00:00");
+    const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][dateObj.getDay()];
+    return `${dateObj.getMonth() + 1}月${dateObj.getDate()}日 · ${weekday}`;
+  };
+
+  return (
+    <div className="w-full">
+      {/* 日期标题 */}
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h3 className="font-display text-lg font-semibold text-text-primary">
+            {formatDate(date)}
+          </h3>
+          <p className="text-[13px] text-text-tertiary">
+            {isEditing ? t("journal.editPrompt") : t("journal.writePrompt")}
+          </p>
+        </div>
+        {isEditing && (
+          <motion.button
+            onClick={() => {
+              if (confirm("确定删除这篇小记吗?")) {
+                deleteMutation.mutate();
+              }
+            }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="flex h-8 items-center rounded-lg px-3 text-[12px] text-text-tertiary transition-colors hover:bg-red-500/10 hover:text-red-400"
+          >
+            删除
+          </motion.button>
+        )}
+      </div>
+
+      {/* 心情选择 */}
+      <div className="mb-5">
+        <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-text-secondary">
+          {t("journal.moodLabel")}
+        </label>
+        <div className="flex items-center gap-2">
+          {MOOD_EMOJIS.map((m, i) => (
+            <motion.button
+              key={m}
+              onClick={() => setMoodIndex(i)}
+              whileHover={{ scale: 1.15 }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className={`
+                flex h-12 w-12 items-center justify-center rounded-xl text-xl transition-all duration-200
+                ${moodIndex === i
+                  ? "bg-primary/15 ring-1 ring-primary/50 shadow-[0_0_16px_rgba(139,92,246,0.25)]"
+                  : "bg-surface/40 hover:bg-surface-elevated/60"
+                }
+              `}
+              aria-label={`mood ${i}`}
+            >
+              {m}
+            </motion.button>
+          ))}
+        </div>
+      </div>
+
+      {/* 内容输入 */}
+      <div className="mb-5">
+        <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-text-secondary">
+          {t("journal.contentLabel")}
+        </label>
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder={t("journal.contentPlaceholder")}
+          rows={4}
+          className="
+            w-full resize-none rounded-xl border border-white/5 bg-surface/30
+            px-4 py-3 text-sm text-text-primary placeholder:text-text-tertiary/60
+            transition-colors duration-200
+            focus:border-primary/40 focus:bg-surface/50 focus:outline-none
+          "
+        />
+      </div>
+
+      {/* 快速标签 */}
+      <div className="mb-6">
+        <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-text-secondary">
+          {t("journal.tagsLabel")}
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {QUICK_TAGS.map((tag) => (
+            <motion.button
+              key={tag}
+              onClick={() => toggleTag(tag)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+              className={`
+                rounded-full px-3 py-1.5 text-[12px] transition-all duration-200
+                ${tags.includes(tag)
+                  ? "bg-primary/20 text-primary ring-1 ring-primary/30"
+                  : "bg-surface/40 text-text-secondary hover:bg-surface-elevated/60"
+                }
+              `}
+            >
+              {tag}
+            </motion.button>
+          ))}
+        </div>
+      </div>
+
+      {/* 保存按钮 */}
+      <motion.button
+        onClick={handleSave}
+        disabled={!moodIndex || upsertMutation.isPending}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className={`
+          flex w-full items-center justify-center rounded-xl py-3 text-sm font-medium transition-all duration-200
+          ${moodIndex
+            ? "bg-primary text-white shadow-[0_4px_20px_rgba(139,92,246,0.3)] hover:bg-primary-hover"
+            : "cursor-not-allowed bg-surface/40 text-text-tertiary"
+          }
+        `}
+      >
+        {upsertMutation.isPending
+          ? "保存中..."
+          : isEditing
+            ? t("journal.updateButton")
+            : t("journal.saveButton")}
+      </motion.button>
+
+      {/* 保存成功反馈 */}
+      {upsertMutation.isSuccess && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-3 text-center text-[13px] text-success"
+        >
+          ✓ {t("journal.savedHint")}
+        </motion.div>
+      )}
+    </div>
+  );
+}

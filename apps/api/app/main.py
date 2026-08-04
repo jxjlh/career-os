@@ -26,6 +26,7 @@ from app.domains.goals.router import router as goals_router
 from app.domains.health.router import router as health_router
 from app.domains.interviews.router import router as interviews_router
 from app.domains.jobs.router import router as jobs_router
+from app.domains.journal.router import router as journal_router
 from app.domains.library.router import router as library_router
 from app.domains.life.router import router as life_router
 from app.domains.notifications.router import router as notifications_router
@@ -114,6 +115,7 @@ app.include_router(analytics_router, prefix=settings.api_prefix)
 app.include_router(ai_router, prefix=settings.api_prefix)
 app.include_router(projects_router, prefix=settings.api_prefix)
 app.include_router(jobs_router, prefix=settings.api_prefix)
+app.include_router(journal_router, prefix=settings.api_prefix)
 app.include_router(resume_router, prefix=settings.api_prefix)
 app.include_router(interviews_router, prefix=settings.api_prefix)
 app.include_router(salary_router, prefix=settings.api_prefix)

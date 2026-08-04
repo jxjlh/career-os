@@ -9,6 +9,7 @@ import {
   Images,
   Library,
   MapPin,
+  NotebookPen,
   Search,
   Settings,
   Sparkles,
@@ -39,6 +40,7 @@ const NAV: NavItem[] = [
   { key: "life", href: "/life", icon: Compass, group: "now" },
   { key: "lifeMap", href: "/life/map", icon: MapPin, group: "now" },
   { key: "lifeRecords", href: "/life/records", icon: Images, group: "now" },
+  { key: "journal", href: "/journal", icon: NotebookPen, group: "now" },
   // GROW —— 成长
   { key: "skills", href: "/skills", icon: Target, group: "grow" },
   { key: "planner", href: "/planner", icon: CalendarDays, group: "grow" },

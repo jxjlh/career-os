@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui";
@@ -10,10 +11,10 @@ import {
   Hero,
   LifeMapPreview,
   LifeStats,
-  MoodPicker,
   StreakCard,
   WeeklyPlanProgress,
 } from "@/components/dashboard";
+import { journalApi } from "@/lib/journal";
 
 type Envelope = { data: any };
 
@@ -71,8 +72,8 @@ export default function DashboardPage() {
       {/* 5. Life Map —— 人生轨迹预览 */}
       <LifeMapPreview />
 
-      {/* 6. Mood —— 今日心情 */}
-      <MoodPicker />
+      {/* 6. Mood → Journal 入口 */}
+      <JournalEntry />
 
       {/* 7. Life Stats —— 杂志排版数字 */}
       <LifeStats />
@@ -92,5 +93,60 @@ export default function DashboardPage() {
         </section>
       )}
     </div>
+  );
+}
+
+const MOOD_EMOJIS = ["😵", "😐", "🙂", "😎", "✨"] as const;
+
+/**
+ * Journal Entry —— Dashboard 上的小记入口卡片.
+ * 显示今天是否已记录心情, 可点击跳转到 /journal
+ */
+function JournalEntry() {
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  const { data } = useQuery<{ data: { moodIndex: number } | null }>({
+    queryKey: ["journal", todayStr],
+    queryFn: () => journalApi.getByDate(todayStr),
+    staleTime: 0,
+  });
+
+  const journal = data?.data;
+
+  return (
+    <section className="mt-10">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
+            TODAY'S MOOD
+          </h2>
+          <p className="mt-1 text-[13px] text-text-tertiary">
+            {journal ? "今天还不错" : "How are you feeling?"}
+          </p>
+        </div>
+        <Link
+          href="/journal"
+          className="text-[12px] text-text-tertiary transition-colors hover:text-text-secondary"
+        >
+          {journal ? "查看/编辑 →" : "开始记录 →"}
+        </Link>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        {MOOD_EMOJIS.map((m, i) => (
+          <span
+            key={m}
+            className={`flex h-11 w-11 items-center justify-center rounded-[12px] text-xl
+              ${journal?.moodIndex === i
+                ? "bg-primary/12 ring-1 ring-primary/40"
+                : "bg-surface/40 opacity-50"
+              }
+            `}
+          >
+            {m}
+          </span>
+        ))}
+      </div>
+    </section>
   );
 }

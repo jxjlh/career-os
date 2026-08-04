@@ -81,6 +81,14 @@ def ensure_columns() -> None:
             "skill_id": "VARCHAR(36)",
             "milestone_id": "VARCHAR(36)",
         },
+        # ── Sprint 11: Daily Journal ──
+        "daily_journals": {
+            "content": "TEXT",
+            "tags": "JSON",
+            "goal_id": "VARCHAR(36)",
+            "skill_id": "VARCHAR(36)",
+            "updated_at": "DATETIME",
+        },
     }
     tables = set(inspect(engine).get_table_names())
     with engine.begin() as conn:

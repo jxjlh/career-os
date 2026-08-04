@@ -1122,3 +1122,28 @@ class CoachTask(Base):
     )
     due_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+# ── Sprint 11 Daily Journal ────────────────────────────────────────
+class DailyJournal(Base):
+    """每日小记: 记录当天心情 + 内容, 可关联目标/技能. 一人一天一条."""
+
+    __tablename__ = "daily_journals"
+    __table_args__ = (UniqueConstraint("user_id", "journal_date", name="uq_daily_journal_user_date"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    journal_date: Mapped[date] = mapped_column(Date, index=True)
+    # 心情: emoji 序号 0-4, 对应 😵😐🙂😎✨
+    mood_index: Mapped[int] = mapped_column(SmallInteger)
+    content: Mapped[str | None] = mapped_column(Text)
+    # 标签, 如 ["工作", "学习", "生活"]
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    goal_id: Mapped[str | None] = mapped_column(
+        ForeignKey("life_goals.id", ondelete="SET NULL"), index=True
+    )
+    skill_id: Mapped[str | None] = mapped_column(
+        ForeignKey("skills.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)

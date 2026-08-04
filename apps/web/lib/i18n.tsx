@@ -31,6 +31,7 @@ const zh = {
     now: "当下",
     grow: "成长",
     careerGroup: "职业",
+    journal: "每日小记",
   },
   common: {
     search: "搜索",
@@ -290,6 +291,25 @@ const zh = {
     search: "搜索",
     interview: "面试",
   },
+  journal: {
+    title: "每日小记",
+    subtitle: "记录今天的心情, 留住生活的痕迹",
+    today: "今天",
+    hasRecord: "已记录",
+    selectDateHint: "选择一个日期开始记录",
+    writePrompt: "今天感觉如何?",
+    editPrompt: "修改这篇小记",
+    moodLabel: "心情",
+    contentLabel: "小记内容",
+    contentPlaceholder: "记录点什么吧... 今天的见闻、思考、感受都可以",
+    tagsLabel: "标签",
+    saveButton: "保存小记",
+    updateButton: "更新小记",
+    savedHint: "已保存!",
+    emptyTitle: "还没有小记",
+    emptyDesc: "从今天开始, 每天记录一点心情, 回头看时会感谢今天的自己.",
+    navLabel: "每日小记",
+  },
 };
 
 type Dictionary = typeof zh;
@@ -321,6 +341,7 @@ const en: Dictionary = {
     now: "NOW",
     grow: "GROW",
     careerGroup: "CAREER",
+    journal: "Daily Journal",
   },
   common: {
     search: "Search",
@@ -578,6 +599,25 @@ const en: Dictionary = {
     aiChat: "AI chat",
     search: "Search",
     interview: "Interviews",
+  },
+  journal: {
+    title: "Daily Journal",
+    subtitle: "Record your mood, capture your life",
+    today: "Today",
+    hasRecord: "Recorded",
+    selectDateHint: "Pick a date to start writing",
+    writePrompt: "How are you feeling today?",
+    editPrompt: "Edit this entry",
+    moodLabel: "Mood",
+    contentLabel: "Entry",
+    contentPlaceholder: "Write something... thoughts, feelings, experiences",
+    tagsLabel: "Tags",
+    saveButton: "Save Entry",
+    updateButton: "Update Entry",
+    savedHint: "Saved!",
+    emptyTitle: "No entries yet",
+    emptyDesc: "Start today. A few words each day will mean a lot when you look back.",
+    navLabel: "Daily Journal",
   },
 };
 
