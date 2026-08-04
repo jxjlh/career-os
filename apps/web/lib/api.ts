@@ -11,7 +11,14 @@ export class ApiError extends Error {
   }
 }
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
+// 生产环境通过 Cloudflare Pages Function 同源代理 /api/* → Render
+// 本地开发直接调本地后端
+// 这样完全绕过 CORS，无需在 Render 配置 allow_origin
+const DEFAULT_API_BASE =
+  process.env.NODE_ENV === "development"
+    ? "http://127.0.0.1:8000/api/v1"
+    : "/api/v1";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE;
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);

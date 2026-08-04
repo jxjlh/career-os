@@ -112,7 +112,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<GeoPlace
       { headers: { Accept: "application/json" } },
     );
     if (!res.ok) return null;
-    const data = await res.json();
+    const data: { address?: Record<string, string> } = await res.json();
     const addr = data.address || {};
     return {
       city: addr.city || addr.town || addr.village || addr.county || addr.state || undefined,
@@ -133,7 +133,7 @@ export async function getCurrentWeather(lat: number, lng: number): Promise<Weath
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code`,
     );
     if (!res.ok) return null;
-    const data = await res.json();
+    const data: { current?: { temperature_2m: number; weather_code: number } } = await res.json();
     const current = data.current;
     if (!current) return null;
     return {

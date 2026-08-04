@@ -1,5 +1,8 @@
 import type { MetadataRoute } from "next";
 
+// 静态导出模式下，metadata route 必须标记为 force-static
+export const dynamic = "force-static";
+
 // PWA manifest — 让 iPhone Safari 可以"添加到主屏幕"成为独立 App。
 // iOS 不依赖 Service Worker 即可安装，但需要 manifest + apple-touch-icon + iOS meta。
 export default function manifest(): MetadataRoute.Manifest {

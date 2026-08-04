@@ -1,5 +1,11 @@
 import { apiFetch } from "@/lib/api";
 
+// 媒体文件（图片/视频）直接从 Render 后端加载，跨域 img/video 标签无需 CORS
+// 生产环境 API_BASE 是 /api/v1（同源代理），媒体不能走代理（二进制性能差）
+// 所以媒体固定走 Render 绝对 URL
+const BACKEND_ORIGIN = "https://ai-life-os-api-4y3x.onrender.com";
+const MEDIA_ORIGIN = BACKEND_ORIGIN;
+
 export interface LifeGoal {
   id: string;
   title: string;
@@ -387,11 +393,9 @@ export async function getRecordMediaUrl(path: string): Promise<string | null> {
   if (!path) return null;
   // 绝对 URL 直接返回
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  // /media/ 相对路径 —— 确保有正确的 host
+  // /media/ 相对路径 —— 静态导出后没有 rewrites，拼接后端 origin
   if (path.startsWith("/media/")) {
-    // SSR / 静态生成阶段 window 不存在时返回相对路径（由 rewrites 代理）
-    if (typeof window === "undefined") return path;
-    return path;
+    return `${MEDIA_ORIGIN}${path}`;
   }
 
   // 后端负责校验归属并签名 Supabase 对象或回退到本地 /media.
@@ -401,9 +405,9 @@ export async function getRecordMediaUrl(path: string): Promise<string | null> {
     );
     const url = res.data.url;
     if (url) {
-      // 后端可能返回 /media/... 相对路径
-      if (url.startsWith("/media/") && typeof window !== "undefined") {
-        return url; // Next.js rewrite 会代理 /media/ 到后端
+      // 后端可能返回 /media/... 相对路径，拼接后端 origin
+      if (url.startsWith("/media/")) {
+        return `${MEDIA_ORIGIN}${url}`;
       }
       return url;
     }
