@@ -147,3 +147,6 @@ if frontend_dir.exists():
         # 其他所有路径 → index.html（SPA fallback）
         index_file = frontend_dir / "index.html"
         return FileResponse(index_file)
+
+# 注：当 static/ 目录不存在时（如本地开发未构建前端），
+# 上述 catch-all 路由不会注册，所有请求仍走 API 路由。
