@@ -42,6 +42,16 @@ class ProfileService:
         for field, value in data.items():
             if value is not None:
                 setattr(profile, field, value)
+
+        # 同步 Profile 表的 display_name —— 好友搜索 (social 模块) 依赖此字段,
+        # 否则用户设置了昵称后, 其他人按昵称搜索不到.
+        if data.get("nickname") is not None:
+            from app.db.models import Profile
+
+            base_profile = self.db.get(Profile, user_id)
+            if base_profile is not None:
+                base_profile.display_name = data["nickname"]
+
         self.db.commit()
         self.db.refresh(profile)
         return to_response(profile)
