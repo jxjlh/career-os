@@ -2,8 +2,9 @@ from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
@@ -120,3 +121,29 @@ app.include_router(resume_router, prefix=settings.api_prefix)
 app.include_router(interviews_router, prefix=settings.api_prefix)
 app.include_router(salary_router, prefix=settings.api_prefix)
 app.include_router(social_router, prefix=settings.api_prefix)
+
+# ---------- 前端静态文件托管 ----------
+# 将 Next.js 构建产物 (apps/web/out) 作为静态资源提供服务，
+# 使 Render 后端同时托管前端 SPA，省去独立的 Cloudflare Pages 部署。
+# 关键：API 路由 (已通过 include_router 注册) 优先匹配，
+# 未命中的请求回退到 index.html，支持 SPA 客户端路由。
+frontend_dir = Path(__file__).resolve().parent.parent / "static"
+if frontend_dir.exists():
+    # 挂载静态资源（/_next, /icons, /manifest.webmanifest 等带文件扩展名的请求）
+    app.mount(
+        "/_next",
+        StaticFiles(directory=frontend_dir / "_next"),
+        name="frontend-next",
+    )
+    # Catch-all: 所有非 API、非静态资源、非文件路径的请求 → index.html
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(request: Request, full_path: str):
+        # API 请求永远不走这里（已被 router 匹配）
+        # 静态资源（/_next/*）也不走这里（已被 StaticFiles mount 匹配）
+        # 带文件扩展名的请求（如 .js, .css, .png）尝试直接返回文件
+        candidate = frontend_dir / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        # 其他所有路径 → index.html（SPA fallback）
+        index_file = frontend_dir / "index.html"
+        return FileResponse(index_file)

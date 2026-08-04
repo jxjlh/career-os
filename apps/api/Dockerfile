@@ -12,6 +12,8 @@ COPY pyproject.toml uv.lock ./
 COPY app ./app
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
+# 前端静态文件（Next.js 构建产物，由 apps/web/out 复制而来）
+COPY static ./static
 
 # 安装含 dev 组（提供 alembic，用于容器启动时自动迁移）
 RUN uv sync --frozen
