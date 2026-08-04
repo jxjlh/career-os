@@ -1,6 +1,7 @@
 /** 聊天 API 客户端 */
 
 import { apiFetch } from "@/lib/api";
+import { getAccessToken, isSupabaseConfigured } from "@/lib/supabase";
 
 // Types
 export interface Conversation {
@@ -11,7 +12,7 @@ export interface Conversation {
   lastMessageAt?: string;
   lastMessage?: string;
   unread: number;
-  otherUserId?: string; // 私聊时的对方 ID
+  otherUserId?: string;
   createdAt: string;
 }
 
@@ -44,21 +45,18 @@ export interface GroupMember {
 
 // API functions
 export const chatApi = {
-  // 会话列表
   listConversations: () =>
     apiFetch<{ data: Conversation[] }>("/chat/conversations"),
 
   getConversation: (id: string) =>
     apiFetch<{ data: Conversation }>(`/chat/conversations/${id}`),
 
-  // 私聊
   createDirect: (userId: string) =>
     apiFetch<{ data: Conversation }>("/chat/direct", {
       method: "POST",
       body: JSON.stringify({ user_id: userId }),
     }),
 
-  // 群聊
   createGroup: (name: string, memberIds: string[] = []) =>
     apiFetch<{ data: Conversation }>("/chat/groups", {
       method: "POST",
@@ -85,7 +83,6 @@ export const chatApi = {
       `/chat/groups/${conversationId}/members`
     ),
 
-  // 消息
   listMessages: (
     conversationId: string,
     before?: string,
@@ -114,7 +111,13 @@ export const chatApi = {
     const formData = new FormData();
     formData.append("file", file);
 
-    const token = localStorage.getItem("career_os_token");
+    let token: string | null = null;
+    if (isSupabaseConfigured) {
+      token = await getAccessToken();
+    } else if (typeof window !== "undefined") {
+      token = localStorage.getItem("career_os_token");
+    }
+
     const res = await fetch(
       `/api/v1/chat/conversations/${conversationId}/images`,
       {
@@ -138,7 +141,7 @@ export const chatApi = {
     }),
 };
 
-// 好友 API（补充社交模块的聊天入口）
+// 好友 API
 export const friendApi = {
   list: () => apiFetch<{ data: any[] }>("/social/friends"),
 
