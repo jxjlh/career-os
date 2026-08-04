@@ -106,16 +106,42 @@ class FriendService:
                 created_at=_iso(incoming.created_at),
             )
 
-        # 已存在 pending 申请则幂等返回
-        existing = self.requests.get_pending(from_user=from_user, to_user=target.id)
+        # 查找已存在的申请 (含 rejected/accepted 状态, 受唯一约束限制)
+        existing = self.requests.get_by_pair(from_user=from_user, to_user=target.id)
         if existing is not None:
-            return FriendRequestItem(
-                id=existing.id,
-                from_user=ProfileSummary(**_profile_summary(self.db.get(Profile, from_user))),
-                message=existing.message,
-                status="pending",
-                created_at=_iso(existing.created_at),
-            )
+            if existing.status == "pending":
+                return FriendRequestItem(
+                    id=existing.id,
+                    from_user=ProfileSummary(**_profile_summary(self.db.get(Profile, from_user))),
+                    message=existing.message,
+                    status="pending",
+                    created_at=_iso(existing.created_at),
+                )
+            elif existing.status == "rejected":
+                # 被拒绝的申请: 更新为 pending, 允许重新发送
+                existing.status = "pending"
+                existing.message = message
+                self.db.commit()
+                self.db.refresh(existing)
+                return FriendRequestItem(
+                    id=existing.id,
+                    from_user=ProfileSummary(**_profile_summary(self.db.get(Profile, from_user))),
+                    message=existing.message,
+                    status="pending",
+                    created_at=_iso(existing.created_at),
+                )
+            elif existing.status == "accepted":
+                # 已接受但好友关系未建立的极端情况
+                if not self.friends.are_friends(from_user, target.id):
+                    self._accept(existing, from_user)
+                    return FriendRequestItem(
+                        id=existing.id,
+                        from_user=ProfileSummary(**_profile_summary(target)),
+                        message=existing.message,
+                        status="accepted",
+                        created_at=_iso(existing.created_at),
+                    )
+                raise AppError(code="BAD_REQUEST", message="你们已经是好友了", status=400)
 
         req = self.requests.create_request(from_user, target.id, message)
         self.notifications.create(

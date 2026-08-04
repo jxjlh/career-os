@@ -13,8 +13,16 @@ os.environ.setdefault("APP_ENV", "test")
 
 import pytest
 
+from app.core.database import engine
+from app.db.base import Base
 from app.providers.ai.mock_provider import MockAIProvider
 from app.providers.search.mock_provider import MockSearchProvider
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_tables():
+    """session 级建表: 所有测试共用同一 SQLite 文件, 首次运行时建表."""
+    Base.metadata.create_all(bind=engine)
 
 
 @pytest.fixture(autouse=True)

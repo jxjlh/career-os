@@ -19,10 +19,10 @@ import { chatApi, friendApi, type Conversation, type Message } from "@/lib/chat"
 import { apiFetch } from "@/lib/api";
 import { Button, Input, cn } from "@/components/ui";
 
-// 好友项 (后端 social/friends 返回结构: { profile: { id, displayName, avatarUrl }, created_at })
+// 好友项 (后端 social/friends 返回结构: { profile: { id, displayName, avatarUrl }, createdAt })
 type FriendItem = {
   profile: { id: string; displayName: string; avatarUrl: string | null };
-  created_at: string;
+  createdAt: string;
 };
 
 // 搜索项 (后端 social/friends/search 返回结构, 已由 CamelModel 转为 camelCase)

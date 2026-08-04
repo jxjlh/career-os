@@ -103,6 +103,17 @@ class FriendRequestRepository(BaseRepository[FriendRequest]):
             .first()
         )
 
+    def get_by_pair(self, from_user: str, to_user: str) -> FriendRequest | None:
+        """查找指定用户对的任意状态申请 (pending/accepted/rejected)."""
+        return (
+            self.db.query(FriendRequest)
+            .filter(
+                FriendRequest.from_user == from_user,
+                FriendRequest.to_user == to_user,
+            )
+            .first()
+        )
+
     def find_by_email(self, email: str) -> Profile | None:
         return self.db.query(Profile).filter(Profile.email == email).first()
 
