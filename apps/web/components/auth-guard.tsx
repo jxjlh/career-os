@@ -20,6 +20,7 @@ const APP_PREFIXES = [
   "/coach",
   "/career",
   "/dashboard",
+  "/english",
   "/explore",
   "/interviews",
   "/journal",
