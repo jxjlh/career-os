@@ -1,36 +1,53 @@
 # Render 免费版服务闲置 15 分钟后会自动休眠，再次访问需要 50+ 秒冷启动。
-# 这个 workflow 每 5 分钟 ping 一次服务端点，重置休眠计时器，保持服务常驻。
+# 本 workflow 通过频繁 ping 服务端点，重置休眠计时器，保持服务常驻。
+#
+# 重要说明：GitHub Actions 免费账户的 cron 可能有 30+ 分钟延迟。
+# 如果此方案不够可靠，请改用 Cron-Job.org 或 UptimeRobot 等外部服务。
+#
 # 架构说明: 前端 SPA 已打包进后端 Docker 容器 (apps/api/static/)，
 #           由后端统一托管，所以只需 ping 后端一个服务即可。
+
 name: Keep Render services warm
 
 on:
   schedule:
-    # 每 5 分钟触发一次；Render 免费层 15 分钟无流量休眠，5 分钟非常安全
-    - cron: "*/5 * * * *"
+    # 每 1 分钟触发一次（设置最频繁的 cron）
+    # 注意：GitHub 可能会延迟，但我们设置最短间隔
+    - cron: "* * * * *"
   workflow_dispatch: # 允许手动触发
+  # 每次有 push 到 master 时也触发一次（确保部署后立即唤醒）
+  push:
+    branches:
+      - master
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
       - name: Ping backend (API + SPA)
+        timeout-minutes: 5
         run: |
           echo "Pinging CareerOS API health endpoint..."
-          
-          # 尝试多次请求，确保唤醒服务
+
+          # 多次请求确保唤醒服务（即使 GitHub 延迟也能工作）
           for i in 1 2 3; do
-            echo "Attempt $i..."
-            curl -fsS --max-time 120 \
-              -w "\n[RESULT] HTTP %{http_code} | Time: %{time_total}s\n" \
-              https://ai-life-os-api-4y3x.onrender.com/ready
-            
-            if [ $? -eq 0 ]; then
-              echo "Success!"
-              break
+            echo "Attempt $i at $(date -u)..."
+
+            # 使用 --max-time 60 防止超时
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 60 \
+              https://ai-life-os-api-4y3x.onrender.com/ready)
+
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Success! HTTP $STATUS"
+              echo "Service should remain warm."
+              exit 0
             fi
-            echo "Attempt $i failed, retrying..."
-            sleep 10
+
+            echo "Attempt $i returned HTTP $STATUS, retrying in 5s..."
+            sleep 5
           done
-          
-          echo "Done. Service should remain warm."
+
+          echo "❌ All attempts failed"
+          # 即使失败也不重试整个 workflow，避免消耗 GitHub 额度
+          echo "Will retry at next scheduled time"
