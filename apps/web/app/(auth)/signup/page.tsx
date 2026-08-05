@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { Button, Card, Input } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
-import { redirectAfterAuth } from "@/lib/api";
+import { redirectAfterAuth, apiFetch } from "@/lib/api";
 import { isSupabaseConfigured, supabase, writeSessionCookie } from "@/lib/supabase";
 
 export default function SignupPage() {
@@ -17,14 +17,12 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
-    setNotice("");
     try {
       if (password !== confirmPassword) {
         setError(t("auth.passwordMismatch"));
@@ -32,26 +30,30 @@ export default function SignupPage() {
         return;
       }
       if (isSupabaseConfigured && supabase) {
-        const origin = typeof window !== "undefined" ? window.location.origin : "";
-        const { error: authError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: `${origin}/auth/callback` },
-        });
-        if (authError) throw new Error(authError.message);
+        // 1. 调后端 Admin API 创建已确认邮箱的用户（无需邮箱验证）
+        try {
+          await apiFetch<{ data: { userId: string; email: string; emailConfirmed: boolean } }>(
+            "/auth/signup",
+            { method: "POST", body: JSON.stringify({ email, password }) },
+          );
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "注册失败";
+          throw new Error(msg);
+        }
 
-        // 开启邮箱确认时 signUp 不会立即返回 session
-        const { data } = await supabase.auth.getSession();
-        if (data.session) {
-          const token = data.session.access_token;
+        // 2. 用密码登录拿 session（邮箱已被后端确认为已验证）
+        const { data: signInData, error: signInError } =
+          await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw new Error(signInError.message);
+
+        const token = signInData.session?.access_token;
+        if (token) {
           localStorage.setItem("career_os_token", token);
           writeSessionCookie(token);
-          const target = await redirectAfterAuth(null);
-          router.push(target);
-          router.refresh();
-        } else {
-          setNotice(t("auth.verifyEmailSent"));
         }
+        const target = await redirectAfterAuth(null);
+        router.push(target);
+        router.refresh();
       } else {
         // dev 模式：无 Supabase，用占位 token
         localStorage.setItem("career_os_token", "dev");
@@ -95,7 +97,6 @@ export default function SignupPage() {
           onChange={(e) => setConfirmPassword(e.target.value)}
         />
         {error && <p className="rounded-[10px] bg-danger/8 p-2.5 text-xs leading-relaxed text-danger">{error}</p>}
-        {notice && <p className="rounded-[10px] bg-primary/8 p-2.5 text-xs leading-relaxed text-primary">{notice}</p>}
         <Button type="submit" className="h-11 w-full" disabled={loading}>
           <UserPlus className="h-4 w-4" />
           {loading ? t("auth.signingUp") : t("auth.signupCta")}
