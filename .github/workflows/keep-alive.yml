@@ -1,13 +1,13 @@
 # Render 免费版服务闲置 15 分钟后会自动休眠，再次访问需要 50+ 秒冷启动。
-# 这个 workflow 每 8 分钟 ping 一次后端健康检查端点，重置休眠计时器，保持服务常驻。
+# 这个 workflow 每 5 分钟 ping 一次服务端点，重置休眠计时器，保持服务常驻。
 # 架构说明: 前端 SPA 已打包进后端 Docker 容器 (apps/api/static/)，
 #           由后端统一托管，所以只需 ping 后端一个服务即可。
 name: Keep Render services warm
 
 on:
   schedule:
-    # 每 8 分钟触发一次；Render 免费层 15 分钟无流量休眠，8 分钟足够安全
-    - cron: "*/8 * * * *"
+    # 每 5 分钟触发一次；Render 免费层 15 分钟无流量休眠，5 分钟非常安全
+    - cron: "*/5 * * * *"
   workflow_dispatch: # 允许手动触发
 
 jobs:
@@ -17,8 +17,20 @@ jobs:
       - name: Ping backend (API + SPA)
         run: |
           echo "Pinging CareerOS API health endpoint..."
-          curl -fsS --max-time 120 \
-            -w "\n[RESULT] HTTP %{http_code} | Time: %{time_total}s\n" \
-            https://ai-life-os-api-4y3x.onrender.com/ready
-          echo ""
+          
+          # 尝试多次请求，确保唤醒服务
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            curl -fsS --max-time 120 \
+              -w "\n[RESULT] HTTP %{http_code} | Time: %{time_total}s\n" \
+              https://ai-life-os-api-4y3x.onrender.com/ready
+            
+            if [ $? -eq 0 ]; then
+              echo "Success!"
+              break
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 10
+          done
+          
           echo "Done. Service should remain warm."
