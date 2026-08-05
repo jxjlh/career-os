@@ -1195,6 +1195,137 @@ class MessageRead(Base):
     read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
+# ── Sprint 13 English Learning ─────────────────────────────────────
+class WordBook(Base):
+    """词书: CET-4/CET-6/考研/雅思/托福. 由种子 JSON 幂等写入."""
+
+    __tablename__ = "word_books"
+    __table_args__ = (UniqueConstraint("code", name="uq_word_books_code"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    code: Mapped[str] = mapped_column(String(32))  # cet4 / cet6 / kaoyan / ielts / toefl
+    name: Mapped[str] = mapped_column(String(80))
+    level: Mapped[str] = mapped_column(String(32))
+    description: Mapped[str | None] = mapped_column(Text)
+    total_words: Mapped[int] = mapped_column(Integer, default=0)
+    sort_order: Mapped[int] = mapped_column(SmallInteger, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class Word(Base):
+    """单词: 属于某词书."""
+
+    __tablename__ = "words"
+    __table_args__ = (
+        UniqueConstraint("book_id", "spelling", name="uq_words_book_spelling"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    book_id: Mapped[str] = mapped_column(ForeignKey("word_books.id", ondelete="CASCADE"), index=True)
+    spelling: Mapped[str] = mapped_column(String(120), index=True)
+    phonetic: Mapped[str | None] = mapped_column(String(120))
+    pos: Mapped[str | None] = mapped_column(String(40))
+    meaning: Mapped[str] = mapped_column(Text)
+    example_en: Mapped[str | None] = mapped_column(Text)
+    example_zh: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    ai_mnemonic: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class UserWord(Base):
+    """用户对某单词的 SRS 状态. 一人一词一条."""
+
+    __tablename__ = "user_words"
+    __table_args__ = (
+        UniqueConstraint("user_id", "word_id", name="uq_user_words_user_word"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    word_id: Mapped[str] = mapped_column(ForeignKey("words.id", ondelete="CASCADE"), index=True)
+    book_id: Mapped[str] = mapped_column(ForeignKey("word_books.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="new", index=True)  # new/learning/review/mastered
+    ease_factor: Mapped[float] = mapped_column(Float, default=2.5)
+    interval_days: Mapped[int] = mapped_column(Integer, default=0)
+    repetitions: Mapped[int] = mapped_column(SmallInteger, default=0)
+    due_date: Mapped[date] = mapped_column(Date, default=date.today, index=True)
+    last_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_starred: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class WordReviewLog(Base):
+    """每次复习日志: 词、评分、前后状态."""
+
+    __tablename__ = "word_review_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    word_id: Mapped[str] = mapped_column(ForeignKey("words.id", ondelete="CASCADE"), index=True)
+    rating: Mapped[str] = mapped_column(String(16))  # again/hard/good/easy
+    prev_status: Mapped[str] = mapped_column(String(16))
+    new_status: Mapped[str] = mapped_column(String(16))
+    prev_interval: Mapped[int] = mapped_column(Integer, default=0)
+    new_interval: Mapped[int] = mapped_column(Integer, default=0)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+class ListeningMaterial(Base):
+    """听力材料: 标题/原文/翻译/难度/题目. 音频由 TTS 懒合成."""
+
+    __tablename__ = "listening_materials"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    book_id: Mapped[str | None] = mapped_column(ForeignKey("word_books.id", ondelete="SET NULL"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    transcript: Mapped[str] = mapped_column(Text)
+    translation: Mapped[str | None] = mapped_column(Text)
+    difficulty: Mapped[str] = mapped_column(String(16), default="medium", index=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    audio_url: Mapped[str | None] = mapped_column(Text)
+    audio_status: Mapped[str] = mapped_column(String(16), default="pending")  # pending/ready/failed
+    questions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class ListeningAttempt(Base):
+    """用户某次听力答题记录."""
+
+    __tablename__ = "listening_attempts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    material_id: Mapped[str] = mapped_column(ForeignKey("listening_materials.id", ondelete="CASCADE"), index=True)
+    question_index: Mapped[int] = mapped_column(SmallInteger, default=0)
+    user_answer: Mapped[str | None] = mapped_column(Text)
+    is_correct: Mapped[bool | None] = mapped_column(Boolean)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class EnglishStudySession(Base):
+    """英语学习会话: 一次连续学习 (新学/复习/时长). 用于打卡统计."""
+
+    __tablename__ = "english_study_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    session_date: Mapped[date] = mapped_column(Date, default=date.today, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    new_words: Mapped[int] = mapped_column(Integer, default=0)
+    review_words: Mapped[int] = mapped_column(Integer, default=0)
+    mastered_words: Mapped[int] = mapped_column(Integer, default=0)
+    listening_count: Mapped[int] = mapped_column(Integer, default=0)
+    listening_correct: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 # ── Sprint 11 Daily Journal ────────────────────────────────────────
 class DailyJournal(Base):
     """每日小记: 记录当天心情 + 内容, 可关联目标/技能. 一人一天一条."""

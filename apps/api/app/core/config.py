@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     spark_model: str = "Spark-Lite"
     spark_ws_url: str = "wss://spark-api.xf-yun.com/v1.1/chat"
     spark_domain: str = "lite"
+    # 讯飞 TTS (与星火大模型共用相同的 API_KEY/SECRET/APP_ID)
+    xfyun_tts_ws_url: str = "wss://tts-api.xfyun.cn/v2/tts"
+    xfyun_tts_default_voice: str = "xiaoyan"
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
