@@ -1,10 +1,12 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import BackgroundJob, Profile, Skill, UserLimit, UserSkill
@@ -85,6 +87,63 @@ def patch_me(
 @router.get("/onboarding/status")
 def onboarding_status(current_user: Annotated[Profile, Depends(get_current_user)]) -> dict:
     return {"data": {"completed": current_user.onboarding_completed, "step": 4 if current_user.onboarding_completed else 0}}
+
+
+class SignupRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=6, max_length=128)
+
+
+@router.post("/signup")
+async def signup(payload: SignupRequest) -> dict:
+    """注册新用户：通过 Supabase Admin API 直接创建已确认邮箱的用户.
+
+    绕过 Supabase 默认的邮箱验证流程 —— 注册后立即可用密码登录,
+    无需等待邮件确认。需要后端配置 SUPABASE_SERVICE_ROLE_KEY。
+    """
+    settings = get_settings()
+    if not (settings.supabase_url and settings.supabase_service_role_key):
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "AUTH_NOT_CONFIGURED", "message": "Supabase service role not configured"},
+        )
+
+    admin_url = f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users"
+    headers = {
+        "apikey": settings.supabase_service_role_key,
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "email": payload.email,
+        "password": payload.password,
+        "email_confirm": True,
+    }
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            resp = await client.post(admin_url, headers=headers, json=body)
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "AUTH_PROVIDER_ERROR", "message": f"Supabase request failed: {exc}"},
+            ) from exc
+
+    if resp.status_code >= 400:
+        # 透传 Supabase 的错误信息（如邮箱已注册）
+        try:
+            err_body = resp.json()
+            msg = err_body.get("msg") or err_body.get("message") or "Signup failed"
+            code = err_body.get("error_code") or "SIGNUP_FAILED"
+        except Exception:
+            msg = f"Signup failed: {resp.status_code}"
+            code = "SIGNUP_FAILED"
+        # 422 通常表示邮箱已存在
+        status = 409 if resp.status_code == 422 else resp.status_code
+        raise HTTPException(status_code=status, detail={"code": code, "message": msg})
+
+    user = resp.json()
+    return {"data": {"userId": user.get("id"), "email": user.get("email"), "emailConfirmed": True}}
 
 
 @router.get("/me/limits")

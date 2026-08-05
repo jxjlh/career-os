@@ -18,6 +18,8 @@ from app.domains.analytics.router import router as analytics_router
 from app.domains.auth.router import router as auth_router
 from app.domains.bucket.router import router as bucket_router
 from app.domains.bucket.seed import seed_bucket_data
+from app.domains.english.router import router as english_router
+from app.domains.english.seed import seed_word_books
 from app.domains.career.router import router as career_router
 from app.domains.coach.life_router import router as life_coach_router
 from app.domains.coach.router import router as coach_router
@@ -55,6 +57,7 @@ async def lifespan(app: FastAPI):
         # 幂等写入 Bucket List 种子目录, 保证页面有可消费内容
         with SessionLocal() as db:
             seed_bucket_data(db)
+            seed_word_books(db)
     else:
         # 生产自愈：补建缺失的表 + 补已存在表缺失的列。
         # 根因：Alembic 从未在生产跑过（alembic_version 表不存在），早期表由更早版本
@@ -65,6 +68,9 @@ async def lifespan(app: FastAPI):
         try:
             Base.metadata.create_all(bind=engine)
             ensure_columns()
+            # 幂等写入英语种子词库
+            with SessionLocal() as db:
+                seed_word_books(db)
         except Exception as e:  # noqa: BLE001
             logger.error("production schema self-heal failed: %s", e, exc_info=True)
     yield
@@ -123,6 +129,8 @@ app.include_router(resume_router, prefix=settings.api_prefix)
 app.include_router(interviews_router, prefix=settings.api_prefix)
 app.include_router(salary_router, prefix=settings.api_prefix)
 app.include_router(social_router, prefix=settings.api_prefix)
+
+app.include_router(english_router, prefix=settings.api_prefix)
 
 app.include_router(chat_router, prefix=settings.api_prefix)
 
