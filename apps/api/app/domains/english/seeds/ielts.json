@@ -1,0 +1,24 @@
+{
+  "code": "ielts",
+  "name": "IELTS 核心词汇",
+  "level": "IELTS",
+  "description": "雅思考试核心高频词汇 25 词",
+  "sort_order": 3,
+  "words": [
+    {"spelling": "adequate", "phonetic": "/ˈædɪkwət/", "pos": "adj.", "meaning": "充足的；适当的", "example_en": "The facilities are adequate for a small family.", "example_zh": "这些设施对一个小家庭来说已经足够了。"},
+    {"spelling": "analyse", "phonetic": "/ˈænəlaɪz/", "pos": "v.", "meaning": "分析", "example_en": "We need to analyse the data thoroughly.", "example_zh": "我们需要彻底分析数据。"},
+    {"spelling": "anticipate", "phonetic": "/ænˈtɪsɪpeɪt/", "pos": "v.", "meaning": "预期；预料", "example_en": "Experts anticipate a rise in prices.", "example_zh": "专家预计价格会上涨。"},
+    {"spelling": "bias", "phonetic": "/ˈbaɪəs/", "pos": "n.", "meaning": "偏见；偏向", "example_en": "The study was criticized for its bias.", "example_zh": "这项研究因其偏见而受到批评。"},
+    {"spelling": "circumstance", "phonetic": "/ˈsɜːkəmstæns/", "pos": "n.", "meaning": "情况；环境", "example_en": "Under no circumstances should you lie.", "example_zh": "在任何情况下你都不应该撒谎。"},
+    {"spelling": "controversial", "phonetic": "/ˌkɒntrəˈvɜːʃl/", "pos": "adj.", "meaning": "有争议的", "example_en": "The new law is highly controversial.", "example_zh": "这项新法律非常有争议。"},
+    {"spelling": "deteriorate", "phonetic": "/dɪˈtɪəriəreɪt/", "pos": "v.", "meaning": "恶化；变坏", "example_en": "His health has deteriorated significantly.", "example_zh": "他的健康状况显著恶化。"},
+    {"spelling": "encompass", "phonetic": "/ɪnˈkʌmpəs/", "pos": "v.", "meaning": "包含；围绕", "example_en": "The course encompasses many subjects.", "example_zh": "这门课程包含许多学科。"},
+    {"spelling": "evident", "phonetic": "/ˈevɪdənt/", "pos": "adj.", "meaning": "明显的；显然的", "example_en": "It is evident that he is lying.", "example_zh": "很明显他在撒谎。"},
+    {"spelling": "fluctuate", "phonetic": "/ˈflʌktʃueɪt/", "pos": "v.", "meaning": "波动；起伏", "example_en": "Share prices fluctuate daily.", "example_zh": "股票价格每天都在波动。"},
+    {"spelling": "implement", "phonetic": "/ˈɪmplɪment/", "pos": "v.", "meaning": "实施；执行", "example_en": "The government will implement the new policy next month.", "example_zh": "政府将在下个月实施这项新政策。"},
+    {"spelling": "inevitable", "phonetic": "/ɪnˈevɪtəbl/", "pos": "adj.", "meaning": "不可避免的", "example_en": "Change is inevitable in life.", "example_zh": "生活中的改变是不可避免的。"},
+    {"spelling": "manipulate", "phonetic": "/məˈnɪpjuleɪt/", "pos": "v.", "meaning": "操纵；操作", "example_en": "Politicians may manipulate the facts.", "example_zh": "政客可能会操纵事实。"},
+    {"spelling": "predominant", "phonetic": "/prɪˈdɒmɪnənt/", "pos": "adj.", "meaning": "占主导地位的", "example_en": "English is the predominant language.", "example_zh": "英语是占主导地位的语言。"},
+    {"spelling": "sustainable", "phonetic": "/səˈsteɪnəbl/", "pos": "adj.", "meaning": "可持续的", "example_en": "We need to develop sustainable energy sources.", "example_zh": "我们需要开发可持续的能源来源。"}
+  ]
+}

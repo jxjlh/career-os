@@ -1,0 +1,24 @@
+{
+  "code": "toefl",
+  "name": "TOEFL 核心词汇",
+  "level": "TOEFL",
+  "description": "托福考试核心高频词汇 15 词",
+  "sort_order": 4,
+  "words": [
+    {"spelling": "abrupt", "phonetic": "/əˈbrʌpt/", "pos": "adj.", "meaning": "突然的", "example_en": "The meeting came to an abrupt end.", "example_zh": "会议突然结束了。"},
+    {"spelling": "coherent", "phonetic": "/kəʊˈhɪərənt/", "pos": "adj.", "meaning": "连贯的；一致的", "example_en": "She gave a coherent explanation.", "example_zh": "她给出了连贯的解释。"},
+    {"spelling": "comprehensive", "phonetic": "/ˌkɒmprɪˈhensɪv/", "pos": "adj.", "meaning": "全面的；综合的", "example_en": "The report is comprehensive.", "example_zh": "这份报告很全面。"},
+    {"spelling": "constitute", "phonetic": "/ˈkɒnstɪtjuːt/", "pos": "v.", "meaning": "构成；组成", "example_en": "These elements constitute water.", "example_zh": "这些元素构成了水。"},
+    {"spelling": "diminish", "phonetic": "/dɪˈmɪnɪʃ/", "pos": "v.", "meaning": "减少；削弱", "example_en": "The medication diminished the pain.", "example_zh": "药物减轻了疼痛。"},
+    {"spelling": "discrepancy", "phonetic": "/dɪˈskrepənsi/", "pos": "n.", "meaning": "差异；不一致", "example_en": "There is a discrepancy in the numbers.", "example_zh": "数字上有差异。"},
+    {"spelling": "endeavor", "phonetic": "/ɪnˈdevər/", "pos": "n.", "meaning": "努力；尝试", "example_en": "He made an endeavor to finish the work early.", "example_zh": "他努力提前完成工作。"},
+    {"spelling": "inevitable", "phonetic": "/ɪnˈevɪtəbl/", "pos": "adj.", "meaning": "不可避免的", "example_en": "Death is inevitable.", "example_zh": "死亡是不可避免的。"},
+    {"spelling": "integrate", "phonetic": "/ˈɪntɪɡreɪt/", "pos": "v.", "meaning": "整合；融入", "example_en": "New immigrants need to integrate into society.", "example_zh": "新移民需要融入社会。"},
+    {"spelling": "manipulate", "phonetic": "/məˈnɪpjuleɪt/", "pos": "v.", "meaning": "操纵；操作", "example_en": "He can manipulate the computer system easily.", "example_zh": "他能轻松操作计算机系统。"},
+    {"spelling": "notorious", "phonetic": "/nəʊˈtɔːriəs/", "pos": "adj.", "meaning": "臭名昭著的", "example_en": "The area is notorious for its crime rate.", "example_zh": "该地区以犯罪率高而臭名昭著。"},
+    {"spelling": "prevalent", "phonetic": "/ˈprevələnt/", "pos": "adj.", "meaning": "普遍的；流行的", "example_en": "Flu is prevalent in winter.", "example_zh": "流感在冬季很普遍。"},
+    {"spelling": "skeptical", "phonetic": "/ˈskeptɪkl/", "pos": "adj.", "meaning": "怀疑的", "example_en": "He is skeptical about the new policy.", "example_zh": "他对新政策持怀疑态度。"},
+    {"spelling": "substantial", "phonetic": "/səbˈstænʃl/", "pos": "adj.", "meaning": "大量的；实质的", "example_en": "They made substantial changes.", "example_zh": "他们做了实质性的改变。"},
+    {"spelling": "vigorous", "phonetic": "/ˈvɪɡərəs/", "pos": "adj.", "meaning": "精力充沛的；有力的", "example_en": "She is a vigorous supporter of the party.", "example_zh": "她是该党的积极支持者。"}
+  ]
+}

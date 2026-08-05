@@ -1,0 +1,24 @@
+{
+  "code": "gre",
+  "name": "GRE 核心词汇",
+  "level": "GRE",
+  "description": "GRE 考试核心高频词汇 15 词",
+  "sort_order": 5,
+  "words": [
+    {"spelling": "abstruse", "phonetic": "/əbˈstruːs/", "pos": "adj.", "meaning": "深奥的；难解的", "example_en": "The theory is abstruse.", "example_zh": "这个理论很深奥。"},
+    {"spelling": "ameliorate", "phonetic": "/əˈmiːliəreɪt/", "pos": "v.", "meaning": "改善；改进", "example_en": "We need to ameliorate the conditions.", "example_zh": "我们需要改善条件。"},
+    {"spelling": "anachronism", "phonetic": "/əˈnækrənɪzəm/", "pos": "n.", "meaning": "时代错误", "example_en": "A mobile phone in a period film is an anachronism.", "example_zh": "古装片里的手机是时代错误。"},
+    {"spelling": "cacophony", "phonetic": "/kəˈkɒfəni/", "pos": "n.", "meaning": "刺耳的声音", "example_en": "There was a cacophony of noise.", "example_zh": "噪音刺耳。"},
+    {"spelling": "contumacious", "phonetic": "/ˌkɒntjuˈmeɪʃəs/", "pos": "adj.", "meaning": "拒不服从的", "example_en": "The contumacious student was suspended.", "example_zh": "那个拒不服从的学生被停学了。"},
+    {"spelling": "disparate", "phonetic": "/ˈdɪspərət/", "pos": "adj.", "meaning": "不同的；不相干的", "example_en": "The two ideas are disparate.", "example_zh": "这两个想法完全不同。"},
+    {"spelling": "ephemeral", "phonetic": "/ɪˈfemərəl/", "pos": "adj.", "meaning": "短暂的", "example_en": "The beauty of cherry blossoms is ephemeral.", "example_zh": "樱花的美是短暂的。"},
+    {"spelling": "facetious", "phonetic": "/fəˈsiːʃəs/", "pos": "adj.", "meaning": "爱开玩笑的", "example_en": "Don't be facetious; this is serious.", "example_zh": "别开玩笑，这很严肃。"},
+    {"spelling": "lucid", "phonetic": "/ˈluːsɪd/", "pos": "adj.", "meaning": "清晰的；易懂的", "example_en": "She gave a lucid explanation.", "example_zh": "她给出了清晰的解释。"},
+    {"spelling": "obfuscate", "phonetic": "/ˈɒbfəskeɪt/", "pos": "v.", "meaning": "使混乱；使困惑", "example_en": "The report seemed designed to obfuscate the truth.", "example_zh": "这份报告似乎是为了混淆事实。"},
+    {"spelling": "pragmatic", "phonetic": "/præɡˈmætɪk/", "pos": "adj.", "meaning": "务实的；实际的", "example_en": "We need a pragmatic approach.", "example_zh": "我们需要务实的方法。"},
+    {"spelling": "sycophant", "phonetic": "/ˈsɪkəfænt/", "pos": "n.", "meaning": "谄媚者", "example_en": "He is a sycophant who always agrees with the boss.", "example_zh": "他是个总是附和老板的谄媚者。"},
+    {"spelling": "tenacious", "phonetic": "/təˈneɪʃəs/", "pos": "adj.", "meaning": "坚韧的；顽强的", "example_en": "She is a tenacious fighter.", "example_zh": "她是个顽强的斗士。"},
+    {"spelling": "vicissitude", "phonetic": "/vɪˈsɪsɪtjuːd/", "pos": "n.", "meaning": "变迁；兴衰", "example_en": "The vicissitudes of life are unpredictable.", "example_zh": "人生的沉浮难以预料。"},
+    {"spelling": "winsome", "phonetic": "/ˈwɪnsəm/", "pos": "adj.", "meaning": "迷人的；可爱的", "example_en": "She has a winsome smile.", "example_zh": "她有迷人的微笑。"}
+  ]
+}
