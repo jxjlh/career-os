@@ -1,27 +1,24 @@
-# Render 免费版服务闲置 15 分钟后会自动休眠，再次访问需要 50+ 秒冷启动，
-# iPhone Safari 等不到响应会报"服务器已停止响应"。
-# 这个 workflow 每 10 分钟 ping 一次后端和前端，把休眠计时器重置，保持服务常驻。
+# Render 免费版服务闲置 15 分钟后会自动休眠，再次访问需要 50+ 秒冷启动。
+# 这个 workflow 每 8 分钟 ping 一次后端健康检查端点，重置休眠计时器，保持服务常驻。
+# 架构说明: 前端 SPA 已打包进后端 Docker 容器 (apps/api/static/)，
+#           由后端统一托管，所以只需 ping 后端一个服务即可。
 name: Keep Render services warm
 
 on:
   schedule:
-    # 每 10 分钟（UTC）；GitHub Actions cron 最低 5 分钟间隔
-    - cron: "*/10 * * * *"
+    # 每 8 分钟触发一次；Render 免费层 15 分钟无流量休眠，8 分钟足够安全
+    - cron: "*/8 * * * *"
   workflow_dispatch: # 允许手动触发
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping backend (API)
+      - name: Ping backend (API + SPA)
         run: |
-          curl -fsS --max-time 90 \
-            -w "\n[API] HTTP %{http_code} | %{time_total}s\n" \
-            https://ai-life-os-api-4y3x.onrender.com/ready || true
-
-      - name: Ping frontend (Web)
-        run: |
-          curl -fsS --max-time 90 \
-            -w "\n[WEB] HTTP %{http_code} | %{time_total}s\n" \
-            -o /dev/null \
-            https://ai-life-os-web.onrender.com/ || true
+          echo "Pinging CareerOS API health endpoint..."
+          curl -fsS --max-time 120 \
+            -w "\n[RESULT] HTTP %{http_code} | Time: %{time_total}s\n" \
+            https://ai-life-os-api-4y3x.onrender.com/ready
+          echo ""
+          echo "Done. Service should remain warm."
