@@ -15,6 +15,7 @@ import {
   Settings,
   Sparkles,
   Target,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
@@ -43,6 +44,7 @@ const NAV: NavItem[] = [
   { key: "lifeRecords", href: "/life/records", icon: Images, group: "now" },
   { key: "journal", href: "/journal", icon: NotebookPen, group: "now" },
   { key: "chat", href: "/chat", icon: MessageSquare, group: "now" },
+  { key: "friends", href: "/life/friends", icon: Users, group: "now" },
   // GROW —— 成长
   { key: "skills", href: "/skills", icon: Target, group: "grow" },
   { key: "planner", href: "/planner", icon: CalendarDays, group: "grow" },

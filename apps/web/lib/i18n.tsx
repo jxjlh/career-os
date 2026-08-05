@@ -33,6 +33,7 @@ const zh = {
     careerGroup: "职业",
     journal: "每日小记",
     chat: "消息",
+    friends: "好友",
     english: "英语学习",
   },
   common: {
@@ -344,6 +345,7 @@ const en: Dictionary = {
     careerGroup: "Career",
     journal: "Journal",
     chat: "Messages",
+    friends: "Friends",
     english: "English",
   },
   common: {
