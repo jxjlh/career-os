@@ -50,6 +50,7 @@ const NAV: NavItem[] = [
   { key: "explore", href: "/explore", icon: Search, group: "grow" },
   { key: "library", href: "/library", icon: Library, group: "grow" },
   { key: "projects", href: "/projects", icon: FolderKanban, group: "grow" },
+  { key: "english", href: "/english", icon: BookOpen, group: "grow" },
 ];
 
 const GROUP_ORDER: GroupKey[] = ["now", "grow"];
