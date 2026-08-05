@@ -1,13 +1,14 @@
 "use client";
 
 import { BookOpen, ChevronRight, GraduationCap, Loader2 } from "lucide-react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Button, Card } from "@/components/ui";
 import { englishApi, type WordBook } from "@/lib/english";
 
 export default function WordsPage() {
+  const router = useRouter();
   const [books, setBooks] = useState<WordBook[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [startingId, setStartingId] = useState<string | null>(null);
@@ -81,11 +82,14 @@ export default function WordsPage() {
             </p>
 
             <div className="mt-4 flex gap-2">
-              <Link href={`/english/words/${book.id}`} className="flex-1">
-                <Button className="w-full" variant="primary" size="sm">
-                  开始学习 <ChevronRight className="h-3.5 w-3.5" />
-                </Button>
-              </Link>
+              <Button
+                className="flex-1"
+                variant="primary"
+                size="sm"
+                onClick={() => router.push(`/english/words/${book.id}`)}
+              >
+                开始学习 <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
               {book.progress === 0 && book.totalWords > 0 && (
                 <Button
                   variant="outline"
