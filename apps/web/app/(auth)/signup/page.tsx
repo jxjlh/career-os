@@ -33,7 +33,7 @@ export default function SignupPage() {
         // 1. 调后端 Admin API 创建已确认邮箱的用户（无需邮箱验证）
         try {
           await apiFetch<{ data: { userId: string; email: string; emailConfirmed: boolean } }>(
-            "/auth/signup",
+            "/signup",
             { method: "POST", body: JSON.stringify({ email, password }) },
           );
         } catch (e) {
