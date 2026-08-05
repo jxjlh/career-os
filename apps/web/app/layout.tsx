@@ -1,31 +1,32 @@
-import { Manrope, Space_Grotesk, Inter } from "next/font/google";
+import { Outfit, Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import type { Metadata, Viewport } from "next";
 
 import { Providers } from "@/components/providers";
 import { SWRegister } from "@/components/sw-register";
 import "./globals.css";
 
-// Editorial / Fashion 风格 —— 数字与英文标题（GOALS / 07 DAYS / LEVEL 03）
-const spaceGrotesk = Space_Grotesk({
+// 年轻化标题字体 —— 现代圆润风格
+const outfit = Outfit({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
   weight: ["400", "500", "600", "700"],
 });
 
-// 副标题 / UI 文案
-const manrope = Manrope({
+// 年轻化正文字体 —— 清新易读
+const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  variable: "--font-manrope",
+  variable: "--font-body",
   display: "swap",
   weight: ["400", "500", "600", "700"],
 });
 
-// 正文 / 默认 UI
-const inter = Inter({
+// 数字显示字体 —— 保留等宽数字
+const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-mono",
   display: "swap",
+  weight: ["400", "500", "600", "700"],
 });
 
 // PWA metadata —— iOS Safari "添加到主屏幕" 所需：
@@ -69,7 +70,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="zh-CN"
-      className={`dark ${inter.variable} ${spaceGrotesk.variable} ${manrope.variable}`}
+      className={`dark ${outfit.variable} ${plusJakarta.variable} ${spaceGrotesk.variable}`}
       suppressHydrationWarning
     >
       <body>
