@@ -27,7 +27,7 @@ RUN npm run build
 # ── Stage 2: nginx 提供静态文件 + API 代理 ──
 FROM nginx:alpine AS runner
 
-# 复制自定义 nginx 配置
+# 复制自定义 nginx 配置 (Alpine nginx 使用 /etc/nginx/http.d/)
 COPY nginx.conf /etc/nginx/http.d/default.conf
 
 # 复制构建产物
