@@ -13,7 +13,6 @@ from app.db.models import BackgroundJob, Profile, Skill, UserLimit, UserSkill
 
 router = APIRouter(tags=["auth"])
 
-
 class ProfileUpdate(BaseModel):
     display_name: str | None = None
     current_title: str | None = None
@@ -92,14 +91,17 @@ def onboarding_status(current_user: Annotated[Profile, Depends(get_current_user)
 class SignupRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=6, max_length=128)
+    display_name: str | None = Field(default=None, min_length=1, max_length=120)
+    avatar_url: str | None = None
 
 
 @router.post("/signup")
-async def signup(payload: SignupRequest) -> dict:
+async def signup(payload: SignupRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
     """注册新用户：通过 Supabase Admin API 直接创建已确认邮箱的用户.
 
     绕过 Supabase 默认的邮箱验证流程 —— 注册后立即可用密码登录,
     无需等待邮件确认。需要后端配置 SUPABASE_SERVICE_ROLE_KEY。
+    支持可选的 display_name (昵称) 和 avatar_url (头像)。
     """
     settings = get_settings()
     if not (settings.supabase_url and settings.supabase_service_role_key):
@@ -119,6 +121,12 @@ async def signup(payload: SignupRequest) -> dict:
         "password": payload.password,
         "email_confirm": True,
     }
+    if payload.display_name:
+        body["user_metadata"] = {"display_name": payload.display_name}
+    if payload.avatar_url:
+        if "user_metadata" not in body:
+            body["user_metadata"] = {}
+        body["user_metadata"]["avatar_url"] = payload.avatar_url
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
@@ -130,7 +138,6 @@ async def signup(payload: SignupRequest) -> dict:
             ) from exc
 
     if resp.status_code >= 400:
-        # 透传 Supabase 的错误信息（如邮箱已注册）
         try:
             err_body = resp.json()
             msg = err_body.get("msg") or err_body.get("message") or "Signup failed"
@@ -138,12 +145,32 @@ async def signup(payload: SignupRequest) -> dict:
         except Exception:
             msg = f"Signup failed: {resp.status_code}"
             code = "SIGNUP_FAILED"
-        # 422 通常表示邮箱已存在
         status = 409 if resp.status_code == 422 else resp.status_code
         raise HTTPException(status_code=status, detail={"code": code, "message": msg})
 
     user = resp.json()
-    return {"data": {"userId": user.get("id"), "email": user.get("email"), "emailConfirmed": True}}
+    user_id = user.get("id")
+    user_email = user.get("email")
+
+    # 同时在本地 profiles 表创建用户档案
+    profile = Profile(
+        id=user_id,
+        email=user_email,
+        display_name=payload.display_name or user_email.split("@")[0],
+        avatar_url=payload.avatar_url,
+    )
+    db.add(profile)
+    db.commit()
+
+    return {
+        "data": {
+            "userId": user_id,
+            "email": user_email,
+            "emailConfirmed": True,
+            "displayName": profile.display_name,
+            "avatarUrl": profile.avatar_url,
+        }
+    }
 
 
 @router.get("/me/limits")
