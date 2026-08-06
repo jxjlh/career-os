@@ -22,10 +22,11 @@ export default function WordsPage() {
         const booksData = booksRes.data;
         setBooks(booksData);
 
-        // 为每本有进度的词书加载周计划
-        const planPromises = booksData
-          .filter((b) => b.learnedCount > 0)
-          .map(async (b) => {
+        // 只加载前 5 本有进度的词书的周计划，其余按需加载
+        const booksWithProgress = booksData.filter((b) => b.learnedCount > 0).slice(0, 5);
+
+        if (booksWithProgress.length > 0) {
+          const planPromises = booksWithProgress.map(async (b) => {
             try {
               const planRes = await englishApi.getWeeklyPlan(b.id);
               return [b.id, planRes.data] as const;
@@ -34,7 +35,6 @@ export default function WordsPage() {
             }
           });
 
-        if (planPromises.length > 0) {
           const results = await Promise.all(planPromises);
           const newPlans = new Map<string, WeeklyPlan>();
           results.forEach(([id, plan]) => {
@@ -56,20 +56,18 @@ export default function WordsPage() {
     setStartingId(bookId);
     try {
       await englishApi.startBook(bookId);
+      // 乐观更新：直接跳转到学习页面，不等周计划加载
       setBooks((prev) =>
         prev?.map((b) => (b.id === bookId ? { ...b, progress: b.progress || 0 } : b)) ?? [],
       );
-      // 加载周计划
-      try {
-        const planRes = await englishApi.getWeeklyPlan(bookId);
+      // 后台异步加载周计划
+      englishApi.getWeeklyPlan(bookId).then((planRes) => {
         setWeeklyPlans((prev) => {
           const next = new Map(prev);
           next.set(bookId, planRes.data);
           return next;
         });
-      } catch {
-        // 忽略
-      }
+      }).catch(() => {});
     } finally {
       setStartingId(null);
     }

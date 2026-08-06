@@ -146,9 +146,13 @@ class EnglishService:
 
     def list_books(self, user_id: str) -> list[dict]:
         books = self.books.list_all()
+        # 批量获取所有书的统计数据，避免 N+1 查询
+        book_ids = [b.id for b in books]
+        all_stats = self.user_words.count_by_status_for_books(user_id, book_ids)
+
         result = []
         for book in books:
-            stats = self.user_words.count_by_status(user_id, book.id)
+            stats = all_stats.get(book.id, {})
             result.append(book_dict(book, stats))
         return result
 
@@ -230,36 +234,58 @@ class EnglishService:
         1. 评分 again 的单词（不会的词）- 必须立即复习
         2. 到期复习词（间隔重复到期）
         3. 新词（按排序顺序）
+        
+        优化: 使用批量查询避免 N+1 问题
         """
         today = date.today()
         queue = []
+        queue_word_ids = set()
 
         # 1. 优先获取"不会"的单词（评分 again 的）
         again_uws = self.user_words.list_by_rating(user_id, book_id, "again")
         for uw in again_uws[:limit]:
-            word = self.words.get(uw.word_id)
-            if word:
-                queue.append(word_dict(word, uw))
+            queue_word_ids.add(uw.word_id)
 
         # 2. 到期复习词
-        remaining = limit - len(queue)
+        remaining = limit - len(queue_word_ids)
+        due_uws = []
         if remaining > 0:
             due_uws = self.user_words.list_due(user_id, book_id, today)
             for uw in due_uws[:remaining]:
-                word = self.words.get(uw.word_id)
-                if word and word.id not in [q["id"] for q in queue]:
-                    queue.append(word_dict(word, uw))
+                if uw.word_id not in queue_word_ids:
+                    queue_word_ids.add(uw.word_id)
 
         # 3. 新词
-        remaining = limit - len(queue)
+        remaining = limit - len(queue_word_ids)
         if remaining > 0:
             all_uws = self.user_words.list_by_book(user_id, book_id)
-            new_word_ids = [uw.word_id for uw in all_uws if uw.status == "new"]
-            for wid in new_word_ids[:remaining]:
-                word = self.words.get(wid)
-                if word and word.id not in [q["id"] for q in queue]:
-                    uw = self.user_words.get(user_id, wid)
-                    queue.append(word_dict(word, uw))
+            new_uws = [uw for uw in all_uws if uw.status == "new" and uw.word_id not in queue_word_ids]
+            for uw in new_uws[:remaining]:
+                queue_word_ids.add(uw.word_id)
+
+        # 批量获取所有单词数据
+        all_words = self.words.get_by_ids(list(queue_word_ids))
+
+        # 构建队列结果，保持优先级顺序
+        # 重新获取 again 单词（已在 queue_word_ids 中）
+        again_ids = {uw.word_id for uw in again_uws[:limit]}
+        due_ids = {uw.word_id for uw in due_uws[:limit]}
+        new_ids = queue_word_ids - again_ids - due_ids
+
+        # 按优先级排序
+        ordered_ids = list(again_ids) + list(due_ids) + list(new_ids)
+        # 限制数量
+        ordered_ids = ordered_ids[:limit]
+
+        # 获取对应的 UserWord 记录
+        all_uws_map = {uw.word_id: uw for uw in (again_uws + due_uws + 
+                    [uw for uw in self.user_words.list_by_book(user_id, book_id) if uw.word_id in new_ids])}
+
+        for word_id in ordered_ids:
+            word = all_words.get(word_id)
+            if word:
+                uw = all_uws_map.get(word_id)
+                queue.append(word_dict(word, uw))
 
         return queue
 

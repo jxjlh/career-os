@@ -111,9 +111,23 @@ function StudyContent() {
 
   const advanceOrReload = useCallback(async () => {
     if (index + 1 < queueRef.current.length) {
-      setIndex((i) => i + 1);
+      // 乐观更新：立即切换到下一个单词，不等 API 响应
+      const nextIndex = index + 1;
+      setIndex(nextIndex);
       setShowAnswer(false);
       setDict(INITIAL_DICTATION);
+      // 异步预加载更多队列（如果需要）
+      if (nextIndex >= queueRef.current.length - 5) {
+        englishApi.getStudyQueue(bookId, 20).then((res) => {
+          const existingIds = new Set(queueRef.current.map((w) => w.id));
+          const newWords = res.data.filter((w) => !existingIds.has(w.id));
+          if (newWords.length > 0) {
+            const updated = [...queueRef.current, ...newWords];
+            queueRef.current = updated;
+            setQueue(updated);
+          }
+        }).catch(() => {});
+      }
     } else {
       try {
         const res = await englishApi.getStudyQueue(bookId, 20);
@@ -131,6 +145,7 @@ function StudyContent() {
   const handleRate = useCallback(
     (rating: "again" | "hard" | "good" | "easy") => {
       if (!currentWord) return;
+      // 乐观更新：立即发送请求，不等响应
       englishApi.reviewWord(currentWord.id, rating).catch(() => {});
       advanceOrReload();
     },

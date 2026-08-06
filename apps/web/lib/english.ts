@@ -119,13 +119,31 @@ export interface WeeklyPlan {
   totalWords: number;
 }
 
+// 内存缓存，用于减少重复请求
+const _cache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 30000; // 30秒缓存有效期
+
+function getCached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  const cached = _cache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return Promise.resolve(cached.data);
+  }
+  return fetcher().then((data) => {
+    _cache.set(key, { data, timestamp: Date.now() });
+    return data;
+  });
+}
+
 export const englishApi = {
-  listBooks: () => apiFetch<{ data: WordBook[] }>("/english/books"),
+  listBooks: () =>
+    getCached("books", () => apiFetch<{ data: WordBook[] }>("/english/books")),
   getBook: (id: string) => apiFetch<{ data: WordBook }>(`/english/books/${id}`),
   listWords: (bookId: string, offset = 0, limit = 100) =>
     apiFetch<{ data: Word[] }>(`/english/books/${bookId}/words?offset=${offset}&limit=${limit}`),
   startBook: (id: string) =>
-    apiFetch<{ data: WordBook }>(`/english/books/${id}/start`, { method: "POST" }),
+    getCached(`book_start_${id}`, () =>
+      apiFetch<{ data: WordBook }>(`/english/books/${id}/start`, { method: "POST" }),
+    ),
   getStudyQueue: (bookId: string, limit = 20) =>
     apiFetch<{ data: Word[] }>(`/english/study/queue?book_id=${bookId}&limit=${limit}`),
   reviewWord: (wordId: string, rating: "again" | "hard" | "good" | "easy") =>
@@ -152,8 +170,19 @@ export const englishApi = {
       `/english/listening/${materialId}/attempts`,
       { method: "POST", body: JSON.stringify(payload) },
     ),
-  getTodayStats: () => apiFetch<{ data: TodayStats }>("/english/stats/today"),
-  getStreak: () => apiFetch<{ data: StreakStats }>("/english/stats/streak"),
+  getTodayStats: () =>
+    getCached("today_stats", () => apiFetch<{ data: TodayStats }>("/english/stats/today")),
+  getStreak: () =>
+    getCached("streak", () => apiFetch<{ data: StreakStats }>("/english/stats/streak")),
   getWeeklyPlan: (bookId: string) =>
-    apiFetch<{ data: WeeklyPlan }>(`/english/books/${bookId}/weekly-plan`),
+    getCached(`weekly_plan_${bookId}`, () =>
+      apiFetch<{ data: WeeklyPlan }>(`/english/books/${bookId}/weekly-plan`),
+    ),
+  invalidateCache: (key?: string) => {
+    if (key) {
+      _cache.delete(key);
+    } else {
+      _cache.clear();
+    }
+  },
 };

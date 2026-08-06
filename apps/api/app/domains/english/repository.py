@@ -46,6 +46,13 @@ class WordRepository:
     def get(self, word_id: str) -> Word | None:
         return self.db.query(Word).filter(Word.id == word_id).first()
 
+    def get_by_ids(self, word_ids: list[str]) -> dict[str, Word]:
+        """批量获取单词，返回 id -> Word 的字典，避免 N+1 查询."""
+        if not word_ids:
+            return {}
+        words = self.db.query(Word).filter(Word.id.in_(word_ids)).all()
+        return {w.id: w for w in words}
+
     def count_by_book(self, book_id: str) -> int:
         return self.db.query(func.count(Word.id)).filter(Word.book_id == book_id).scalar() or 0
 
@@ -87,6 +94,23 @@ class UserWordRepository:
             .all()
         )
         return {status: count for status, count in rows}
+
+    def count_by_status_for_books(self, user_id: str, book_ids: list[str]) -> dict[str, dict[str, int]]:
+        """批量获取多本书的状态统计，返回 {book_id: {status: count}}."""
+        if not book_ids:
+            return {}
+        rows = (
+            self.db.query(UserWord.book_id, UserWord.status, func.count(UserWord.id))
+            .filter(UserWord.user_id == user_id, UserWord.book_id.in_(book_ids))
+            .group_by(UserWord.book_id, UserWord.status)
+            .all()
+        )
+        result: dict[str, dict[str, int]] = {}
+        for book_id, status, count in rows:
+            if book_id not in result:
+                result[book_id] = {}
+            result[book_id][status] = count
+        return result
 
     def init_book(self, user_id: str, book_id: str, word_ids: list[str]) -> int:
         """为词书的所有单词初始化 UserWord (new 状态). 已存在的跳过."""
