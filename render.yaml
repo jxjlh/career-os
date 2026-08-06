@@ -53,14 +53,15 @@ services:
       - key: SPARK_DOMAIN
         value: lite
 
-  # ---------- 前端（Node.js + Next.js 15 standalone，内部 rewrite 代理后端）----------
-  # rootDir 必须为仓库根：monorepo 的 packages/* (@career-os/*) 需在构建期可解析。
-  # Docker 多阶段构建 Next.js standalone，启动命令直接跑打包产物 server.js。
+  # ---------- 前端（Next.js 静态导出 + nginx 静态服务 + API 反向代理）----------
+  # rootDir 设为 apps/web：前端无 monorepo 内部依赖，构建上下文只需 apps/web 目录。
+  # Docker 多阶段构建：Node.js 构建 Next.js 静态导出 → nginx 提供静态文件 + /api/* 代理。
   - type: web
     name: ai-life-os-web
     runtime: docker
     plan: free
-    dockerfilePath: ./apps/web/Dockerfile
+    rootDir: apps/web
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /
     autoDeploy: true
     envVars:
