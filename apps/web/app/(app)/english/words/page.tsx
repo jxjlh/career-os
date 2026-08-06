@@ -86,7 +86,7 @@ export default function WordsPage() {
                 className="flex-1"
                 variant="primary"
                 size="sm"
-                onClick={() => router.push(`/english/words/${book.id}`)}
+                onClick={() => router.push(`/english/words/study?bookId=${book.id}`)}
               >
                 开始学习 <ChevronRight className="h-3.5 w-3.5" />
               </Button>

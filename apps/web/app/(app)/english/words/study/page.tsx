@@ -1,9 +1,9 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Loader2, Play, Star, X } from "lucide-react";
+import { ChevronLeft, Loader2, Play, Star } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 import { Button, Card } from "@/components/ui";
 import { englishApi, type Word } from "@/lib/english";
@@ -22,9 +22,9 @@ const RATING_LABELS: Record<string, string> = {
   easy: "简单",
 };
 
-export default function WordStudyPage() {
-  const params = useParams<{ bookId: string }>();
-  const bookId = params?.bookId as string;
+function StudyContent() {
+  const searchParams = useSearchParams();
+  const bookId = searchParams.get("bookId") || "";
   const [queue, setQueue] = useState<Word[] | null>(null);
   const [index, setIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
@@ -57,7 +57,6 @@ export default function WordStudyPage() {
         setIndex(index + 1);
         setShowAnswer(false);
       } else {
-        // 完成本轮，重新加载
         const res = await englishApi.getStudyQueue(bookId, 20);
         setQueue(res.data);
         queueRef.current = res.data;
@@ -96,6 +95,23 @@ export default function WordStudyPage() {
     );
   }
 
+  if (!bookId) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-4 p-6">
+        <Link href="/english/words" className="inline-flex items-center text-sm text-muted hover:text-text">
+          <ChevronLeft className="h-4 w-4" /> 返回词书
+        </Link>
+        <Card className="flex min-h-[280px] flex-col items-center justify-center gap-3 p-10 text-center">
+          <h3 className="text-lg font-semibold">未选择词书</h3>
+          <p className="max-w-sm text-sm text-muted">请先选择一本词书再开始学习。</p>
+          <Link href="/english/words">
+            <Button>选择词书</Button>
+          </Link>
+        </Card>
+      </div>
+    );
+  }
+
   if (!queue || queue.length === 0) {
     return (
       <div className="mx-auto max-w-2xl space-y-4 p-6">
@@ -121,7 +137,6 @@ export default function WordStudyPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-6">
-      {/* 顶部导航 + 进度 */}
       <div className="flex items-center justify-between">
         <Link href="/english/words" className="inline-flex items-center text-sm text-muted hover:text-text">
           <ChevronLeft className="h-4 w-4" /> 词书列表
@@ -137,7 +152,6 @@ export default function WordStudyPage() {
         />
       </div>
 
-      {/* 单词卡片 */}
       <Card className="min-h-[320px] p-8">
         <div className="flex items-start justify-between">
           <button
@@ -173,7 +187,6 @@ export default function WordStudyPage() {
           )}
         </div>
 
-        {/* 释义区 */}
         <div className="mt-8">
           {!showAnswer ? (
             <button
@@ -205,7 +218,6 @@ export default function WordStudyPage() {
         </div>
       </Card>
 
-      {/* 评分按钮 */}
       {showAnswer && (
         <div className="grid grid-cols-4 gap-2">
           {(["again", "hard", "good", "easy"] as const).map((r) => (
@@ -222,5 +234,13 @@ export default function WordStudyPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function WordStudyPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-2xl p-6"><div className="flex items-center justify-center py-24 text-muted"><Loader2 className="mr-2 h-4 w-4 animate-spin" />加载中...</div></div>}>
+      <StudyContent />
+    </Suspense>
   );
 }
