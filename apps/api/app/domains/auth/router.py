@@ -116,6 +116,22 @@ async def signup(payload: SignupRequest, db: Annotated[Session, Depends(get_db)]
         "Authorization": f"Bearer {settings.supabase_service_role_key}",
         "Content-Type": "application/json",
     }
+
+    # 1. 先检查邮箱是否已存在
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        existing_check = await client.get(
+            f"{admin_url}?email={payload.email}",
+            headers=headers,
+        )
+        if existing_check.status_code == 200:
+            existing_users = existing_check.json()
+            if existing_users:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "EMAIL_ALREADY_EXISTS", "message": "该邮箱已注册，请直接登录或使用其他邮箱"},
+                )
+
+    # 2. 创建新用户
     body = {
         "email": payload.email,
         "password": payload.password,
