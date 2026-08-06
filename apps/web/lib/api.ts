@@ -11,6 +11,20 @@ export class ApiError extends Error {
   }
 }
 
+const STATUS_MESSAGES: Record<number, string> = {
+  400: "请求参数错误，请检查输入",
+  401: "登录已过期，请重新登录",
+  403: "没有权限执行此操作",
+  404: "资源不存在",
+  409: "该邮箱已注册，请直接登录或使用其他邮箱",
+  422: "输入格式错误，请检查",
+  429: "操作过于频繁，请稍后再试",
+  500: "服务器内部错误，请稍后重试",
+  502: "网关错误，请稍后重试",
+  503: "服务暂不可用，请稍后重试",
+  504: "网关超时，请稍后重试",
+};
+
 // 生产环境通过 Cloudflare Pages Function 同源代理 /api/* → Render
 // 本地开发直接调本地后端
 // 这样完全绕过 CORS，无需在 Render 配置 allow_origin
@@ -55,11 +69,10 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     } catch {
       // ignore
     }
-    throw new ApiError(
-      payload?.error?.message || `Request failed: ${res.status}`,
-      payload?.error?.code,
-      res.status,
-    );
+    const serverMsg = payload?.error?.message;
+    const localizedMsg = STATUS_MESSAGES[res.status];
+    const message = serverMsg || localizedMsg || `请求失败 (${res.status})`;
+    throw new ApiError(message, payload?.error?.code, res.status);
   }
   return res.json() as Promise<T>;
 }
