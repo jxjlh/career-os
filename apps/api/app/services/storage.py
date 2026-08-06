@@ -36,6 +36,34 @@ class StorageService:
             return self._upload_supabase(path, content, content_type)
         return self._upload_local(path, content)
 
+    def upload_avatar(
+        self,
+        file: BinaryIO,
+        filename: str,
+        user_id: str,
+    ) -> str:
+        """上传用户头像, 返回公共 URL.
+
+        复用 chat-images 存储桶（已配置为 public），路径前缀用 avatars/ 隔离。
+        本地回退时落到 /media/avatars/... 由 StaticFiles 提供服务。
+        """
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        ext = Path(filename).suffix or ".jpg"
+        # 限制扩展名，防止上传非图片文件
+        if ext.lower() not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
+            ext = ".jpg"
+        path = f"avatars/{user_id}/{timestamp}{ext}"
+
+        content = file.read()
+        # 限制 5MB
+        if len(content) > 5 * 1024 * 1024:
+            raise ValueError("头像文件过大，请上传 5MB 以内的图片")
+        content_type = self._guess_content_type(ext)
+
+        if self.settings.supabase_url and self.settings.supabase_service_role_key:
+            return self._upload_supabase(path, content, content_type)
+        return self._upload_local(path, content)
+
     def _upload_supabase(self, path: str, content: bytes, content_type: str) -> str:
         """上传到 Supabase Storage."""
         url = f"{self.settings.supabase_url}/storage/v1/object/chat-images/{path}"

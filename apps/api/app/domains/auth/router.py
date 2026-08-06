@@ -2,7 +2,7 @@ from datetime import date
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import BackgroundJob, Profile, Skill, UserLimit, UserSkill
+from app.services.storage import StorageService
 
 router = APIRouter(tags=["auth"])
 
@@ -83,6 +84,31 @@ def patch_me(
     return {"data": _profile_dict(current_user)}
 
 
+@router.post("/me/avatar")
+def upload_avatar(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    file: Annotated[UploadFile, File()],
+) -> dict:
+    """上传用户头像。
+
+    接收 multipart/form-data 图片文件，存储后返回可访问的公共 URL，
+    并同步更新 profile.avatar_url。支持 jpg/png/gif/webp，限制 5MB。
+    """
+    storage = StorageService()
+    try:
+        url = storage.upload_avatar(file.file, file.filename or "avatar.jpg", current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail={"code": "FILE_TOO_LARGE", "message": str(exc)}) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail={"code": "UPLOAD_FAILED", "message": f"头像上传失败: {exc}"}) from exc
+
+    current_user.avatar_url = url
+    db.commit()
+    db.refresh(current_user)
+    return {"data": {"avatarUrl": url, "profile": _profile_dict(current_user)}}
+
+
 @router.get("/onboarding/status")
 def onboarding_status(current_user: Annotated[Profile, Depends(get_current_user)]) -> dict:
     return {"data": {"completed": current_user.onboarding_completed, "step": 4 if current_user.onboarding_completed else 0}}
@@ -117,21 +143,10 @@ async def signup(payload: SignupRequest, db: Annotated[Session, Depends(get_db)]
         "Content-Type": "application/json",
     }
 
-    # 1. 先检查邮箱是否已存在
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        existing_check = await client.get(
-            f"{admin_url}?email={payload.email}",
-            headers=headers,
-        )
-        if existing_check.status_code == 200:
-            existing_users = existing_check.json()
-            if existing_users:
-                raise HTTPException(
-                    status_code=409,
-                    detail={"code": "EMAIL_ALREADY_EXISTS", "message": "该邮箱已注册，请直接登录或使用其他邮箱"},
-                )
-
-    # 2. 创建新用户
+    # 直接调用 Supabase Admin API 创建用户。
+    # 不再做邮箱预检查 —— Supabase 的 /admin/users?email= 接口在该 service-role 下
+    # 会返回全量用户列表而非按邮箱过滤，曾导致未注册邮箱被误判为已注册。
+    # 改为依赖创建用户时 Supabase 原生返回的 422 状态码做冲突检测。
     body = {
         "email": payload.email,
         "password": payload.password,
@@ -154,15 +169,23 @@ async def signup(payload: SignupRequest, db: Annotated[Session, Depends(get_db)]
             ) from exc
 
     if resp.status_code >= 400:
+        # 422 通常表示邮箱已注册（Supabase 原生冲突检测）
+        if resp.status_code == 422:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "EMAIL_ALREADY_EXISTS",
+                    "message": "该邮箱已注册，请直接登录或使用其他邮箱",
+                },
+            )
         try:
             err_body = resp.json()
-            msg = err_body.get("msg") or err_body.get("message") or "Signup failed"
+            msg = err_body.get("msg") or err_body.get("message") or "注册失败，请稍后重试"
             code = err_body.get("error_code") or "SIGNUP_FAILED"
         except Exception:
-            msg = f"Signup failed: {resp.status_code}"
+            msg = f"注册失败: {resp.status_code}"
             code = "SIGNUP_FAILED"
-        status = 409 if resp.status_code == 422 else resp.status_code
-        raise HTTPException(status_code=status, detail={"code": code, "message": msg})
+        raise HTTPException(status_code=resp.status_code, detail={"code": code, "message": msg})
 
     user = resp.json()
     user_id = user.get("id")
