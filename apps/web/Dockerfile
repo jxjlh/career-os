@@ -7,10 +7,10 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # 先复制依赖文件，利用 Docker 层缓存
-COPY package.json package-lock.json* ./
+COPY package.json ./
 
-# 安装依赖
-RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+# 安装依赖（无 lock 文件时用 npm install）
+RUN npm install --legacy-peer-deps
 
 # 复制源代码
 COPY . .
