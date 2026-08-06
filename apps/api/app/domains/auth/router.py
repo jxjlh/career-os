@@ -97,11 +97,13 @@ def upload_avatar(
     """
     storage = StorageService()
     try:
-        url = storage.upload_avatar(file.file, file.filename or "avatar.jpg", current_user.id)
+        url = storage.upload_avatar(file.file, file.filename, current_user.id)
     except ValueError as exc:
         raise HTTPException(status_code=413, detail={"code": "FILE_TOO_LARGE", "message": str(exc)}) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail={"code": "UPLOAD_FAILED", "message": f"头像上传失败: {exc}"}) from exc
+    except Exception as exc:
+        import logging
+        logging.getLogger("upload_avatar").exception("头像上传异常")
+        raise HTTPException(status_code=500, detail={"code": "UPLOAD_FAILED", "message": f"头像上传失败，请检查文件格式"}) from exc
 
     current_user.avatar_url = url
     db.commit()
@@ -237,14 +239,8 @@ def my_limits(
             "interviewsUsed": limit.interviews_used,
             "resumesGenerated": limit.resumes_generated,
             "storageBytesUsed": limit.storage_bytes_used,
-            "dailyLimits": {
-                "aiMessages": 30,
-                "searches": 20,
-                "aiSummaries": 20,
-                "quiz": 10,
-                "interviews": 3,
-                "resumes": 3,
-            },
+            # 所有 AI 功能无使用限制
+            "dailyLimits": None,
         }
     }
 

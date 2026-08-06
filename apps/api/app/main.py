@@ -85,6 +85,8 @@ app = FastAPI(
 
 # 本地媒体回退目录: 未配置 Supabase 或上传失败时, 图片/视频落盘于此.
 media_dir = Path(settings.media_dir)
+if not media_dir.is_absolute():
+    media_dir = Path(__file__).resolve().parent.parent / media_dir
 media_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/media", StaticFiles(directory=media_dir), name="media")
 

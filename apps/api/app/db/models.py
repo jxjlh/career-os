@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import date, datetime
 from typing import Any
@@ -15,7 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -1140,6 +1142,8 @@ class ChatConversation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
 
+    members: Mapped[list["ConversationMember"]] = relationship(back_populates="conversation")
+
 
 class ConversationMember(Base):
     """会话成员: 私聊两人, 群聊多人. 用于查询用户的所有会话."""
@@ -1156,6 +1160,9 @@ class ConversationMember(Base):
     last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 最后已读时间
     muted: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否静音
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    conversation: Mapped["ChatConversation"] = relationship(back_populates="members")
+    user: Mapped["Profile"] = relationship()
 
 
 class ChatMessage(Base):
@@ -1179,6 +1186,9 @@ class ChatMessage(Base):
     reply_to_id: Mapped[str | None] = mapped_column(ForeignKey("chat_messages.id", ondelete="SET NULL"))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 软删除
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+    conversation: Mapped["ChatConversation"] = relationship()
+    sender: Mapped["Profile"] = relationship()
 
 
 class MessageRead(Base):

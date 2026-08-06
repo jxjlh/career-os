@@ -16,6 +16,15 @@ class StorageService:
     def __init__(self):
         self.settings = get_settings()
 
+    def _abs_media_dir(self) -> Path:
+        """获取 media 绝对路径，确保生产环境也能正确定位."""
+        root = Path(self.settings.media_dir)
+        if root.is_absolute():
+            return root
+        # 相对路径: 基于应用根目录 (apps/api/)
+        app_root = Path(__file__).resolve().parent.parent.parent
+        return app_root / root
+
     def upload_chat_image(
         self,
         file: BinaryIO,
@@ -24,7 +33,6 @@ class StorageService:
         conversation_id: str,
     ) -> str:
         """上传聊天图片, 返回 URL."""
-        # 生成唯一路径
         timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
         ext = Path(filename).suffix or ".jpg"
         path = f"chat/{conversation_id}/{user_id}/{timestamp}{ext}"
@@ -32,67 +40,71 @@ class StorageService:
         content = file.read()
         content_type = self._guess_content_type(ext)
 
-        if self.settings.supabase_url and self.settings.supabase_service_role_key:
-            return self._upload_supabase(path, content, content_type)
+        if self._supabase_configured():
+            try:
+                return self._upload_supabase(path, content, content_type)
+            except Exception:
+                pass
         return self._upload_local(path, content)
 
     def upload_avatar(
         self,
         file: BinaryIO,
-        filename: str,
+        filename: str | None,
         user_id: str,
     ) -> str:
-        """上传用户头像, 返回公共 URL.
-
-        复用 chat-images 存储桶（已配置为 public），路径前缀用 avatars/ 隔离。
-        本地回退时落到 /media/avatars/... 由 StaticFiles 提供服务。
-        """
+        """上传用户头像, 返回公共 URL."""
         timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-        ext = Path(filename).suffix or ".jpg"
-        # 限制扩展名，防止上传非图片文件
+        safe_filename = filename or "avatar.jpg"
+        ext = Path(safe_filename).suffix or ".jpg"
         if ext.lower() not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
             ext = ".jpg"
         path = f"avatars/{user_id}/{timestamp}{ext}"
 
         content = file.read()
-        # 限制 5MB
         if len(content) > 5 * 1024 * 1024:
             raise ValueError("头像文件过大，请上传 5MB 以内的图片")
         content_type = self._guess_content_type(ext)
 
-        if self.settings.supabase_url and self.settings.supabase_service_role_key:
-            return self._upload_supabase(path, content, content_type)
+        if self._supabase_configured():
+            try:
+                return self._upload_supabase(path, content, content_type)
+            except Exception:
+                pass
         return self._upload_local(path, content)
 
+    def _supabase_configured(self) -> bool:
+        """检查 Supabase 是否完整配置."""
+        return bool(
+            self.settings.supabase_url
+            and self.settings.supabase_service_role_key
+        )
+
     def _upload_supabase(self, path: str, content: bytes, content_type: str) -> str:
-        """上传到 Supabase Storage."""
+        """上传到 Supabase Storage，失败时抛出异常由调用方处理."""
         url = f"{self.settings.supabase_url}/storage/v1/object/chat-images/{path}"
         headers = {
             "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
             "Content-Type": content_type,
         }
 
-        # 同步包装（在路由中已经是同步调用）
-        import requests
-        response = requests.post(url, headers=headers, content=content, timeout=30)
+        with httpx.Client(timeout=30.0, trust_env=False) as client:
+            response = client.post(url, headers=headers, content=content)
 
         if response.status_code >= 400:
-            # 回退到本地
-            return self._upload_local(path, content)
+            raise RuntimeError(f"Supabase upload failed: HTTP {response.status_code}")
 
-        # 返回公共 URL
         return f"{self.settings.supabase_url}/storage/v1/object/public/chat-images/{path}"
 
     def _upload_local(self, path: str, content: bytes) -> str:
         """上传到本地 media 目录."""
-        root = Path(self.settings.media_dir)
+        root = self._abs_media_dir()
         target = root / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
         return f"/media/{path}"
 
     def _guess_content_type(self, ext: str) -> str:
-        """猜测文件类型."""
         types = {
             ".jpg": "image/jpeg",
             ".jpeg": "image/jpeg",
@@ -109,21 +121,22 @@ class StorageService:
         if path.startswith("/media/"):
             return path
 
-        # Supabase 签名 URL
-        if self.settings.supabase_url and self.settings.supabase_service_role_key:
+        if self._supabase_configured():
             url = f"{self.settings.supabase_url}/storage/v1/object/sign/chat-images/{path}"
             headers = {"Authorization": f"Bearer {self.settings.supabase_service_role_key}"}
 
-            import requests
-            response = requests.post(url, headers=headers, json={"expiresIn": 3600}, timeout=15)
+            try:
+                with httpx.Client(timeout=15.0, trust_env=False) as client:
+                    response = client.post(url, headers=headers, json={"expiresIn": 3600})
 
-            if response.status_code < 400:
-                signed = response.json().get("signedURL")
-                if signed:
-                    return f"{self.settings.supabase_url}{signed}" if signed.startswith("/") else signed
+                if response.status_code < 400:
+                    signed = response.json().get("signedURL")
+                    if signed:
+                        return f"{self.settings.supabase_url}{signed}" if signed.startswith("/") else signed
+            except Exception:
+                pass
 
-        # 本地回退
-        local = Path(self.settings.media_dir) / path
+        local = self._abs_media_dir() / path
         if local.is_file():
             return f"/media/{path}"
 

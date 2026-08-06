@@ -90,6 +90,19 @@ def review_word(
     return {"data": result}
 
 
+# ── 周计划 ──────────────────────────────────────────────────────
+@router.get("/english/books/{book_id}/weekly-plan")
+def get_weekly_plan(
+    book_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    plan = EnglishService(db).get_weekly_plan(current_user.id, book_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Word book not found"})
+    return {"data": plan}
+
+
 @router.patch("/english/words/{word_id}")
 def update_word(
     word_id: str,

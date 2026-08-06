@@ -23,6 +23,9 @@ __pycache__/
 *.db
 *.sqlite3
 
+# Temporary data
+temp_dictionary_data/
+
 # Local upload fallback
 apps/api/media/
 

@@ -1,5 +1,29 @@
 import { apiFetch, API_BASE } from "@/lib/api";
 
+/** 浏览器原生语音合成 —— 即时发音，零网络延迟 */
+let cachedVoice: SpeechSynthesisVoice | null = null;
+
+function initVoices() {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  const voices = window.speechSynthesis.getVoices();
+  cachedVoice = voices.find((v) => v.lang.startsWith("en")) ?? null;
+}
+
+if (typeof window !== "undefined" && window.speechSynthesis) {
+  initVoices();
+  window.speechSynthesis.onvoiceschanged = initVoices;
+}
+
+export function speak(text: string, lang = "en-US", rate = 0.9) {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = lang;
+  utter.rate = rate;
+  if (!cachedVoice) initVoices();
+  if (cachedVoice) utter.voice = cachedVoice;
+  window.speechSynthesis.speak(utter);
+}
+
 export interface WordBook {
   id: string;
   code: string;
@@ -71,6 +95,30 @@ export interface StreakStats {
   calendar: { date: string; newWords: number; reviewWords: number; total: number }[];
 }
 
+export interface WeeklyPlan {
+  bookId: string;
+  bookName: string;
+  weekStart: string;
+  isSunday: boolean;
+  dailyNewWords: number;
+  estimatedReviewWords: number;
+  weekDaysRemaining: number;
+  progress: {
+    mastered: number;
+    learning: number;
+    new: number;
+    total: number;
+  };
+  todayTask: {
+    newWords: number;
+    reviewWords: number;
+    weekReviewWords: number;
+  };
+  againCount: number;
+  dueCount: number;
+  totalWords: number;
+}
+
 export const englishApi = {
   listBooks: () => apiFetch<{ data: WordBook[] }>("/english/books"),
   getBook: (id: string) => apiFetch<{ data: WordBook }>(`/english/books/${id}`),
@@ -106,4 +154,6 @@ export const englishApi = {
     ),
   getTodayStats: () => apiFetch<{ data: TodayStats }>("/english/stats/today"),
   getStreak: () => apiFetch<{ data: StreakStats }>("/english/stats/streak"),
+  getWeeklyPlan: (bookId: string) =>
+    apiFetch<{ data: WeeklyPlan }>(`/english/books/${bookId}/weekly-plan`),
 };

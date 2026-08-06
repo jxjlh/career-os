@@ -155,6 +155,89 @@ class UserWordRepository:
         self.db.refresh(uw)
         return uw
 
+    def count_by_rating(self, user_id: str, book_id: str, rating: str) -> int:
+        """统计某词书中被特定评分（如 again）的单词数量."""
+        # 从 WordReviewLog 中查询评分记录
+        from app.db.models import WordReviewLog
+        from sqlalchemy import func
+
+        # 获取该词书的所有单词ID
+        from app.db.models import Word
+        word_ids = [w[0] for w in (
+            self.db.query(Word.id)
+            .filter(Word.book_id == book_id)
+            .all()
+        )]
+
+        if not word_ids:
+            return 0
+
+        # 查询最后一次评分为指定评分的单词数
+        subq = (
+            self.db.query(
+                WordReviewLog.word_id,
+                func.row_number().over(
+                    partition_by=WordReviewLog.word_id,
+                    order_by=WordReviewLog.reviewed_at.desc()
+                ).label("rn")
+            )
+            .filter(WordReviewLog.user_id == user_id)
+            .filter(WordReviewLog.word_id.in_(word_ids))
+            .subquery()
+        )
+
+        count = (
+            self.db.query(func.count())
+            .select_from(subq)
+            .filter(subq.c.rn == 1)
+            .filter(subq.c.word_id.in_(
+                [w[0] for w in self.db.query(WordReviewLog.word_id)
+                 .filter(WordReviewLog.user_id == user_id, WordReviewLog.rating == rating)
+                 .all()]
+            ))
+            .scalar()
+        )
+        return count or 0
+
+    def list_by_rating(self, user_id: str, book_id: str, rating: str) -> list[UserWord]:
+        """获取某词书中最后一次被特定评分的单词列表."""
+        from app.db.models import WordReviewLog, Word
+        from sqlalchemy import func
+
+        # 获取该词书的所有单词ID
+        word_ids = [w[0] for w in (
+            self.db.query(Word.id)
+            .filter(Word.book_id == book_id)
+            .all()
+        )]
+
+        if not word_ids:
+            return []
+
+        # 获取最后一次评分为指定评分的单词ID
+        target_word_ids = [
+            r[0] for r in (
+                self.db.query(WordReviewLog.word_id)
+                .filter(WordReviewLog.user_id == user_id)
+                .filter(WordReviewLog.word_id.in_(word_ids))
+                .filter(WordReviewLog.rating == rating)
+                .distinct()
+                .all()
+            )
+        ]
+
+        if not target_word_ids:
+            return []
+
+        # 获取对应的 UserWord 记录
+        return (
+            self.db.query(UserWord)
+            .filter(UserWord.user_id == user_id)
+            .filter(UserWord.book_id == book_id)
+            .filter(UserWord.word_id.in_(target_word_ids))
+            .all()
+        )
+
 
 class ListeningRepository:
     def __init__(self, db: Session) -> None:

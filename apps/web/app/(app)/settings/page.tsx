@@ -21,15 +21,10 @@ export default function SettingsPage() {
     queryKey: ["me"],
     queryFn: () => apiFetch("/me"),
   });
-  const limits = useQuery<Envelope>({
-    queryKey: ["me-limits"],
-    queryFn: () => apiFetch("/me/limits"),
-  });
   const [displayName, setDisplayName] = useState("");
   const [targetTitle, setTargetTitle] = useState("");
 
   const profile = me.data?.data;
-  const limitsData = limits.data?.data;
   const save = useMutation({
     mutationFn: () =>
       apiFetch("/me", {
@@ -93,27 +88,14 @@ export default function SettingsPage() {
         </Card>
         <Card className="p-5 lg:col-span-2">
           <h2 className="mb-4 text-sm font-semibold">{t("settings.usage")}</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              { label: t("settings.aiChat"), used: limitsData?.aiMessagesUsed ?? 0, max: limitsData?.dailyLimits?.aiMessages ?? 30 },
-              { label: t("settings.search"), used: limitsData?.searchesUsed ?? 0, max: limitsData?.dailyLimits?.searches ?? 20 },
-              { label: t("settings.interview"), used: limitsData?.interviewsUsed ?? 0, max: limitsData?.dailyLimits?.interviews ?? 3 },
-            ].map((item) => (
-              <div key={item.label} className="rounded-[6px] border border-border p-3">
-                <div className="flex items-center justify-between text-[13px]">
-                  <span>{item.label}</span>
-                  <span className="text-muted">
-                    {item.used} / {item.max}
-                  </span>
-                </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-muted">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${Math.min(100, (item.used / item.max) * 100)}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+          <div className="flex items-center gap-3 rounded-[10px] border border-primary/20 bg-primary/5 p-4">
+            <span className="text-2xl">∞</span>
+            <div>
+              <p className="text-[13px] font-medium text-text">所有功能不限量使用</p>
+              <p className="mt-0.5 text-[12px] text-text-tertiary">
+                AI 对话、搜索、模拟面试等全部功能均可自由使用，无每日限制。
+              </p>
+            </div>
           </div>
         </Card>
         <Card className="p-5 lg:col-span-2">

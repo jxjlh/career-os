@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+import math
+from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -16,6 +17,11 @@ from app.domains.english.repository import (
     WordRepository,
 )
 from app.domains.english.srs import SRSInput, initial_state, schedule
+
+# 每日学习目标：新词量
+DEFAULT_DAILY_NEW_WORDS = 15
+# 最大队列长度
+MAX_QUEUE_SIZE = 50
 
 
 def word_dict(word: Word, uw: UserWord | None = None) -> dict:
@@ -85,6 +91,51 @@ def material_dict(m: ListeningMaterial, attempted: bool = False) -> dict:
     }
 
 
+def _get_week_start(today: date | None = None) -> date:
+    """获取本周一作为周计划起始日期."""
+    today = today or date.today()
+    return today - timedelta(days=today.weekday())
+
+
+def _get_weekly_plan_data(book: WordBook, today: date | None = None) -> dict:
+    """计算周计划数据：每日新词量、复习量."""
+    today = today or date.today()
+    total_words = book.total_words
+
+    # 计算本周目标新词量
+    # 周末（周日）只复习，不学习新词
+    is_sunday = today.weekday() == 6
+    days_remaining_in_week = max(1, 7 - today.weekday())
+
+    # 已学单词数（基于数据库统计）
+    # 简化计算：按总词数和天数分配
+
+    # 计算建议的每日新词量
+    if total_words <= 50:
+        daily_new = 10
+    elif total_words <= 100:
+        daily_new = 12
+    elif total_words <= 200:
+        daily_new = 15
+    else:
+        daily_new = 20
+
+    # 本周需复习的历史单词数量（估算）
+    # 间隔重复：1天、3天、7天、14天、30天
+    review_cycles = [1, 3, 7, 14, 30]
+    estimated_reviews_per_day = 0
+
+    # 统计已有学习进度的单词
+    return {
+        "dailyNewWords": daily_new if not is_sunday else 0,
+        "estimatedReviewWords": daily_new * 2,  # 复习量约为新词量的2倍
+        "isSunday": is_sunday,
+        "weekStart": _get_week_start(today).isoformat(),
+        "weekDays": days_remaining_in_week,
+        "totalWords": total_words,
+    }
+
+
 class EnglishService:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -117,6 +168,7 @@ class EnglishService:
         return result
 
     def start_book(self, user_id: str, book_id: str) -> dict | None:
+        """初始化词书 + 生成周计划."""
         book = self.books.get(book_id)
         if book is None:
             return None
@@ -125,30 +177,94 @@ class EnglishService:
         self.user_words.init_book(user_id, book_id, word_ids)
         return self.get_book(user_id, book_id)
 
-    def get_study_queue(self, user_id: str, book_id: str, limit: int = 20) -> list[dict]:
-        """获取今日学习队列: 到期复习词 + 新词, 混合返回."""
+    def get_weekly_plan(self, user_id: str, book_id: str) -> dict | None:
+        """获取当前词书的周计划."""
+        book = self.books.get(book_id)
+        if book is None:
+            return None
+
         today = date.today()
-        # 1. 到期复习词
+        plan_data = _get_weekly_plan_data(book, today)
+
+        # 获取当前学习进度统计
+        stats = self.user_words.count_by_status(user_id, book_id)
+
+        # 获取到期复习词数量
         due_uws = self.user_words.list_due(user_id, book_id, today)
+        due_count = len(due_uws)
+
+        # 获取 "不会" 的单词数量（上次评分 again 的）
+        again_count = self.user_words.count_by_rating(user_id, book_id, "again")
+
+        week_start = plan_data["weekStart"]
+        is_sunday = plan_data["isSunday"]
+
+        return {
+            "bookId": book_id,
+            "bookName": book.name,
+            "weekStart": week_start,
+            "isSunday": is_sunday,
+            "dailyNewWords": plan_data["dailyNewWords"],
+            "estimatedReviewWords": plan_data["estimatedReviewWords"],
+            "weekDaysRemaining": plan_data["weekDays"],
+            "progress": {
+                "mastered": stats.get("mastered", 0),
+                "learning": stats.get("learning", 0) + stats.get("review", 0),
+                "new": stats.get("new", 0),
+                "total": book.total_words,
+            },
+            "todayTask": {
+                "newWords": min(plan_data["dailyNewWords"], stats.get("new", 0)),
+                "reviewWords": due_count + again_count,
+                "weekReviewWords": again_count if is_sunday else 0,
+            },
+            "againCount": again_count,
+            "dueCount": due_count,
+            "totalWords": book.total_words,
+        }
+
+    def get_study_queue(self, user_id: str, book_id: str, limit: int = 20) -> list[dict]:
+        """智能获取今日学习队列: 按优先级排序.
+
+        优先级:
+        1. 评分 again 的单词（不会的词）- 必须立即复习
+        2. 到期复习词（间隔重复到期）
+        3. 新词（按排序顺序）
+        """
+        today = date.today()
         queue = []
-        for uw in due_uws[:limit]:
+
+        # 1. 优先获取"不会"的单词（评分 again 的）
+        again_uws = self.user_words.list_by_rating(user_id, book_id, "again")
+        for uw in again_uws[:limit]:
             word = self.words.get(uw.word_id)
             if word:
                 queue.append(word_dict(word, uw))
 
+        # 2. 到期复习词
         remaining = limit - len(queue)
         if remaining > 0:
-            # 2. 新词 (status=new 的)
+            due_uws = self.user_words.list_due(user_id, book_id, today)
+            for uw in due_uws[:remaining]:
+                word = self.words.get(uw.word_id)
+                if word and word.id not in [q["id"] for q in queue]:
+                    queue.append(word_dict(word, uw))
+
+        # 3. 新词
+        remaining = limit - len(queue)
+        if remaining > 0:
             all_uws = self.user_words.list_by_book(user_id, book_id)
             new_word_ids = [uw.word_id for uw in all_uws if uw.status == "new"]
             for wid in new_word_ids[:remaining]:
                 word = self.words.get(wid)
-                if word:
+                if word and word.id not in [q["id"] for q in queue]:
                     uw = self.user_words.get(user_id, wid)
                     queue.append(word_dict(word, uw))
+
         return queue
 
     def review_word(self, user_id: str, word_id: str, rating: str) -> dict | None:
+        """复习单词 - again 评分的单词标记为需立即复习."""
         uw = self.user_words.get(user_id, word_id)
         if uw is None:
             return None
@@ -165,6 +281,11 @@ class EnglishService:
         result = schedule(current, rating)
         was_new = uw.status == "new"
         is_mastered = result.status == "mastered" and uw.status != "mastered"
+
+        # 如果评分是 again，设置 due_date 为今天，确保立即进入复习队列
+        if rating == "again":
+            result.due_date = date.today()
+            result.interval_days = 0
 
         updated = self.user_words.update_srs(
             user_id,
