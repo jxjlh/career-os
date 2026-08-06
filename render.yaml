@@ -2,6 +2,7 @@
 # 零 Vercel：前后端都部署到 Render（免费档），共用同一套 Blueprint。
 # 部署：Render Dashboard → New → Blueprint → 连接 GitHub 仓库 → 自动读取本文件。
 # 所有敏感值用 sync: false，部署时在 Render 控制台填写（不写入仓库）。
+# 强制重新部署：修改此文件或创建空提交均可触发 Render 自动部署。
 services:
   # ---------- 后端 API（Docker + FastAPI + 自动 Alembic 迁移）----------
   - type: web
