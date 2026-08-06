@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -34,26 +34,28 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
 
   const existing = journalData?.data;
 
-  const [moodIndex, setMoodIndex] = useState<number | null>(existing?.moodIndex ?? null);
-  const [content, setContent] = useState(existing?.content ?? "");
-  const [tags, setTags] = useState<string[]>(existing?.tags ?? []);
+  const [moodIndex, setMoodIndex] = useState<number | null>(null);
+  const [content, setContent] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
 
-  // 当 existing 变化时更新本地状态
-  const loadExisting = existing?.id;
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  useState(() => {
+  // 当 existing 数据加载完成时，同步到本地状态
+  useEffect(() => {
     if (existing) {
       setMoodIndex(existing.moodIndex);
       setContent(existing.content ?? "");
       setTags(existing.tags ?? []);
+    } else {
+      setMoodIndex(null);
+      setContent("");
+      setTags([]);
     }
-  });
+  }, [existing]);
 
   const isEditing = !!existing;
 
   const upsertMutation = useMutation({
     mutationFn: () => {
-      if (!moodIndex) throw new Error("请选择今天的心情");
+      if (moodIndex === null) throw new Error("请选择今天的心情");
       const payload = {
         mood_index: moodIndex,
         content: content.trim() || undefined,
@@ -93,7 +95,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   };
 
   const handleSave = () => {
-    if (!moodIndex) return;
+    if (moodIndex === null) return;
     upsertMutation.mutate();
   };
 
@@ -208,13 +210,13 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
       {/* 保存按钮 */}
       <motion.button
         onClick={handleSave}
-        disabled={!moodIndex || upsertMutation.isPending}
+        disabled={moodIndex === null || upsertMutation.isPending}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
         className={`
           flex w-full items-center justify-center rounded-xl py-3 text-sm font-medium transition-all duration-200
-          ${moodIndex
+          ${moodIndex !== null
             ? "bg-primary text-white shadow-[0_4px_20px_rgba(139,92,246,0.3)] hover:bg-primary-hover"
             : "cursor-not-allowed bg-surface/40 text-text-tertiary"
           }
