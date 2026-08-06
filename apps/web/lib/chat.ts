@@ -3,6 +3,33 @@
 import { apiFetch } from "@/lib/api";
 import { getAccessToken, isSupabaseConfigured } from "@/lib/supabase";
 
+// 后端基础地址 - 用于转换 /media/ 路径为完整 URL
+// 本地开发使用 http://127.0.0.1:8000
+// 生产环境使用环境变量 NEXT_PUBLIC_API_BASE_URL 或 /api/v1 的域名
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL 
+  ? process.env.NEXT_PUBLIC_API_BASE_URL.replace("/api/v1", "") 
+  : process.env.NODE_ENV === "development"
+    ? "http://127.0.0.1:8000"
+    : "";
+
+/**
+ * 将媒体路径转换为可访问的完整 URL
+ * 后端返回的 /media/xxx 需要转换为完整地址才能访问
+ */
+export function resolveMediaUrl(path: string | null | undefined): string {
+  if (!path) return "";
+  // 已经是完整 URL
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  // /media/xxx → 需要加上后端地址
+  if (path.startsWith("/media/")) {
+    return `${API_BASE_URL}${path}`;
+  }
+  // 其他情况直接返回
+  return path;
+}
+
 // Types
 export interface Conversation {
   id: string;

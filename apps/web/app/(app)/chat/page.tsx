@@ -16,7 +16,7 @@ import {
   UserCheck,
   Smile,
 } from "lucide-react";
-import { chatApi, friendApi, type Conversation, type Message } from "@/lib/chat";
+import { chatApi, friendApi, resolveMediaUrl, type Conversation, type Message } from "@/lib/chat";
 import { apiFetch } from "@/lib/api";
 import { Button, Input, cn } from "@/components/ui";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
@@ -613,6 +613,7 @@ export default function ChatPage() {
 const MessageBubble = memo(function MessageBubble({ message, isMine }: { message: Message; isMine: boolean }) {
   const isSystem = message.type === "system";
   const isImage = message.type === "image";
+  const imageUrl = resolveMediaUrl(message.imageUrl);
 
   if (isSystem) {
     return (
@@ -630,16 +631,16 @@ const MessageBubble = memo(function MessageBubble({ message, isMine }: { message
           isMine ? "bg-primary text-white" : "bg-surface-elevated"
         )}
       >
-        {isImage && message.imageUrl ? (
+        {isImage && imageUrl ? (
           <div className="relative group">
             <img
-              src={message.imageUrl}
+              src={imageUrl}
               alt=""
               className="rounded-lg max-w-full"
               style={{ maxHeight: "300px" }}
             />
             <a
-              href={message.imageUrl}
+              href={imageUrl}
               download
               className="absolute bottom-2 right-2 bg-black/50 rounded-lg p-1.5 hover:bg-black/70 transition-colors opacity-0 group-hover:opacity-100"
               title="下载图片"
