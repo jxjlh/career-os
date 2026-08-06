@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, memo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquare,
@@ -14,10 +14,12 @@ import {
   X,
   UserPlus,
   UserCheck,
+  Smile,
 } from "lucide-react";
 import { chatApi, friendApi, type Conversation, type Message } from "@/lib/chat";
 import { apiFetch } from "@/lib/api";
 import { Button, Input, cn } from "@/components/ui";
+import { EmojiPicker } from "@/components/chat/emoji-picker";
 
 // 好友项 (后端 social/friends 返回结构: { profile: { id, displayName, avatarUrl }, createdAt })
 type FriendItem = {
@@ -43,6 +45,8 @@ export default function ChatPage() {
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState(false); // 发送中的消息状态
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -108,22 +112,46 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 发送消息
+  // 表情选择处理
+  const handleEmojiSelect = useCallback((emoji: string) => {
+    setMessageInput((prev) => prev + emoji);
+    setShowEmojiPicker(false);
+  }, []);
+
+  // 发送消息 - 乐观更新优化
   const handleSendMessage = useCallback(async () => {
-    if (!activeConversation || !messageInput.trim()) return;
+    if (!activeConversation || !messageInput.trim() || pendingMessage) return;
+    
+    const content = messageInput.trim();
+    setMessageInput("");
+    setPendingMessage(true);
+    
     try {
-      await chatApi.sendMessage(activeConversation, {
-        content: messageInput.trim(),
+      // 立即发送请求（不等待），实现乐观更新
+      chatApi.sendMessage(activeConversation, {
+        content,
         message_type: "text",
+      }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["chat", "messages", activeConversation] });
+        queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
+      }).catch((err) => {
+        console.error("发送失败:", err);
+        showToast("发送失败，请重试");
+        // 失败时恢复消息
+        setMessageInput(content);
+      }).finally(() => {
+        setPendingMessage(false);
       });
-      setMessageInput("");
-      queryClient.invalidateQueries({ queryKey: ["chat", "messages", activeConversation] });
+      
+      // 立即刷新会话列表的最后消息显示
       queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
     } catch (err) {
       console.error("发送失败:", err);
       showToast("发送失败，请重试");
+      setMessageInput(content);
+      setPendingMessage(false);
     }
-  }, [activeConversation, messageInput, queryClient, showToast]);
+  }, [activeConversation, messageInput, pendingMessage, queryClient, showToast]);
 
   // 上传图片
   const handleUploadImage = useCallback(
@@ -441,7 +469,7 @@ export default function ChatPage() {
           </div>
 
           {/* 输入区 */}
-          <div className="p-4 border-t border-border-subtle bg-surface-muted/20">
+          <div className="p-4 border-t border-border-subtle bg-surface-muted/20 relative">
             <div className="flex items-center gap-2">
               <input
                 ref={fileInputRef}
@@ -462,6 +490,18 @@ export default function ChatPage() {
               >
                 <ImageIcon className="h-5 w-5" />
               </Button>
+              
+              {/* 表情按钮 */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                title="选择表情"
+                className={showEmojiPicker ? "bg-primary/20 text-primary" : ""}
+              >
+                <Smile className="h-5 w-5" />
+              </Button>
+              
               <Input
                 placeholder="输入消息..."
                 value={messageInput}
@@ -473,15 +513,24 @@ export default function ChatPage() {
                   }
                 }}
                 className="flex-1"
+                disabled={pendingMessage}
               />
               <Button
                 variant="primary"
                 onClick={handleSendMessage}
-                disabled={!messageInput.trim()}
+                disabled={!messageInput.trim() || pendingMessage}
               >
                 <Send className="h-4 w-4" />
               </Button>
             </div>
+            
+            {/* 表情选择器 */}
+            {showEmojiPicker && (
+              <EmojiPicker
+                onSelect={handleEmojiSelect}
+                onClose={() => setShowEmojiPicker(false)}
+              />
+            )}
           </div>
         </div>
       ) : (
@@ -560,8 +609,8 @@ export default function ChatPage() {
   );
 }
 
-// 消息气泡组件
-function MessageBubble({ message, isMine }: { message: Message; isMine: boolean }) {
+// 消息气泡组件 - 使用 memo 优化性能
+const MessageBubble = memo(function MessageBubble({ message, isMine }: { message: Message; isMine: boolean }) {
   const isSystem = message.type === "system";
   const isImage = message.type === "image";
 
@@ -610,4 +659,4 @@ function MessageBubble({ message, isMine }: { message: Message; isMine: boolean 
       </div>
     </div>
   );
-}
+});
