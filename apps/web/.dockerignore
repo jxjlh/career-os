@@ -1,5 +1,15 @@
+# Docker 构建上下文排除文件
+# 这些文件在 Docker 构建时不需要，避免缓存失效和构建变慢
+
 node_modules
 .next
 out
-.env*
-*.log
+.vercel
+.git
+.gitignore
+*.md
+.env*.local
+.env*.production
+.DS_Store
+npm-debug.log*
+.DS_Store
