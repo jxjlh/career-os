@@ -35,7 +35,10 @@ function StudyContent() {
   useEffect(() => {
     if (!bookId) return;
     setLoading(true);
-    englishApi.getStudyQueue(bookId, 20)
+    // 先确保词书已初始化（幂等：已存在的 user_word 记录会跳过），
+    // 否则未点"启用此词书"直接进学习页会因无记录而显示"今日已完成"
+    englishApi.startBook(bookId)
+      .then(() => englishApi.getStudyQueue(bookId, 20))
       .then((res) => {
         setQueue(res.data);
         queueRef.current = res.data;
