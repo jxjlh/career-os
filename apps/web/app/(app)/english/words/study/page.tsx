@@ -1,9 +1,9 @@
 "use client";
 
-import { ChevronLeft, Loader2, Play, Star } from "lucide-react";
+import { ChevronLeft, Loader2, Play, Star, Volume2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { Button, Card } from "@/components/ui";
 import { englishApi, type Word } from "@/lib/english";
@@ -22,6 +22,27 @@ const RATING_LABELS: Record<string, string> = {
   easy: "简单",
 };
 
+const RATING_KEYS: Record<string, string> = {
+  "1": "again",
+  "2": "hard",
+  "3": "good",
+  "4": "easy",
+};
+
+/** 浏览器原生语音合成 —— 即时发音，零网络延迟 */
+function speak(text: string) {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = "en-US";
+  utter.rate = 0.9;
+  // 优先使用英文语音
+  const voices = window.speechSynthesis.getVoices();
+  const enVoice = voices.find((v) => v.lang.startsWith("en"));
+  if (enVoice) utter.voice = enVoice;
+  window.speechSynthesis.speak(utter);
+}
+
 function StudyContent() {
   const searchParams = useSearchParams();
   const bookId = searchParams.get("bookId") || "";
@@ -29,14 +50,13 @@ function StudyContent() {
   const [index, setIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [reviewing, setReviewing] = useState(false);
   const queueRef = useRef<Word[]>([]);
+  const bookInitRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!bookId) return;
     setLoading(true);
-    // 先确保词书已初始化（幂等：已存在的 user_word 记录会跳过），
-    // 否则未点"启用此词书"直接进学习页会因无记录而显示"今日已完成"
+    // 先确保词书已初始化（幂等），再获取学习队列
     englishApi.startBook(bookId)
       .then(() => englishApi.getStudyQueue(bookId, 20))
       .then((res) => {
@@ -44,6 +64,7 @@ function StudyContent() {
         queueRef.current = res.data;
         setIndex(0);
         setShowAnswer(false);
+        bookInitRef.current.add(bookId);
       })
       .catch(() => setQueue([]))
       .finally(() => setLoading(false));
@@ -51,41 +72,85 @@ function StudyContent() {
 
   const currentWord = queue?.[index] ?? undefined;
 
-  const handleRate = async (rating: "again" | "hard" | "good" | "easy") => {
-    if (!currentWord || reviewing) return;
-    setReviewing(true);
-    try {
-      await englishApi.reviewWord(currentWord.id, rating);
-      if (index + 1 < queueRef.current.length) {
-        setIndex(index + 1);
-        setShowAnswer(false);
-      } else {
+  // 新词出现时自动发音
+  useEffect(() => {
+    if (currentWord && !loading) {
+      speak(currentWord.spelling);
+    }
+  }, [index, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const advanceOrReload = useCallback(async () => {
+    if (index + 1 < queueRef.current.length) {
+      setIndex((i) => i + 1);
+      setShowAnswer(false);
+    } else {
+      // 队列用完，后台拉取新一批
+      try {
         const res = await englishApi.getStudyQueue(bookId, 20);
         setQueue(res.data);
         queueRef.current = res.data;
         setIndex(0);
         setShowAnswer(false);
+      } catch {
+        setQueue([]);
       }
-    } finally {
-      setReviewing(false);
     }
-  };
+  }, [index, bookId]);
 
-  const toggleStar = async () => {
+  const handleRate = useCallback(
+    (rating: "again" | "hard" | "good" | "easy") => {
+      if (!currentWord) return;
+      // 乐观更新：立即切到下一个词，API 请求后台异步发送
+      const wordId = currentWord.id;
+      englishApi.reviewWord(wordId, rating).catch(() => {
+        // 静默失败 —— 不阻断学习流程，用户无感
+      });
+      advanceOrReload();
+    },
+    [currentWord, advanceOrReload],
+  );
+
+  // 键盘快捷键：空格显示释义，1-4 评分
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (loading || !currentWord) return;
+      // 输入框内不拦截
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      if (e.code === "Space") {
+        e.preventDefault();
+        setShowAnswer((v) => !v);
+      } else if (showAnswer && RATING_KEYS[e.key]) {
+        e.preventDefault();
+        handleRate(RATING_KEYS[e.key] as "again" | "hard" | "good" | "easy");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [loading, currentWord, showAnswer, handleRate]);
+
+  const toggleStar = useCallback(() => {
     if (!currentWord) return;
-    await englishApi.toggleStar(currentWord.id, !currentWord.isStarred);
+    const newStarred = !currentWord.isStarred;
+    // 乐观更新
     setQueue((prev): Word[] | null =>
-      prev ? prev.map((w, i) => (i === index ? { ...w, isStarred: !w.isStarred } : w)) : prev,
+      prev ? prev.map((w, i) => (i === index ? { ...w, isStarred: newStarred } : w)) : prev,
     );
-  };
+    englishApi.toggleStar(currentWord.id, newStarred).catch(() => {});
+  }, [currentWord, index]);
 
-  const playAudio = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const playAudio = useCallback(() => {
     if (!currentWord) return;
-    const url = englishApi.pronunciationUrl(currentWord.id);
-    const audio = new Audio(url);
-    audio.play().catch(() => {});
-  };
+    // 优先用浏览器原生 TTS（即时），无可用语音时回退到服务端 TTS
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      speak(currentWord.spelling);
+    } else {
+      const url = englishApi.pronunciationUrl(currentWord.id);
+      const audio = new Audio(url);
+      audio.play().catch(() => {});
+    }
+  }, [currentWord]);
 
   if (loading) {
     return (
@@ -176,10 +241,10 @@ function StudyContent() {
             <h2 className="text-4xl font-bold tracking-tight">{word.spelling}</h2>
             <button
               onClick={playAudio}
-              className="rounded-full bg-surface-elevated p-2 text-primary transition-colors hover:bg-primary hover:text-white"
+              className="flex items-center justify-center rounded-full bg-surface-elevated p-2.5 text-primary transition-all hover:scale-105 hover:bg-primary hover:text-white active:scale-95"
               aria-label="发音"
             >
-              <Play className="h-4 w-4 fill-current" />
+              <Volume2 className="h-4 w-4" />
             </button>
           </div>
           {word.phonetic && (
@@ -196,7 +261,7 @@ function StudyContent() {
               onClick={() => setShowAnswer(true)}
               className="w-full rounded-[10px] border border-dashed border-border-subtle bg-surface/40 py-6 text-sm text-muted transition-colors hover:border-primary/40 hover:bg-surface-elevated"
             >
-              点击显示释义
+              点击显示释义 <span className="ml-2 text-[10px] text-text-tertiary">（空格键）</span>
             </button>
           ) : (
             <div className="space-y-4">
@@ -223,15 +288,15 @@ function StudyContent() {
 
       {showAnswer && (
         <div className="grid grid-cols-4 gap-2">
-          {(["again", "hard", "good", "easy"] as const).map((r) => (
+          {(["again", "hard", "good", "easy"] as const).map((r, i) => (
             <Button
               key={r}
               variant="ghost"
-              disabled={reviewing}
               onClick={() => handleRate(r)}
               className={`h-14 text-sm font-semibold ${RATING_STYLES[r]}`}
             >
-              {RATING_LABELS[r]}
+              <span>{RATING_LABELS[r]}</span>
+              <span className="ml-1 text-[10px] opacity-60">{i + 1}</span>
             </Button>
           ))}
         </div>

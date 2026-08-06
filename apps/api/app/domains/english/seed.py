@@ -17,7 +17,7 @@ SEEDS_DIR = Path(__file__).parent / "seeds"
 
 
 def seed_word_books(db: Session) -> None:
-    """幂等写入种子词库. 已存在的词书 (按 code) 跳过, 不覆盖."""
+    """幂等写入种子词库. 已存在的词书 (按 code) 追加缺失的单词, 不覆盖已有词."""
     if not SEEDS_DIR.exists():
         return
 
@@ -31,24 +31,35 @@ def seed_word_books(db: Session) -> None:
         if not code:
             continue
 
-        # 已存在则跳过 (幂等)
-        existing = db.query(WordBook).filter(WordBook.code == code).first()
-        if existing is not None:
-            continue
-
         words_data = data.get("words", [])
-        book = WordBook(
-            code=code,
-            name=data.get("name", code),
-            level=data.get("level", code),
-            description=data.get("description"),
-            total_words=len(words_data),
-            sort_order=data.get("sort_order", 99),
-        )
-        db.add(book)
-        db.flush()  # 获取 book.id
 
+        # 查找已有词书
+        book = db.query(WordBook).filter(WordBook.code == code).first()
+
+        if book is None:
+            # 新词书 → 创建
+            book = WordBook(
+                code=code,
+                name=data.get("name", code),
+                level=data.get("level", code),
+                description=data.get("description"),
+                total_words=len(words_data),
+                sort_order=data.get("sort_order", 99),
+            )
+            db.add(book)
+            db.flush()
+            existing_spellings: set[str] = set()
+        else:
+            # 已有词书 → 查已有单词，只追加缺失的
+            existing_spellings = {
+                r.spelling
+                for r in db.query(Word.spelling).filter(Word.book_id == book.id).all()
+            }
+
+        added = 0
         for idx, w in enumerate(words_data):
+            if w["spelling"] in existing_spellings:
+                continue
             db.add(
                 Word(
                     book_id=book.id,
@@ -61,5 +72,9 @@ def seed_word_books(db: Session) -> None:
                     sort_order=idx,
                 )
             )
+            added += 1
 
-        db.commit()
+        # 更新词书总词数
+        if added > 0:
+            book.total_words = len(words_data)
+            db.commit()

@@ -2,7 +2,7 @@
   "code": "ielts",
   "name": "IELTS 核心词汇",
   "level": "IELTS",
-  "description": "雅思考试核心高频词汇 25 词",
+  "description": "雅思学术高频词汇 30 词",
   "sort_order": 3,
   "words": [
     {"spelling": "adequate", "phonetic": "/ˈædɪkwət/", "pos": "adj.", "meaning": "充足的；适当的", "example_en": "The facilities are adequate for a small family.", "example_zh": "这些设施对一个小家庭来说已经足够了。"},
@@ -19,6 +19,21 @@
     {"spelling": "inevitable", "phonetic": "/ɪnˈevɪtəbl/", "pos": "adj.", "meaning": "不可避免的", "example_en": "Change is inevitable in life.", "example_zh": "生活中的改变是不可避免的。"},
     {"spelling": "manipulate", "phonetic": "/məˈnɪpjuleɪt/", "pos": "v.", "meaning": "操纵；操作", "example_en": "Politicians may manipulate the facts.", "example_zh": "政客可能会操纵事实。"},
     {"spelling": "predominant", "phonetic": "/prɪˈdɒmɪnənt/", "pos": "adj.", "meaning": "占主导地位的", "example_en": "English is the predominant language.", "example_zh": "英语是占主导地位的语言。"},
-    {"spelling": "sustainable", "phonetic": "/səˈsteɪnəbl/", "pos": "adj.", "meaning": "可持续的", "example_en": "We need to develop sustainable energy sources.", "example_zh": "我们需要开发可持续的能源来源。"}
+    {"spelling": "sustainable", "phonetic": "/səˈsteɪnəbl/", "pos": "adj.", "meaning": "可持续的", "example_en": "We need to develop sustainable energy sources.", "example_zh": "我们需要开发可持续的能源来源。"},
+    {"spelling": "acknowledge", "phonetic": "/əkˈnɒlɪdʒ/", "pos": "v.", "meaning": "承认；认可", "example_en": "She acknowledged her mistake publicly.", "example_zh": "她公开承认了自己的错误。"},
+    {"spelling": "advocate", "phonetic": "/ˈædvəkeɪt/", "pos": "v.", "meaning": "提倡；主张", "example_en": "He advocates equal pay for women.", "example_zh": "他主张女性同工同酬。"},
+    {"spelling": "allocate", "phonetic": "/ˈæləkeɪt/", "pos": "v.", "meaning": "分配；拨给", "example_en": "The government allocated funds for education.", "example_zh": "政府为教育拨付了资金。"},
+    {"spelling": "arbitrary", "phonetic": "/ˈɑːbɪtrəri/", "pos": "adj.", "meaning": "任意的；武断的", "example_en": "The decision seemed arbitrary and unfair.", "example_zh": "这个决定看起来武断且不公。"},
+    {"spelling": "coherent", "phonetic": "/kəʊˈhɪərənt/", "pos": "adj.", "meaning": "连贯的；有条理的", "example_en": "Her argument was clear and coherent.", "example_zh": "她的论点清晰且连贯。"},
+    {"spelling": "compel", "phonetic": "/kəmˈpel/", "pos": "v.", "meaning": "强迫；迫使", "example_en": "Circumstances compelled him to resign.", "example_zh": "形势迫使他辞职。"},
+    {"spelling": "conform", "phonetic": "/kənˈfɔːm/", "pos": "v.", "meaning": "遵从；符合", "example_en": "Students must conform to school rules.", "example_zh": "学生必须遵守校规。"},
+    {"spelling": "consensus", "phonetic": "/kənˈsensəs/", "pos": "n.", "meaning": "共识；一致意见", "example_en": "They reached a consensus after long debate.", "example_zh": "经过长时间辩论后他们达成了共识。"},
+    {"spelling": "constrain", "phonetic": "/kənˈstreɪn/", "pos": "v.", "meaning": "限制；约束", "example_en": "Budget constraints limited the project scope.", "example_zh": "预算限制缩小了项目范围。"},
+    {"spelling": "culminate", "phonetic": "/ˈkʌlmɪneɪt/", "pos": "v.", "meaning": "达到顶点；告终", "example_en": "The festival culminated in a grand fireworks display.", "example_zh": "节日以盛大的烟花表演达到高潮。"},
+    {"spelling": "diminish", "phonetic": "/dɪˈmɪnɪʃ/", "pos": "v.", "meaning": "减少；削弱", "example_en": "The influence of the church has diminished.", "example_zh": "教会的影响力已经减弱。"},
+    {"spelling": "diverse", "phonetic": "/daɪˈvɜːs/", "pos": "adj.", "meaning": "多样的；不同的", "example_en": "The city has a diverse population.", "example_zh": "这座城市人口多元。"},
+    {"spelling": "empirical", "phonetic": "/ɪmˈpɪrɪkl/", "pos": "adj.", "meaning": "经验的；实证的", "example_en": "The theory is based on empirical evidence.", "example_zh": "这个理论基于实证证据。"},
+    {"spelling": "fundamental", "phonetic": "/ˌfʌndəˈmentl/", "pos": "adj.", "meaning": "基本的；根本的", "example_en": "Freedom is a fundamental human right.", "example_zh": "自由是基本人权。"},
+    {"spelling": "subsequent", "phonetic": "/ˈsʌbsɪkwənt/", "pos": "adj.", "meaning": "随后的；后来的", "example_en": "Subsequent investigations confirmed the finding.", "example_zh": "随后的调查证实了这一发现。"}
   ]
 }

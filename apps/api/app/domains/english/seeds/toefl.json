@@ -2,7 +2,7 @@
   "code": "toefl",
   "name": "TOEFL 核心词汇",
   "level": "TOEFL",
-  "description": "托福考试核心高频词汇 15 词",
+  "description": "托福学术高频词汇 30 词",
   "sort_order": 4,
   "words": [
     {"spelling": "abrupt", "phonetic": "/əˈbrʌpt/", "pos": "adj.", "meaning": "突然的", "example_en": "The meeting came to an abrupt end.", "example_zh": "会议突然结束了。"},
@@ -19,6 +19,21 @@
     {"spelling": "prevalent", "phonetic": "/ˈprevələnt/", "pos": "adj.", "meaning": "普遍的；流行的", "example_en": "Flu is prevalent in winter.", "example_zh": "流感在冬季很普遍。"},
     {"spelling": "skeptical", "phonetic": "/ˈskeptɪkl/", "pos": "adj.", "meaning": "怀疑的", "example_en": "He is skeptical about the new policy.", "example_zh": "他对新政策持怀疑态度。"},
     {"spelling": "substantial", "phonetic": "/səbˈstænʃl/", "pos": "adj.", "meaning": "大量的；实质的", "example_en": "They made substantial changes.", "example_zh": "他们做了实质性的改变。"},
-    {"spelling": "vigorous", "phonetic": "/ˈvɪɡərəs/", "pos": "adj.", "meaning": "精力充沛的；有力的", "example_en": "She is a vigorous supporter of the party.", "example_zh": "她是该党的积极支持者。"}
+    {"spelling": "vigorous", "phonetic": "/ˈvɪɡərəs/", "pos": "adj.", "meaning": "精力充沛的；有力的", "example_en": "She is a vigorous supporter of the party.", "example_zh": "她是该党的积极支持者。"},
+    {"spelling": "ambiguous", "phonetic": "/æmˈbɪɡjuəs/", "pos": "adj.", "meaning": "模棱两可的", "example_en": "His answer was deliberately ambiguous.", "example_zh": "他的回答故意模棱两可。"},
+    {"spelling": "assimilate", "phonetic": "/əˈsɪməleɪt/", "pos": "v.", "meaning": "吸收；同化", "example_en": "It takes time to assimilate new information.", "example_zh": "吸收新信息需要时间。"},
+    {"spelling": "conspicuous", "phonetic": "/kənˈspɪkjuəs/", "pos": "adj.", "meaning": "显眼的；引人注目的", "example_en": "Her red dress was conspicuous at the party.", "example_zh": "她的红裙子在派对上很显眼。"},
+    {"spelling": "conventional", "phonetic": "/kənˈvenʃənl/", "pos": "adj.", "meaning": "传统的；常规的", "example_en": "He prefers conventional teaching methods.", "example_zh": "他更喜欢传统的教学方法。"},
+    {"spelling": "credible", "phonetic": "/ˈkredəbl/", "pos": "adj.", "meaning": "可信的；可靠的", "example_en": "The witness gave a credible account.", "example_zh": "证人给出了可信的陈述。"},
+    {"spelling": "disposition", "phonetic": "/ˌdɪspəˈzɪʃn/", "pos": "n.", "meaning": "性情；倾向", "example_en": "She has a cheerful disposition.", "example_zh": "她性情开朗。"},
+    {"spelling": "elaborate", "phonetic": "/ɪˈlæbərət/", "pos": "adj.", "meaning": "精心制作的；详尽的", "example_en": "He devised an elaborate plan.", "example_zh": "他制定了一个精密的计划。"},
+    {"spelling": "expose", "phonetic": "/ɪkˈspəʊz/", "pos": "v.", "meaning": "暴露；揭露", "example_en": "The investigation exposed corruption.", "example_zh": "调查揭露了腐败。"},
+    {"spelling": "feasible", "phonetic": "/ˈfiːzəbl/", "pos": "adj.", "meaning": "可行的", "example_en": "We need to find a feasible solution.", "example_zh": "我们需要找到可行的解决方案。"},
+    {"spelling": "hypothesis", "phonetic": "/haɪˈpɒθəsɪs/", "pos": "n.", "meaning": "假设；假说", "example_en": "The experiment confirmed the hypothesis.", "example_zh": "实验证实了这个假设。"},
+    {"spelling": "imply", "phonetic": "/ɪmˈplaɪ/", "pos": "v.", "meaning": "暗示；意味", "example_en": "His words implied disapproval.", "example_zh": "他的话暗示了不赞成。"},
+    {"spelling": "incentive", "phonetic": "/ɪnˈsentɪv/", "pos": "n.", "meaning": "激励；动机", "example_en": "Tax cuts serve as an incentive for investment.", "example_zh": "减税是投资的激励。"},
+    {"spelling": "profound", "phonetic": "/prəˈfaʊnd/", "pos": "adj.", "meaning": "深刻的；深远的", "example_en": "The book had a profound impact on me.", "example_zh": "这本书对我影响深远。"},
+    {"spelling": "reinforce", "phonetic": "/ˌriːɪnˈfɔːs/", "pos": "v.", "meaning": "加强；加固", "example_en": "The data reinforces our conclusion.", "example_zh": "数据加强了我们的结论。"},
+    {"spelling": "verify", "phonetic": "/ˈverɪfaɪ/", "pos": "v.", "meaning": "证实；核实", "example_en": "Please verify your email address.", "example_zh": "请核实你的邮箱地址。"}
   ]
 }
