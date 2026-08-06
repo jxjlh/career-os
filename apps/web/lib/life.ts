@@ -55,6 +55,18 @@ export async function createLifeGoal(payload: LifeGoalInput): Promise<LifeGoal> 
   return res.data;
 }
 
+export async function deleteLifeGoal(goalId: string): Promise<void> {
+  await apiFetch(`/life/goals/${goalId}`, { method: "DELETE" });
+}
+
+export async function addGoalRecord(goalId: string, content: string): Promise<{ id: string; goalId: string }> {
+  const res = await apiFetch<{ data: { id: string; goalId: string } }>(`/life/goals/${goalId}/records`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+  return res.data;
+}
+
 export async function updateLifeGoal(
   goalId: string,
   payload: Partial<LifeGoalInput>,

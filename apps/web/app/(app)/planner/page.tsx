@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 
 import { Badge, Button, EmptyState, SectionHeader, Skeleton, Textarea } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
+import { getLifeGoals } from "@/lib/life";
 import { useI18n } from "@/lib/i18n";
 import { easeStandard, easeFast, useTaskCompleteFeedback } from "@/lib/motion";
 
@@ -55,12 +56,22 @@ export default function PlannerPage() {
     queryFn: () => apiFetch("/planner/current"),
   });
 
+  const { data: lifeGoals } = useQuery({
+    queryKey: ["life-goals"],
+    queryFn: () => getLifeGoals(),
+  });
+
   const generate = useMutation({
-    mutationFn: () =>
-      apiFetch("/planner/generate", {
+    mutationFn: () => {
+      const activeGoals = (lifeGoals || []).filter(
+        (g: any) => g.status === "pending" || g.status === "in_progress"
+      );
+      const goalIds = activeGoals.map((g: any) => g.id);
+      return apiFetch("/planner/generate", {
         method: "POST",
-        body: JSON.stringify({ weeklyStudyMinutes: 420 }),
-      }),
+        body: JSON.stringify({ weeklyStudyMinutes: 420, goalIds }),
+      });
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["planner-current"] }),
   });
 

@@ -38,21 +38,26 @@ class PlannerContextBuilder:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def build(self, user_id: str, weekly_minutes: int) -> tuple[str, dict[str, set[str]]]:
+    def build(self, user_id: str, weekly_minutes: int, goal_ids: list[str] | None = None) -> tuple[str, dict[str, set[str]]]:
         """返回 (prompt_filled, id_whitelist) .
 
         id_whitelist 形如 {"goal": {...ids}, "skill": {...}, "milestone": {...}},
         用于后续校验 AI 返回的 sourceId 是否合法.
+        
+        如果传入 goal_ids，则只使用指定的目标，否则使用所有活跃目标。
         """
         profile = self.db.query(Profile).filter(Profile.id == user_id).first()
         profile_text = self._profile_text(profile)
 
-        goals = self._active_goals(user_id, limit=5)
+        if goal_ids:
+            goals = self._goals_by_ids(user_id, goal_ids)
+        else:
+            goals = self._active_goals(user_id, limit=10)
         skills = self._skill_gaps(user_id, limit=5)
         milestones = self._active_milestones(user_id, limit=5)
         last_week = self._last_week_summary(user_id)
 
-        goals_text, goal_ids = self._goals_text(goals)
+        goals_text, goal_id_set = self._goals_text(goals)
         skills_text, skill_ids = self._skills_text(skills)
         milestones_text, milestone_ids = self._milestones_text(milestones)
 
@@ -67,7 +72,7 @@ class PlannerContextBuilder:
             today_weekday=today_weekday,
         )
         whitelist = {
-            "goal": goal_ids,
+            "goal": goal_id_set,
             "skill": skill_ids,
             "milestone": milestone_ids,
         }
@@ -95,6 +100,20 @@ class PlannerContextBuilder:
             .filter(LifeGoal.user_id == user_id, LifeGoal.status.in_(["pending", "in_progress"]))
             .order_by(LifeGoal.updated_at.desc(), LifeGoal.created_at.desc())
             .limit(limit)
+            .all()
+        )
+
+    def _goals_by_ids(self, user_id: str, goal_ids: list[str]) -> list[LifeGoal]:
+        """根据指定 ID 列表获取目标（包括已完成和未完成的）。"""
+        if not goal_ids:
+            return self._active_goals(user_id, limit=10)
+        return (
+            self.db.query(LifeGoal)
+            .filter(
+                LifeGoal.user_id == user_id,
+                LifeGoal.id.in_(goal_ids),
+            )
+            .order_by(LifeGoal.updated_at.desc())
             .all()
         )
 
@@ -193,6 +212,7 @@ class PlannerService:
         week_start: date,
         weekly_minutes: int,
         priority_skills: list[str] | None = None,
+        goal_ids: list[str] | None = None,
     ) -> WeeklyPlan:
         """生成 AI 周计划. AI 失败时回落到占位逻辑, ai_generated=False."""
         # 取/建本周计划
@@ -209,11 +229,12 @@ class PlannerService:
         # 清空旧任务 (重新生成)
         self.db.query(PlanTask).filter(PlanTask.plan_id == plan.id).delete()
 
-        prompt, whitelist = self.context.build(user_id, weekly_minutes)
+        prompt, whitelist = self.context.build(user_id, weekly_minutes, goal_ids=goal_ids)
         input_data = {
             "week_start": week_start.isoformat(),
             "weekly_minutes": weekly_minutes,
             "priority_skills": priority_skills or [],
+            "goal_ids": goal_ids or [],
         }
 
         try:

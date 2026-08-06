@@ -95,7 +95,10 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   };
 
   const handleSave = () => {
-    if (moodIndex === null) return;
+    if (moodIndex === null) {
+      // 显示提示
+      return;
+    }
     upsertMutation.mutate();
   };
 
@@ -217,7 +220,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
         className={`
           flex w-full items-center justify-center rounded-xl py-3 text-sm font-medium transition-all duration-200
           ${moodIndex !== null
-            ? "bg-primary text-white shadow-[0_4px_20px_rgba(139,92,246,0.3)] hover:bg-primary-hover"
+            ? "bg-primary text-white shadow-[0_4px_20px_rgba(139,92,246,0.3)] hover:bg-primary-hover cursor-pointer"
             : "cursor-not-allowed bg-surface/40 text-text-tertiary"
           }
         `}
@@ -225,18 +228,27 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
         {upsertMutation.isPending
           ? "保存中..."
           : isEditing
-            ? t("journal.updateButton")
-            : t("journal.saveButton")}
+            ? "更新小记"
+            : "保存小记"}
       </motion.button>
 
-      {/* 保存成功反馈 */}
+      {/* 保存状态反馈 */}
       {upsertMutation.isSuccess && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           className="mt-3 text-center text-[13px] text-success"
         >
-          ✓ {t("journal.savedHint")}
+          ✓ 保存成功！
+        </motion.div>
+      )}
+      {upsertMutation.isError && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-3 text-center text-[13px] text-danger"
+        >
+          ✗ 保存失败，请重试
         </motion.div>
       )}
     </div>

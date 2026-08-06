@@ -1,20 +1,22 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ChevronRight, CircleDashed, Clock, Plus, Sparkles } from "lucide-react";
+import { CheckCircle2, ChevronRight, CircleDashed, Clock, Plus, Sparkles, Trash2, Camera, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState, useMemo } from "react";
 
 import { LifeRecordImage } from "@/components/life/life-record-image";
 import { Badge, Button, Card, Input, Textarea } from "@/components/ui";
 import {
   CATEGORY_META,
   createLifeGoal,
+  deleteLifeGoal,
   getCategoryMeta,
   getGoalRecords,
   type LifeGoal,
   type LifeGoalInput,
 } from "@/lib/life";
+import { apiFetch } from "@/lib/api";
 
 interface LifeGoalBoardProps {
   goals: LifeGoal[];
@@ -118,7 +120,7 @@ function GoalColumn({
   );
 }
 
-function CompletedGoalDetail({ goal }: { goal: LifeGoal }) {
+function CompletedGoalDetail({ goal, onDeleteGoal }: { goal: LifeGoal; onDeleteGoal: () => void }) {
   const records = useQuery({
     queryKey: ["life-goal-records", goal.id],
     queryFn: () => getGoalRecords(goal.id),
@@ -126,13 +128,51 @@ function CompletedGoalDetail({ goal }: { goal: LifeGoal }) {
   });
   const items = records.data || [];
   const first = items[0];
+  const queryClient = useQueryClient();
+  const [showAddRecord, setShowAddRecord] = useState(false);
+  const [reflection, setReflection] = useState("");
+  
+  const deleteGoalMutation = useMutation({
+    mutationFn: () => deleteLifeGoal(goal.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["life-goals"] });
+      onDeleteGoal();
+    },
+  });
+
+  const addRecordMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/life/goals/${goal.id}/records`, {
+        method: "POST",
+        body: JSON.stringify({ content: reflection }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["life-goal-records", goal.id] });
+      setReflection("");
+      setShowAddRecord(false);
+    },
+  });
+
   return (
     <Card className="mt-3 overflow-hidden border-primary/25 p-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold">完成详情</p>
-        <Link href={`/life/goals/${goal.id}`} className="text-xs font-medium text-primary">
-          查看完整目标 →
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/dashboard" className="text-xs font-medium text-primary">
+            查看完整目标 →
+          </Link>
+          <button
+            onClick={() => {
+              if (confirm("确定要删除这个目标吗？")) {
+                deleteGoalMutation.mutate();
+              }
+            }}
+            className="p-1 rounded hover:bg-red-500/10 text-muted hover:text-red-400"
+            title="删除目标"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr]">
         {first?.watermarkUrl || first?.photoUrl ? (
@@ -177,6 +217,64 @@ function CompletedGoalDetail({ goal }: { goal: LifeGoal }) {
           ))}
         </div>
       )}
+      
+      {/* 添加感受/照片/视频 */}
+      <div className="mt-4 border-t border-border-subtle pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-medium text-text-secondary">添加完成感受</p>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setShowAddRecord(!showAddRecord)}
+          >
+            {showAddRecord ? "取消" : "+ 添加"}
+          </Button>
+        </div>
+        
+        {showAddRecord && (
+          <div className="space-y-3">
+            <Textarea
+              rows={3}
+              value={reflection}
+              onChange={(e) => setReflection(e.target.value)}
+              placeholder="分享一下你的完成感受、心得体会..."
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // 这里可以实现拍照/上传功能
+                  alert("拍照功能需要在目标详情页使用");
+                }}
+              >
+                <Camera className="h-4 w-4 mr-1" />
+                拍照
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // 这里可以实现上传图片功能
+                  alert("上传图片功能需要在目标详情页使用");
+                }}
+              >
+                <ImageIcon className="h-4 w-4 mr-1" />
+                上传图片
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => addRecordMutation.mutate()}
+                disabled={!reflection.trim() || addRecordMutation.isPending}
+                className="ml-auto"
+              >
+                {addRecordMutation.isPending ? "保存中..." : "保存感受"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </Card>
   );
 }
@@ -265,7 +363,7 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
         />
       </div>
 
-      {selectedGoal && <CompletedGoalDetail goal={selectedGoal} />}
+      {selectedGoal && <CompletedGoalDetail goal={selectedGoal} onDeleteGoal={() => setSelectedCompleted(null)} />}
 
       <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
         <div>

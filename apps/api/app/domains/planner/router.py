@@ -28,6 +28,7 @@ class GeneratePlanRequest(BaseModel):
     weekStart: date | None = None
     weeklyStudyMinutes: int = 420
     prioritySkills: list[str] = []
+    goalIds: list[str] = []  # 用户选择的目标 ID 列表
 
 
 class ManualTaskCreate(BaseModel):
@@ -183,6 +184,7 @@ async def generate_plan(
         week_start=start,
         weekly_minutes=payload.weeklyStudyMinutes,
         priority_skills=payload.prioritySkills,
+        goal_ids=payload.goalIds,
     )
     return {"data": _plan_dict(db, plan)}
 

@@ -9,7 +9,6 @@ import {
   Images,
   Library,
   MapPin,
-  MessageSquare,
   NotebookPen,
   Search,
   Settings,
@@ -35,7 +34,7 @@ type NavItem = {
 
 type GroupKey = "now" | "grow" | "career";
 
-/** 路由 → NOW/GROW 分组映射（CAREER 分组已移除，保留路由但不展示在侧边栏） */
+/** 路由 → NOW/GROW 分组映射 */
 const NAV: NavItem[] = [
   // NOW —— 当下
   { key: "dashboard", href: "/dashboard", icon: Home, group: "now" },
@@ -43,8 +42,7 @@ const NAV: NavItem[] = [
   { key: "lifeMap", href: "/life/map", icon: MapPin, group: "now" },
   { key: "lifeRecords", href: "/life/records", icon: Images, group: "now" },
   { key: "journal", href: "/journal", icon: NotebookPen, group: "now" },
-  { key: "chat", href: "/chat", icon: MessageSquare, group: "now" },
-  { key: "friends", href: "/life/friends", icon: Users, group: "now" },
+  { key: "contacts", href: "/contacts", icon: Users, group: "now" },
   // GROW —— 成长
   { key: "skills", href: "/skills", icon: Target, group: "grow" },
   { key: "planner", href: "/planner", icon: CalendarDays, group: "grow" },

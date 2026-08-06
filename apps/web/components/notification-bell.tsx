@@ -76,27 +76,34 @@ export function NotificationBell() {
     <div ref={ref} className="relative">
       <button
         className={cn(
-          "relative flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text"
+          "relative flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text",
+          open && "bg-surface-muted text-text"
         )}
         aria-label="Notifications"
-        onClick={() => setOpen(!open)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(!open);
+        }}
       >
         <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
-          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-medium text-white">
+          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-medium text-white animate-pulse">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-96 rounded-xl border border-border-subtle bg-surface shadow-xl z-50 overflow-hidden">
+        <div className="absolute right-0 top-full mt-2 w-96 rounded-xl border border-border-subtle bg-surface shadow-xl z-[100] overflow-hidden">
           <div className="flex items-center justify-between p-3 border-b border-border-subtle">
             <h3 className="font-semibold text-sm">通知</h3>
             <div className="flex items-center gap-2">
               {unreadCount > 0 && (
                 <button
-                  onClick={markAllRead}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    markAllRead();
+                  }}
                   className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
                 >
                   <CheckCheck className="h-3 w-3" />
@@ -120,9 +127,12 @@ export function NotificationBell() {
                   <div
                     key={n.id}
                     className={cn(
-                      "p-3 hover:bg-surface-muted/50 transition-colors",
+                      "p-3 hover:bg-surface-muted/50 transition-colors cursor-pointer",
                       !n.readAt && "bg-primary/5"
                     )}
+                    onClick={() => {
+                      if (!n.readAt) markAsRead(n.id);
+                    }}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
@@ -139,7 +149,7 @@ export function NotificationBell() {
                           {new Date(n.createdAt).toLocaleString("zh-CN")}
                         </p>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         {!n.readAt && (
                           <button
                             onClick={() => markAsRead(n.id)}

@@ -6,7 +6,7 @@ import {
   Star,
   Volume2,
   PenLine,
-  Card as CardIcon,
+  BookOpen as CardIcon,
   Check,
   X,
   Lightbulb,
