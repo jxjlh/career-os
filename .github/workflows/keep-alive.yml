@@ -51,3 +51,26 @@ jobs:
           echo "❌ All attempts failed"
           # 即使失败也不重试整个 workflow，避免消耗 GitHub 额度
           echo "Will retry at next scheduled time"
+
+      - name: Ping frontend
+        timeout-minutes: 5
+        run: |
+          echo "Pinging CareerOS frontend..."
+
+          for i in 1 2 3; do
+            echo "Attempt $i at $(date -u)..."
+
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 60 \
+              https://ai-life-os-web.onrender.com/)
+
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Frontend OK! HTTP $STATUS"
+              exit 0
+            fi
+
+            echo "Attempt $i returned HTTP $STATUS, retrying in 5s..."
+            sleep 5
+          done
+
+          echo "❌ Frontend all attempts failed"
