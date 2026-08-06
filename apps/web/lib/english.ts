@@ -79,7 +79,7 @@ export const englishApi = {
   startBook: (id: string) =>
     apiFetch<{ data: WordBook }>(`/english/books/${id}/start`, { method: "POST" }),
   getStudyQueue: (bookId: string, limit = 20) =>
-    apiFetch<{ data: Word[] }>(`/english/study/queue?bookId=${bookId}&limit=${limit}`),
+    apiFetch<{ data: Word[] }>(`/english/study/queue?book_id=${bookId}&limit=${limit}`),
   reviewWord: (wordId: string, rating: "again" | "hard" | "good" | "easy") =>
     apiFetch<{ data: Word }>(`/english/words/${wordId}/review`, {
       method: "POST",
@@ -93,7 +93,7 @@ export const englishApi = {
   pronunciationUrl: (wordId: string) => `${API_BASE}/english/words/${wordId}/pronunciation`,
   listListening: (bookId?: string, difficulty?: string) => {
     const params = new URLSearchParams();
-    if (bookId) params.set("bookId", bookId);
+    if (bookId) params.set("book_id", bookId);
     if (difficulty) params.set("difficulty", difficulty);
     const q = params.toString();
     return apiFetch<{ data: ListeningMaterial[] }>(`/english/listening${q ? `?${q}` : ""}`);
