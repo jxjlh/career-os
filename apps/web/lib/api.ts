@@ -93,16 +93,18 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     if (res.status === 401) {
       clearTokenCache();
     }
-    let payload: { error?: { code?: string; message?: string } } | null = null;
+    let payload: any = null;
     try {
       payload = await res.json();
     } catch {
       // ignore
     }
-    const serverMsg = payload?.error?.message;
+    // 兼容两种错误格式: {"error": {"message": "..."}} 和 {"detail": {"message": "..."}}
+    const serverMsg = payload?.error?.message || payload?.detail?.message;
+    const serverCode = payload?.error?.code || payload?.detail?.code;
     const localizedMsg = STATUS_MESSAGES[res.status];
     const message = serverMsg || localizedMsg || `请求失败 (${res.status})`;
-    throw new ApiError(message, payload?.error?.code, res.status);
+    throw new ApiError(message, serverCode, res.status);
   }
   return res.json() as Promise<T>;
 }

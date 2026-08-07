@@ -229,6 +229,9 @@ def create_journal(
         else:
             target_date = date.today()
 
+        logger.info("Creating journal: user=%s, date=%s, slot=%s, mood=%s",
+                     current_user.id, target_date, payload.time_slot, payload.mood_index)
+
         # 1. 精确查找 (user_id, journal_date, time_slot)
         existing = (
             db.query(DailyJournal)
@@ -242,6 +245,7 @@ def create_journal(
 
         # 2. 找到 → 更新
         if existing:
+            logger.info("Updating existing journal: id=%s", existing.id)
             existing.mood_index = payload.mood_index
             existing.content = payload.content
             existing.tags = payload.tags or []
@@ -253,6 +257,7 @@ def create_journal(
             return {"data": _to_dict(existing)}
 
         # 3. 没找到 → 尝试新建
+        logger.info("Creating new journal entry")
         j = DailyJournal(
             user_id=current_user.id,
             journal_date=target_date,
@@ -266,49 +271,101 @@ def create_journal(
         db.add(j)
         db.commit()
         db.refresh(j)
+        logger.info("Created journal: id=%s", j.id)
         return {"data": _to_dict(j)}
 
     except HTTPException:
         raise
     except IntegrityError as e:
         db.rollback()
-        logger.warning("Journal INSERT conflict: %s. Falling back to update latest.", e)
+        error_msg = str(e)
+        logger.warning("Journal INSERT integrity error: %s", error_msg)
 
-        # 4. 约束冲突 → 查找同日最新记录并覆盖
+        # 4. 约束冲突 → 查找同日同时间段记录进行更新
         try:
-            fallback = (
+            existing_same_slot = (
                 db.query(DailyJournal)
                 .filter(
                     DailyJournal.user_id == current_user.id,
                     DailyJournal.journal_date == target_date,
+                    DailyJournal.time_slot == payload.time_slot,
                 )
-                .order_by(DailyJournal.created_at.desc())
                 .first()
             )
-            if fallback:
-                fallback.mood_index = payload.mood_index
-                fallback.content = payload.content
-                fallback.tags = payload.tags or []
-                fallback.goal_id = payload.goal_id
-                fallback.skill_id = payload.skill_id
-                fallback.time_slot = payload.time_slot
-                fallback.updated_at = datetime.utcnow()
+            if existing_same_slot:
+                logger.info("Found same slot record, updating: id=%s", existing_same_slot.id)
+                existing_same_slot.mood_index = payload.mood_index
+                existing_same_slot.content = payload.content
+                existing_same_slot.tags = payload.tags or []
+                existing_same_slot.goal_id = payload.goal_id
+                existing_same_slot.skill_id = payload.skill_id
+                existing_same_slot.updated_at = datetime.utcnow()
                 db.commit()
-                db.refresh(fallback)
-                return {"data": _to_dict(fallback)}
+                db.refresh(existing_same_slot)
+                return {"data": _to_dict(existing_same_slot)}
+
+            # 如果没找到同时间段，说明旧约束可能还存在，迁移后重试
+            # 触发约束迁移
+            try:
+                from app.core.database import migrate_journal_constraints
+                migrate_journal_constraints()
+                logger.info("Constraint migration completed, retrying insert")
+                
+                # 迁移后重试
+                j = DailyJournal(
+                    user_id=current_user.id,
+                    journal_date=target_date,
+                    time_slot=payload.time_slot,
+                    mood_index=payload.mood_index,
+                    content=payload.content,
+                    tags=payload.tags or [],
+                    goal_id=payload.goal_id,
+                    skill_id=payload.skill_id,
+                )
+                db.add(j)
+                db.commit()
+                db.refresh(j)
+                logger.info("Created journal after migration: id=%s", j.id)
+                return {"data": _to_dict(j)}
+            except Exception as retry_err:
+                db.rollback()
+                logger.error("Retry after migration failed: %s", retry_err, exc_info=True)
+
         except Exception as fallback_err:
             db.rollback()
-            logger.error("Journal fallback update failed: %s", fallback_err, exc_info=True)
+            logger.error("Journal fallback error: %s", fallback_err, exc_info=True)
 
-        raise HTTPException(status_code=409, detail={"code": "DUPLICATE", "message": "已存在记录，请刷新后重试"})
+        # 返回更具体的错误信息
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "DUPLICATE",
+                "message": "该时间段已存在记录，请刷新页面后重试",
+                "detail": error_msg[:200] if error_msg else None
+            }
+        )
     except SQLAlchemyError as e:
         db.rollback()
-        logger.error("Journal DB error: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail={"code": "DB_ERROR", "message": "数据库错误，请稍后重试"})
+        logger.error("Journal DB error: %s", str(e)[:500], exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "DB_ERROR",
+                "message": "数据库操作失败，请稍后重试",
+                "detail": str(e)[:200] if str(e) else None
+            }
+        )
     except Exception as e:
         db.rollback()
-        logger.error("Journal create unexpected error: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail={"code": "CREATE_FAILED", "message": "保存失败，请重试"})
+        logger.error("Journal create unexpected error: %s", str(e)[:500], exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "CREATE_FAILED",
+                "message": f"保存失败：{str(e)[:100]}",
+                "detail": str(e)[:200] if str(e) else None
+            }
+        )
 
 
 @router.put("/journal/{journal_id}")

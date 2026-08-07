@@ -149,7 +149,10 @@ def migrate_journal_constraints() -> None:
 
     tables = set(inspect(engine).get_table_names())
     if "daily_journals" not in tables:
+        logger.warning("daily_journals table not found, skipping migration")
         return
+    
+    logger.info("Starting journal constraint migration...")
     try:
         with engine.begin() as conn:
             # 检查新约束是否已存在
@@ -158,17 +161,25 @@ def migrate_journal_constraints() -> None:
                 "WHERE conrelid = 'daily_journals'::regclass AND conname = 'uq_daily_journal_user_date_slot'"
             ))
             if result.fetchone():
-                logger.info("New journal constraint already exists, skipping migration")
+                logger.info("New journal constraint uq_daily_journal_user_date_slot already exists")
                 return
 
-            # 暴力删除所有 unique 约束, 然后重建正确的
-            constraints = conn.execute(text(
+            # 检查当前存在的唯一约束
+            existing_constraints = conn.execute(text(
                 """
-                SELECT conname FROM pg_constraint
+                SELECT conname, pg_get_constraintdef(oid) as definition
+                FROM pg_constraint
                 WHERE conrelid = 'daily_journals'::regclass AND contype = 'u'
                 """
             ))
-            for row in constraints.fetchall():
+            constraints_list = existing_constraints.fetchall()
+            logger.info("Found %d unique constraints on daily_journals", len(constraints_list))
+            
+            for row in constraints_list:
+                logger.info("  - %s: %s", row[0], row[1])
+
+            # 删除所有旧的唯一约束
+            for row in constraints_list:
                 conn.execute(text(f"ALTER TABLE daily_journals DROP CONSTRAINT IF EXISTS {row[0]}"))
                 logger.info("Dropped constraint: %s", row[0])
 
@@ -177,6 +188,26 @@ def migrate_journal_constraints() -> None:
                 "ALTER TABLE daily_journals ADD CONSTRAINT uq_daily_journal_user_date_slot "
                 "UNIQUE (user_id, journal_date, time_slot)"
             ))
-            logger.info("Added new constraint uq_daily_journal_user_date_slot (user_id, journal_date, time_slot)")
+            logger.info("Successfully added constraint uq_daily_journal_user_date_slot (user_id, journal_date, time_slot)")
+            
     except Exception as e:
-        logger.warning("Journal constraint migration failed (non-critical): %s", e)
+        logger.error("Journal constraint migration failed: %s\n%s", e, str(e)[:500], exc_info=True)
+        # 尝试回滚或重新尝试
+        try:
+            with engine.begin() as conn:
+                # 确保至少有基本的唯一约束
+                result = conn.execute(text(
+                    "SELECT conname FROM pg_constraint "
+                    "WHERE conrelid = 'daily_journals'::regclass AND conname = 'uq_daily_journal_user_date_slot'"
+                ))
+                if not result.fetchone():
+                    logger.warning("New constraint missing, adding it again...")
+                    conn.execute(text(
+                        "ALTER TABLE daily_journals ADD CONSTRAINT uq_daily_journal_user_date_slot "
+                        "UNIQUE (user_id, journal_date, time_slot)"
+                    ))
+                    logger.info("Constraint re-added successfully")
+                else:
+                    logger.info("New constraint exists despite error, migration partially succeeded")
+        except Exception as retry_err:
+            logger.error("Constraint re-add also failed: %s", retry_err)
