@@ -140,34 +140,43 @@ def get_db():
 
 def migrate_journal_constraints() -> None:
     """迁移 daily_journals 唯一约束: (user_id, journal_date) → (user_id, journal_date, time_slot).
-    幂等: 新约束已存在则跳过. 旧约束可能名字不同, 通过查询 pg_constraint 动态处理."""
+    仅在 PostgreSQL 上执行 (pg_constraint 等语法不兼容 SQLite).
+    SQLite 下由 __table_args__ 中的 UniqueConstraint 自动处理."""
+    driver = engine.url.drivername or ""
+    if driver.startswith("sqlite"):
+        logger.info("SQLite detected, skipping journal constraint migration (handled by model)")
+        return
+
     tables = set(inspect(engine).get_table_names())
     if "daily_journals" not in tables:
         return
-    with engine.begin() as conn:
-        # 检查新约束是否已存在
-        result = conn.execute(text(
-            "SELECT conname FROM pg_constraint "
-            "WHERE conrelid = 'daily_journals'::regclass AND conname = 'uq_daily_journal_user_date_slot'"
-        ))
-        if result.fetchone():
-            logger.info("New journal constraint already exists, skipping migration")
-            return
+    try:
+        with engine.begin() as conn:
+            # 检查新约束是否已存在
+            result = conn.execute(text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'daily_journals'::regclass AND conname = 'uq_daily_journal_user_date_slot'"
+            ))
+            if result.fetchone():
+                logger.info("New journal constraint already exists, skipping migration")
+                return
 
-        # 暴力删除所有 unique 约束, 然后重建正确的
-        constraints = conn.execute(text(
-            """
-            SELECT conname FROM pg_constraint
-            WHERE conrelid = 'daily_journals'::regclass AND contype = 'u'
-            """
-        ))
-        for row in constraints.fetchall():
-            conn.execute(text(f"ALTER TABLE daily_journals DROP CONSTRAINT IF EXISTS {row[0]}"))
-            logger.info("Dropped constraint: %s", row[0])
+            # 暴力删除所有 unique 约束, 然后重建正确的
+            constraints = conn.execute(text(
+                """
+                SELECT conname FROM pg_constraint
+                WHERE conrelid = 'daily_journals'::regclass AND contype = 'u'
+                """
+            ))
+            for row in constraints.fetchall():
+                conn.execute(text(f"ALTER TABLE daily_journals DROP CONSTRAINT IF EXISTS {row[0]}"))
+                logger.info("Dropped constraint: %s", row[0])
 
-        # 添加新约束 (含 time_slot)
-        conn.execute(text(
-            "ALTER TABLE daily_journals ADD CONSTRAINT uq_daily_journal_user_date_slot "
-            "UNIQUE (user_id, journal_date, time_slot)"
-        ))
-        logger.info("Added new constraint uq_daily_journal_user_date_slot (user_id, journal_date, time_slot)")
+            # 添加新约束 (含 time_slot)
+            conn.execute(text(
+                "ALTER TABLE daily_journals ADD CONSTRAINT uq_daily_journal_user_date_slot "
+                "UNIQUE (user_id, journal_date, time_slot)"
+            ))
+            logger.info("Added new constraint uq_daily_journal_user_date_slot (user_id, journal_date, time_slot)")
+    except Exception as e:
+        logger.warning("Journal constraint migration failed (non-critical): %s", e)
