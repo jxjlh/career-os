@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
-from app.core.database import SessionLocal, engine, ensure_columns
+from app.core.database import SessionLocal, engine, ensure_columns, migrate_journal_constraints
 from app.core.errors import AppError, app_error_handler, unhandled_error_handler
 from app.core.logging import setup_logging
 from app.core.middleware import RateLimitMiddleware, RequestContextMiddleware
@@ -53,6 +53,7 @@ async def lifespan(app: FastAPI):
     setup_logging()
     if settings.app_env in ("dev", "test"):
         ensure_columns()
+        migrate_journal_constraints()
         Base.metadata.create_all(bind=engine)
         # 幂等写入 Bucket List 种子目录, 保证页面有可消费内容
         with SessionLocal() as db:
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI):
         try:
             Base.metadata.create_all(bind=engine)
             ensure_columns()
+            migrate_journal_constraints()
             # 幂等写入英语种子词库
             with SessionLocal() as db:
                 seed_word_books(db)

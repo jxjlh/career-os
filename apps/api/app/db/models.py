@@ -1338,14 +1338,16 @@ class EnglishStudySession(Base):
 
 # ── Sprint 11 Daily Journal ────────────────────────────────────────
 class DailyJournal(Base):
-    """每日小记: 记录当天心情 + 内容, 可关联目标/技能. 一人一天一条."""
+    """每日小记: 记录当天心情 + 内容, 可关联目标/技能. 支持一天多个时间段."""
 
     __tablename__ = "daily_journals"
-    __table_args__ = (UniqueConstraint("user_id", "journal_date", name="uq_daily_journal_user_date"),)
+    __table_args__ = (UniqueConstraint("user_id", "journal_date", "time_slot", name="uq_daily_journal_user_date_slot"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
     journal_date: Mapped[date] = mapped_column(Date, index=True)
+    # 时间段: morning / afternoon / evening / night
+    time_slot: Mapped[str] = mapped_column(String(20), default="morning", index=True)
     # 心情: emoji 序号 0-4, 对应 😵😐🙂😎✨
     mood_index: Mapped[int] = mapped_column(SmallInteger)
     content: Mapped[str | None] = mapped_column(Text)

@@ -1,9 +1,8 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -11,6 +10,9 @@ from app.core.security import get_current_user
 from app.db.models import DailyJournal, Profile
 
 router = APIRouter(tags=["journal"])
+
+# 时间段定义
+TIME_SLOTS = ["morning", "afternoon", "evening", "night"]
 
 
 # ── Schemas ────────────────────────────────────────────────────────
@@ -21,6 +23,8 @@ class JournalCreate(BaseModel):
     tags: list[str] = Field(default_factory=list)
     goal_id: str | None = None
     skill_id: str | None = None
+    time_slot: str = Field(default="morning", pattern="^(morning|afternoon|evening|night)$")
+    journal_date: str | None = None  # YYYY-MM-DD, 默认今天
 
 
 class JournalUpdate(BaseModel):
@@ -37,6 +41,7 @@ def _to_dict(j: DailyJournal) -> dict:
     return {
         "id": j.id,
         "journalDate": j.journal_date.isoformat(),
+        "timeSlot": j.time_slot,
         "moodIndex": j.mood_index,
         "content": j.content,
         "tags": j.tags,
@@ -70,7 +75,7 @@ def list_month_journals(
             DailyJournal.journal_date >= start_date,
             DailyJournal.journal_date < end_date,
         )
-        .order_by(DailyJournal.journal_date)
+        .order_by(DailyJournal.journal_date, DailyJournal.time_slot)
         .all()
     )
 
@@ -89,18 +94,20 @@ def get_journal_by_date(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    """获取指定日期的日记. 不存在返回空 data."""
-    j = (
+    """获取指定日期的所有时间段日记. 返回列表."""
+    rows = (
         db.query(DailyJournal)
         .filter(
             DailyJournal.user_id == current_user.id,
             DailyJournal.journal_date == journal_date,
         )
-        .first()
+        .order_by(
+            # 按时间段排序: morning → afternoon → evening → night
+            DailyJournal.time_slot,
+        )
+        .all()
     )
-    if j is None:
-        return {"data": None}
-    return {"data": _to_dict(j)}
+    return {"data": [_to_dict(j) for j in rows]}
 
 
 @router.post("/journal")
@@ -109,18 +116,26 @@ def create_journal(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    """创建今日日记. 若当天已存在, 则更新 instead of 新建 (upsert)."""
-    today = date.today()
+    """创建/更新某个时间段的日记. 按 (date, time_slot) upsert."""
+    # 解析日期, 默认今天
+    if payload.journal_date:
+        try:
+            target_date = date.fromisoformat(payload.journal_date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail={"code": "INVALID_DATE", "message": "日期格式应为 YYYY-MM-DD"})
+    else:
+        target_date = date.today()
+
     existing = (
         db.query(DailyJournal)
         .filter(
             DailyJournal.user_id == current_user.id,
-            DailyJournal.journal_date == today,
+            DailyJournal.journal_date == target_date,
+            DailyJournal.time_slot == payload.time_slot,
         )
         .first()
     )
     if existing:
-        # Upsert: 更新已有记录
         existing.mood_index = payload.mood_index
         existing.content = payload.content
         existing.tags = payload.tags
@@ -133,7 +148,8 @@ def create_journal(
 
     j = DailyJournal(
         user_id=current_user.id,
-        journal_date=today,
+        journal_date=target_date,
+        time_slot=payload.time_slot,
         mood_index=payload.mood_index,
         content=payload.content,
         tags=payload.tags,

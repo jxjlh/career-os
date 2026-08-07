@@ -14,7 +14,7 @@ import {
   StreakCard,
   WeeklyPlanProgress,
 } from "@/components/dashboard";
-import { journalApi } from "@/lib/journal";
+import { journalApi, TIME_SLOTS } from "@/lib/journal";
 
 type Envelope = { data: any };
 
@@ -100,19 +100,23 @@ const MOOD_EMOJIS = ["😵", "😐", "🙂", "😎", "✨"] as const;
 
 /**
  * Journal Entry —— Dashboard 上的小记入口卡片.
- * 显示今天是否已记录心情, 可点击跳转到 /journal
+ * 显示今天各个时间段的心情记录, 可视化为时间线.
  */
 function JournalEntry() {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
-  const { data } = useQuery<{ data: { moodIndex: number } | null }>({
+  const { data } = useQuery<{ data: { moodIndex: number; timeSlot: string; content?: string }[] }>({
     queryKey: ["journal", todayStr],
     queryFn: () => journalApi.getByDate(todayStr),
     staleTime: 0,
   });
 
-  const journal = data?.data;
+  const entries = data?.data ?? [];
+  const recordedCount = entries.length;
+  const avgMood = recordedCount > 0
+    ? Math.round(entries.reduce((sum, e) => sum + e.moodIndex, 0) / recordedCount)
+    : null;
 
   return (
     <section className="mt-10">
@@ -122,31 +126,62 @@ function JournalEntry() {
             TODAY&apos;S MOOD
           </h2>
           <p className="mt-1 text-[13px] text-text-tertiary">
-            {journal ? "今天还不错" : "How are you feeling?"}
+            {recordedCount > 0
+              ? `今天已记录 ${recordedCount} 个时间段`
+              : "How are you feeling?"}
           </p>
         </div>
         <Link
           href="/journal"
           className="text-[12px] text-text-tertiary transition-colors hover:text-text-secondary"
         >
-          {journal ? "查看/编辑 →" : "开始记录 →"}
+          {recordedCount > 0 ? "查看/编辑 →" : "开始记录 →"}
         </Link>
       </div>
-      <div className="mt-3 flex items-center gap-2">
-        {MOOD_EMOJIS.map((m, i) => (
-          <span
-            key={m}
-            className={`flex h-11 w-11 items-center justify-center rounded-[12px] text-xl
-              ${journal?.moodIndex === i
-                ? "bg-primary/12 ring-1 ring-primary/40"
-                : "bg-surface/40 opacity-50"
-              }
-            `}
-          >
-            {m}
-          </span>
-        ))}
+
+      {/* 时间段可视化 */}
+      <div className="mt-3 flex items-center gap-1.5">
+        {TIME_SLOTS.map((slot) => {
+          const entry = entries.find((e) => e.timeSlot === slot.key);
+          return (
+            <Link
+              key={slot.key}
+              href="/journal"
+              className="group relative flex flex-1 flex-col items-center gap-1 rounded-xl py-2.5 transition-all duration-200 hover:bg-surface/40"
+              title={entry ? `${slot.label}: ${entry.content || "已记录"}` : `${slot.label}: 未记录`}
+            >
+              {/* 时间段图标 */}
+              <span className={`text-base transition-opacity ${entry ? "opacity-100" : "opacity-30"}`}>
+                {slot.icon}
+              </span>
+              {/* 心情 emoji 或空圆点 */}
+              {entry ? (
+                <span className="text-sm">{MOOD_EMOJIS[entry.moodIndex]}</span>
+              ) : (
+                <span className="h-2 w-2 rounded-full border border-white/15" />
+              )}
+              {/* 时间段标签 */}
+              <span className="text-[9px] font-medium uppercase tracking-wider text-text-tertiary">
+                {slot.label}
+              </span>
+              {/* 已记录指示线 */}
+              <div
+                className={`absolute -bottom-px h-0.5 w-full rounded-full transition-colors ${
+                  entry ? "bg-primary/40" : "bg-transparent"
+                }`}
+              />
+            </Link>
+          );
+        })}
       </div>
+
+      {/* 平均心情 */}
+      {avgMood !== null && (
+        <div className="mt-2 flex items-center gap-2 text-[11px] text-text-tertiary">
+          <span>平均心情</span>
+          <span className="text-sm">{MOOD_EMOJIS[avgMood]}</span>
+        </div>
+      )}
     </section>
   );
 }

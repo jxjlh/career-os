@@ -1,8 +1,23 @@
 import { apiFetch } from "@/lib/api";
 
+// 时间段定义
+export const TIME_SLOTS = [
+  { key: "morning", label: "上午", icon: "🌅", range: "06:00 — 12:00" },
+  { key: "afternoon", label: "下午", icon: "☀️", range: "12:00 — 18:00" },
+  { key: "evening", label: "晚上", icon: "🌆", range: "18:00 — 22:00" },
+  { key: "night", label: "深夜", icon: "🌙", range: "22:00 — 06:00" },
+] as const;
+
+export type TimeSlotKey = (typeof TIME_SLOTS)[number]["key"];
+
+export function getSlotMeta(key: string) {
+  return TIME_SLOTS.find((s) => s.key === key) ?? TIME_SLOTS[0];
+}
+
 export interface Journal {
   id: string;
   journalDate: string;
+  timeSlot: string;
   moodIndex: number;
   content?: string;
   tags?: string[];
@@ -20,8 +35,12 @@ export interface JournalMonthResponse {
   };
 }
 
+export interface JournalListResponse {
+  data: Journal[];
+}
+
 export interface JournalResponse {
-  data: Journal | null;
+  data: Journal;
 }
 
 export interface JournalCreatePayload {
@@ -30,6 +49,8 @@ export interface JournalCreatePayload {
   tags?: string[];
   goal_id?: string | null;
   skill_id?: string | null;
+  time_slot?: string;
+  journal_date?: string;
 }
 
 export interface JournalUpdatePayload {
@@ -46,8 +67,9 @@ export const journalApi = {
   listMonth: (year: number, month: number) =>
     apiFetch<JournalMonthResponse>(`${API}/month?year=${year}&month=${month}`),
 
+  // 按日期获取所有时间段的小记 (返回列表)
   getByDate: (date: string) =>
-    apiFetch<JournalResponse>(`${API}/${date}`),
+    apiFetch<JournalListResponse>(`${API}/${date}`),
 
   create: (payload: JournalCreatePayload) =>
     apiFetch<JournalResponse>(API, {

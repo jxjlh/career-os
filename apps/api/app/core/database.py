@@ -88,6 +88,7 @@ def ensure_columns() -> None:
             "goal_id": "VARCHAR(36)",
             "skill_id": "VARCHAR(36)",
             "updated_at": "DATETIME",
+            "time_slot": "VARCHAR(20) DEFAULT 'morning'",
         },
         # ── Sprint 12: Chat & Groups ──
         "chat_conversations": {
@@ -135,3 +136,28 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def migrate_journal_constraints() -> None:
+    """迁移 daily_journals 唯一约束: (user_id, journal_date) → (user_id, journal_date, time_slot).
+    幂等: 约束已存在则跳过."""
+    tables = set(inspect(engine).get_table_names())
+    if "daily_journals" not in tables:
+        return
+    with engine.begin() as conn:
+        # 检查现有约束名
+        result = conn.execute(text(
+            "SELECT conname FROM pg_constraint "
+            "WHERE conrelid = 'daily_journals'::regclass AND conname = 'uq_daily_journal_user_date_slot'"
+        ))
+        if result.fetchone():
+            return  # 新约束已存在
+
+        # 删除旧约束
+        conn.execute(text("ALTER TABLE daily_journals DROP CONSTRAINT IF EXISTS uq_daily_journal_user_date"))
+        # 添加新约束
+        conn.execute(text(
+            "ALTER TABLE daily_journals ADD CONSTRAINT uq_daily_journal_user_date_slot "
+            "UNIQUE (user_id, journal_date, time_slot)"
+        ))
+        logger.info("Migrated daily_journals unique constraint to include time_slot")
