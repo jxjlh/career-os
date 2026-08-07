@@ -68,6 +68,7 @@ export default function ContactsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState(false); // 发送中状态
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -167,22 +168,60 @@ export default function ContactsPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 发送消息
+  // 发送消息 - 乐观更新（点击即显示，不等后端）
   const handleSendMessage = useCallback(async () => {
-    if (!activeConversation || !messageInput.trim()) return;
-    try {
-      await chatApi.sendMessage(activeConversation, {
-        content: messageInput.trim(),
-        message_type: "text",
+    if (!activeConversation || !messageInput.trim() || pendingMessage) return;
+
+    const content = messageInput.trim();
+    const tempId = `temp-${Date.now()}`;
+    const now = new Date().toISOString();
+    const msgQueryKey = ["chat", "messages", activeConversation];
+
+    // 1. 立即清空输入 + 关闭表情面板
+    setMessageInput("");
+    setPendingMessage(true);
+    setShowEmojiPicker(false);
+
+    // 2. 乐观插入消息到缓存 —— 用户瞬间看到自己的消息
+    queryClient.setQueryData<{ data: Message[]; hasMore: boolean }>(msgQueryKey, (old) => ({
+      data: [
+        ...(old?.data || []),
+        {
+          id: tempId,
+          conversationId: activeConversation,
+          senderId: currentUserId || "",
+          type: "text",
+          content,
+          createdAt: now,
+          deleted: false,
+        } as Message,
+      ],
+      hasMore: old?.hasMore ?? false,
+    }));
+
+    // 3. 后台发送（不 await，不阻塞 UI）
+    chatApi
+      .sendMessage(activeConversation, { content, message_type: "text" })
+      .then(() => {
+        // 成功后用服务器数据替换临时消息
+        queryClient.invalidateQueries({ queryKey: msgQueryKey });
+        queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
+      })
+      .catch((err) => {
+        console.error("发送失败:", err);
+        showToast("发送失败，请重试");
+        // 移除乐观消息
+        queryClient.setQueryData<{ data: Message[] }>(msgQueryKey, (old) => ({
+          ...old,
+          data: (old?.data || []).filter((m) => m.id !== tempId),
+        }));
+        // 恢复输入内容
+        setMessageInput(content);
+      })
+      .finally(() => {
+        setPendingMessage(false);
       });
-      setMessageInput("");
-      queryClient.invalidateQueries({ queryKey: ["chat", "messages", activeConversation] });
-      queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
-    } catch (err) {
-      console.error("发送失败:", err);
-      showToast("发送失败，请重试");
-    }
-  }, [activeConversation, messageInput, queryClient, showToast]);
+  }, [activeConversation, messageInput, pendingMessage, currentUserId, queryClient, showToast]);
 
   // 上传图片
   const handleUploadImage = useCallback(
@@ -539,6 +578,7 @@ export default function ContactsPage() {
                         key={msg.id}
                         message={msg}
                         isMine={msg.senderId === currentUserId}
+                        pending={msg.id.startsWith("temp-")}
                       />
                     ))
                   )}
@@ -813,7 +853,7 @@ export default function ContactsPage() {
 }
 
 // 消息气泡组件
-function MessageBubble({ message, isMine }: { message: Message; isMine: boolean }) {
+function MessageBubble({ message, isMine, pending }: { message: Message; isMine: boolean; pending?: boolean }) {
   const isSystem = message.type === "system";
   const isImage = message.type === "image";
 
@@ -829,8 +869,9 @@ function MessageBubble({ message, isMine }: { message: Message; isMine: boolean 
     <div className={cn("flex", isMine ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[70%] rounded-2xl px-4 py-2",
-          isMine ? "bg-primary text-white" : "bg-surface-elevated"
+          "max-w-[70%] rounded-2xl px-4 py-2 transition-opacity",
+          isMine ? "bg-primary text-white" : "bg-surface-elevated",
+          pending && "opacity-60"
         )}
       >
         {isImage && message.imageUrl ? (
@@ -853,11 +894,18 @@ function MessageBubble({ message, isMine }: { message: Message; isMine: boolean 
         ) : (
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         )}
-        <p className={cn("text-xs mt-1", isMine ? "text-white/70" : "text-muted")}>
-          {new Date(message.createdAt).toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+        <p className={cn("text-xs mt-1 flex items-center gap-1", isMine ? "text-white/70" : "text-muted")}>
+          {pending ? (
+            <>
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+              发送中
+            </>
+          ) : (
+            new Date(message.createdAt).toLocaleTimeString("zh-CN", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          )}
         </p>
       </div>
     </div>
