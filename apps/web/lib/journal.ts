@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api";
+import { apiFetch, API_BASE } from "@/lib/api";
 
 // 时间段定义
 export const TIME_SLOTS = [
@@ -87,4 +87,27 @@ export const journalApi = {
     apiFetch<{ ok: boolean }>(`${API}/${id}`, {
       method: "DELETE",
     }),
+
+  // 导出小记为 Markdown (触发下载)
+  exportAll: async (year?: number) => {
+    const token = typeof window !== "undefined"
+      ? localStorage.getItem("career_os_token")
+      : null;
+    const url = year
+      ? `${API_BASE}${API}/export?year=${year}`
+      : `${API_BASE}${API}/export`;
+    const res = await fetch(url, {
+      headers: { Authorization: token ? `Bearer ${token}` : "Bearer dev" },
+    });
+    if (!res.ok) throw new Error("导出失败");
+    const blob = await res.blob();
+    const downloadUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = year ? `journals-${year}.md` : "journals-all.md";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(downloadUrl);
+  },
 };

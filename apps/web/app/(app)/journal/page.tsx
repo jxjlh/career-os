@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { Download } from "lucide-react";
 
 import { Calendar } from "@/components/journal/calendar";
 import { JournalEditor } from "@/components/journal/editor";
@@ -22,6 +23,7 @@ export default function JournalPage() {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [selectedDate, setSelectedDate] = useState<string | null>(getTodayStr());
+  const [exporting, setExporting] = useState(false);
 
   // 获取当月所有日记
   const { data: monthData, isLoading } = useQuery({
@@ -49,6 +51,18 @@ export default function JournalPage() {
     setSelectedDate(date);
   };
 
+  const handleExport = async (exportYear?: number) => {
+    setExporting(true);
+    try {
+      await journalApi.exportAll(exportYear);
+    } catch (err) {
+      console.error("导出失败:", err);
+      alert("导出失败，请重试");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#09090B]">
       <div className="mx-auto max-w-5xl px-6 py-10">
@@ -57,14 +71,41 @@ export default function JournalPage() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: "easeOut" }}
-          className="mb-8"
+          className="mb-8 flex items-end justify-between"
         >
-          <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">
-            {t("journal.title")}
-          </h1>
-          <p className="mt-2 text-[14px] text-text-tertiary">
-            {t("journal.subtitle")}
-          </p>
+          <div>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary">
+              {t("journal.title")}
+            </h1>
+            <p className="mt-2 text-[14px] text-text-tertiary">
+              {t("journal.subtitle")}
+            </p>
+          </div>
+          {/* 导出按钮 */}
+          <div className="flex items-center gap-2">
+            <motion.button
+              onClick={() => handleExport(year)}
+              disabled={exporting}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-surface/40 px-3 py-2 text-[12px] font-medium text-text-secondary transition-colors hover:bg-surface-elevated/60 disabled:opacity-50"
+              title={`导出 ${year} 年小记`}
+            >
+              <Download className="h-3.5 w-3.5" />
+              {exporting ? "导出中..." : `${year}年`}
+            </motion.button>
+            <motion.button
+              onClick={() => handleExport()}
+              disabled={exporting}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-surface/40 px-3 py-2 text-[12px] font-medium text-text-secondary transition-colors hover:bg-surface-elevated/60 disabled:opacity-50"
+              title="导出全部小记"
+            >
+              <Download className="h-3.5 w-3.5" />
+              {exporting ? "导出中..." : "全部"}
+            </motion.button>
+          </div>
         </motion.div>
 
         {/* 网格布局: 左日历 + 右编辑器 */}

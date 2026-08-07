@@ -1,18 +1,36 @@
+import io
+import logging
 from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import DailyJournal, Profile
 
+logger = logging.getLogger("app.domains.journal")
 router = APIRouter(tags=["journal"])
 
 # 时间段定义
 TIME_SLOTS = ["morning", "afternoon", "evening", "night"]
+SLOT_LABELS = {
+    "morning": "上午",
+    "afternoon": "下午",
+    "evening": "晚上",
+    "night": "深夜",
+}
+SLOT_ICONS = {
+    "morning": "🌅",
+    "afternoon": "☀️",
+    "evening": "🌆",
+    "night": "🌙",
+}
+MOOD_EMOJIS = ["😵", "😐", "🙂", "😎", "✨"]
 
 
 # ── Schemas ────────────────────────────────────────────────────────
@@ -88,6 +106,66 @@ def list_month_journals(
     }
 
 
+@router.get("/journal/export")
+def export_journals(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    year: int | None = Query(None, description="年份, 默认全部"),
+) -> StreamingResponse:
+    """导出所有小记为 Markdown 文件, 方便回忆."""
+    query = db.query(DailyJournal).filter(DailyJournal.user_id == current_user.id)
+    if year:
+        query = query.filter(
+            text("EXTRACT(YEAR FROM journal_date) = :year")
+        ).params(year=year)
+
+    rows = query.order_by(DailyJournal.journal_date.desc(), DailyJournal.time_slot).all()
+
+    # 生成 Markdown
+    lines = [
+        f"# 我的每日小记",
+        f"",
+        f"> 导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"> 共 {len(rows)} 条记录",
+        f"",
+    ]
+
+    current_date = None
+    for j in rows:
+        date_str = j.journal_date.isoformat()
+        if date_str != current_date:
+            current_date = date_str
+            lines.append(f"---")
+            lines.append(f"")
+            lines.append(f"## 📅 {date_str}")
+            lines.append(f"")
+
+        slot_label = SLOT_LABELS.get(j.time_slot, j.time_slot)
+        slot_icon = SLOT_ICONS.get(j.time_slot, "")
+        mood = MOOD_EMOJIS[j.mood_index] if 0 <= j.mood_index < len(MOOD_EMOJIS) else "🙂"
+
+        lines.append(f"### {slot_icon} {slot_label} {mood}")
+        lines.append(f"")
+        if j.content:
+            lines.append(j.content)
+            lines.append(f"")
+        if j.tags:
+            lines.append(f"标签: {' · '.join(j.tags)}")
+            lines.append(f"")
+        if j.created_at:
+            lines.append(f"<sub>记录于 {j.created_at.strftime('%Y-%m-%d %H:%M')}</sub>")
+            lines.append(f"")
+
+    markdown = "\n".join(lines)
+
+    filename = f"journals-{year}.md" if year else "journals-all.md"
+    return StreamingResponse(
+        io.BytesIO(markdown.encode("utf-8")),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/journal/{journal_date}")
 def get_journal_by_date(
     journal_date: date,
@@ -101,10 +179,7 @@ def get_journal_by_date(
             DailyJournal.user_id == current_user.id,
             DailyJournal.journal_date == journal_date,
         )
-        .order_by(
-            # 按时间段排序: morning → afternoon → evening → night
-            DailyJournal.time_slot,
-        )
+        .order_by(DailyJournal.time_slot)
         .all()
     )
     return {"data": [_to_dict(j) for j in rows]}
@@ -116,8 +191,9 @@ def create_journal(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    """创建/更新某个时间段的日记. 按 (date, time_slot) upsert."""
-    # 解析日期, 默认今天
+    """创建/更新某个时间段的日记. 按 (date, time_slot) upsert.
+    容错: 如果旧约束 (user_id, journal_date) 仍存在导致 INSERT 失败,
+    则查找同日任意记录并更新."""
     if payload.journal_date:
         try:
             target_date = date.fromisoformat(payload.journal_date)
@@ -126,6 +202,7 @@ def create_journal(
     else:
         target_date = date.today()
 
+    # 1. 精确查找 (user_id, journal_date, time_slot)
     existing = (
         db.query(DailyJournal)
         .filter(
@@ -135,31 +212,70 @@ def create_journal(
         )
         .first()
     )
+
+    # 2. 如果没找到, 尝试查找同日任意记录 (兼容旧数据 time_slot 为 NULL 或默认值)
+    if not existing:
+        existing = (
+            db.query(DailyJournal)
+            .filter(
+                DailyJournal.user_id == current_user.id,
+                DailyJournal.journal_date == target_date,
+            )
+            .first()
+        )
+
     if existing:
         existing.mood_index = payload.mood_index
         existing.content = payload.content
         existing.tags = payload.tags
         existing.goal_id = payload.goal_id
         existing.skill_id = payload.skill_id
+        existing.time_slot = payload.time_slot
         existing.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(existing)
         return {"data": _to_dict(existing)}
 
-    j = DailyJournal(
-        user_id=current_user.id,
-        journal_date=target_date,
-        time_slot=payload.time_slot,
-        mood_index=payload.mood_index,
-        content=payload.content,
-        tags=payload.tags,
-        goal_id=payload.goal_id,
-        skill_id=payload.skill_id,
-    )
-    db.add(j)
-    db.commit()
-    db.refresh(j)
-    return {"data": _to_dict(j)}
+    # 3. 新建
+    try:
+        j = DailyJournal(
+            user_id=current_user.id,
+            journal_date=target_date,
+            time_slot=payload.time_slot,
+            mood_index=payload.mood_index,
+            content=payload.content,
+            tags=payload.tags,
+            goal_id=payload.goal_id,
+            skill_id=payload.skill_id,
+        )
+        db.add(j)
+        db.commit()
+        db.refresh(j)
+        return {"data": _to_dict(j)}
+    except Exception as e:
+        db.rollback()
+        logger.error("Journal create failed: %s", e, exc_info=True)
+        # 约束冲突兜底: 查找同日记录并更新
+        fallback = (
+            db.query(DailyJournal)
+            .filter(
+                DailyJournal.user_id == current_user.id,
+                DailyJournal.journal_date == target_date,
+            )
+            .first()
+        )
+        if fallback:
+            fallback.mood_index = payload.mood_index
+            fallback.content = payload.content
+            fallback.tags = payload.tags
+            fallback.goal_id = payload.goal_id
+            fallback.skill_id = payload.skill_id
+            fallback.time_slot = payload.time_slot
+            fallback.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(fallback)
+            return {"data": _to_dict(fallback)}
+        raise HTTPException(status_code=500, detail={"code": "CREATE_FAILED", "message": "保存失败，请重试"})
 
 
 @router.put("/journal/{journal_id}")

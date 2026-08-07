@@ -140,12 +140,12 @@ def get_db():
 
 def migrate_journal_constraints() -> None:
     """迁移 daily_journals 唯一约束: (user_id, journal_date) → (user_id, journal_date, time_slot).
-    幂等: 约束已存在则跳过."""
+    幂等: 新约束已存在则跳过. 旧约束可能名字不同, 通过查询 pg_constraint 动态处理."""
     tables = set(inspect(engine).get_table_names())
     if "daily_journals" not in tables:
         return
     with engine.begin() as conn:
-        # 检查现有约束名
+        # 检查新约束是否已存在
         result = conn.execute(text(
             "SELECT conname FROM pg_constraint "
             "WHERE conrelid = 'daily_journals'::regclass AND conname = 'uq_daily_journal_user_date_slot'"
@@ -153,11 +153,29 @@ def migrate_journal_constraints() -> None:
         if result.fetchone():
             return  # 新约束已存在
 
-        # 删除旧约束
-        conn.execute(text("ALTER TABLE daily_journals DROP CONSTRAINT IF EXISTS uq_daily_journal_user_date"))
+        # 查找所有 unique 约束, 找到只含 (user_id, journal_date) 的旧约束并删除
+        constraints = conn.execute(text(
+            """
+            SELECT c.conname, array_agg(a.attname ORDER BY u.ord) AS cols
+            FROM pg_constraint c
+            JOIN pg_class t ON c.conrelid = t.oid
+            JOIN pg_namespace n ON c.connamespace = n.oid
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
+            JOIN unnest(c.conkey) WITH ORDINALITY u(attnum, ord) ON u.attnum = a.attnum
+            WHERE t.relname = 'daily_journals' AND c.contype = 'u'
+            GROUP BY c.conname
+            """
+        ))
+        for row in constraints:
+            cols = list(row[1])
+            # 旧约束: 只含 user_id 和 journal_date, 不含 time_slot
+            if "time_slot" not in cols and "user_id" in cols and "journal_date" in cols:
+                conn.execute(text(f"ALTER TABLE daily_journals DROP CONSTRAINT IF EXISTS {row[0]}"))
+                logger.info("Dropped old constraint %s on daily_journals", row[0])
+
         # 添加新约束
         conn.execute(text(
             "ALTER TABLE daily_journals ADD CONSTRAINT uq_daily_journal_user_date_slot "
             "UNIQUE (user_id, journal_date, time_slot)"
         ))
-        logger.info("Migrated daily_journals unique constraint to include time_slot")
+        logger.info("Added new constraint uq_daily_journal_user_date_slot")
