@@ -297,56 +297,160 @@ def planner_progress(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    """返回本周进度概览 (供 Dashboard 使用)."""
+    """返回本周进度概览 (供 Dashboard 使用).
+    整合: 周计划任务完成率 + 人生目标进度 + 英语学习统计."""
     start = _week_start()
     plan = (
         db.query(WeeklyPlan)
         .filter(WeeklyPlan.user_id == current_user.id, WeeklyPlan.week_start == start)
         .first()
     )
+
+    # ── 1. 周计划任务统计 ────────────────────────────────────────────
     if plan is None:
-        return {
-            "data": {
-                "planId": None,
-                "title": None,
-                "weekStart": start.isoformat(),
-                "completionRate": 0.0,
-                "completedTasks": 0,
-                "totalTasks": 0,
-                "completedMinutes": 0,
-                "totalMinutes": 0,
-                "todayTasks": 0,
-                "todayDone": 0,
-                "weeklyFocus": None,
-            }
-        }
-    today_weekday = date.today().weekday() + 1
-    today_tasks = (
-        db.query(PlanTask)
-        .filter(PlanTask.plan_id == plan.id, PlanTask.day == today_weekday)
+        plan_tasks_done = 0
+        plan_tasks_total = 0
+        plan_completion = 0.0
+        plan_minutes_done = 0
+        plan_minutes_total = 0
+        today_tasks_count = 0
+        today_done_count = 0
+        plan_id = None
+        plan_title = None
+        weekly_focus = None
+    else:
+        plan_id = plan.id
+        plan_title = plan.title
+        weekly_focus = plan.weekly_focus
+        today_weekday = date.today().weekday() + 1
+        today_tasks = (
+            db.query(PlanTask)
+            .filter(PlanTask.plan_id == plan.id, PlanTask.day == today_weekday)
+            .all()
+        )
+        today_done_count = sum(1 for t in today_tasks if t.status == "done")
+        plan_tasks_total = db.query(PlanTask).filter(PlanTask.plan_id == plan.id).count()
+        plan_tasks_done = (
+            db.query(PlanTask)
+            .filter(PlanTask.plan_id == plan.id, PlanTask.status == "done")
+            .count()
+        )
+        plan_completion = plan.completion_rate
+        plan_minutes_done = plan.completed_minutes
+        plan_minutes_total = plan.total_minutes
+        today_tasks_count = len(today_tasks)
+
+    # ── 2. 人生目标进度 ──────────────────────────────────────────────
+    from app.db.models import LifeGoal, Goal as TaskGoal
+
+    active_goals = (
+        db.query(LifeGoal)
+        .filter(LifeGoal.user_id == current_user.id, LifeGoal.status != "completed")
+        .order_by(LifeGoal.created_at.desc())
+        .limit(5)
         .all()
     )
-    today_done = sum(1 for t in today_tasks if t.status == "done")
-    total_tasks = (
-        db.query(PlanTask).filter(PlanTask.plan_id == plan.id).count()
-    )
-    completed_tasks = (
-        db.query(PlanTask)
-        .filter(PlanTask.plan_id == plan.id, PlanTask.status == "done")
+    completed_goals_count = (
+        db.query(LifeGoal)
+        .filter(LifeGoal.user_id == current_user.id, LifeGoal.status == "completed")
         .count()
     )
+    total_goals_count = (
+        db.query(LifeGoal)
+        .filter(LifeGoal.user_id == current_user.id)
+        .count()
+    )
+
+    goal_progress_items = []
+    for g in active_goals:
+        # 查询该目标下的任务完成情况
+        tasks_done = (
+            db.query(TaskGoal)
+            .filter(TaskGoal.life_goal_id == g.id, TaskGoal.status == "done")
+            .count()
+        )
+        tasks_total = (
+            db.query(TaskGoal)
+            .filter(TaskGoal.life_goal_id == g.id)
+            .count()
+        )
+        goal_progress_items.append({
+            "id": g.id,
+            "title": g.title,
+            "category": g.category,
+            "status": g.status,
+            "tasksDone": tasks_done,
+            "tasksTotal": tasks_total,
+            "progress": (tasks_done / tasks_total * 100) if tasks_total > 0 else (100 if g.status == "completed" else 0),
+        })
+
+    # ── 3. 英语学习统计 ──────────────────────────────────────────────
+    from app.db.models import UserWord, WordReviewLog, StudySession
+
+    # 本周学习单词数 (新增 + 复习)
+    week_start_date = start
+    words_learned_this_week = (
+        db.query(WordReviewLog)
+        .filter(
+            WordReviewLog.user_id == current_user.id,
+            WordReviewLog.reviewed_at >= week_start_date,
+        )
+        .count()
+    )
+
+    # 本周学习时长 (分钟)
+    study_sessions_this_week = (
+        db.query(StudySession)
+        .filter(
+            StudySession.user_id == current_user.id,
+            StudySession.started_at >= week_start_date,
+        )
+        .all()
+    )
+    study_minutes_this_week = sum(s.duration_minutes or 0 for s in study_sessions_this_week)
+
+    # 掌握单词总数
+    total_mastered_words = (
+        db.query(UserWord)
+        .filter(UserWord.user_id == current_user.id, UserWord.status == "mastered")
+        .count()
+    )
+
+    # ── 4. 综合进度 ──────────────────────────────────────────────────
+    # 综合 = 周计划完成率 * 0.5 + 人生目标进度 * 0.3 + 学习活跃度 * 0.2
+    goal_avg_progress = (
+        sum(g["progress"] for g in goal_progress_items) / len(goal_progress_items)
+        if goal_progress_items
+        else 0
+    )
+    study_activity = min(100, (words_learned_this_week / 50) * 100)  # 50词/周为满分
+    overall_completion = (
+        plan_completion * 0.5 + goal_avg_progress / 100 * 0.3 + study_activity / 100 * 0.2
+    )
+
     return {
         "data": {
-            "planId": plan.id,
-            "title": plan.title,
-            "weekStart": plan.week_start.isoformat(),
-            "completionRate": plan.completion_rate,
-            "completedTasks": completed_tasks,
-            "totalTasks": total_tasks,
-            "completedMinutes": plan.completed_minutes,
-            "totalMinutes": plan.total_minutes,
-            "todayTasks": len(today_tasks),
-            "todayDone": today_done,
-            "weeklyFocus": plan.weekly_focus,
+            # 周计划
+            "planId": plan_id,
+            "title": plan_title,
+            "weekStart": start.isoformat(),
+            "completionRate": overall_completion,  # 综合完成率
+            "planCompletionRate": plan_completion,   # 仅周计划
+            "completedTasks": plan_tasks_done,
+            "totalTasks": plan_tasks_total,
+            "completedMinutes": plan_minutes_done,
+            "totalMinutes": plan_minutes_total,
+            "todayTasks": today_tasks_count,
+            "todayDone": today_done_count,
+            "weeklyFocus": weekly_focus,
+            # 人生目标
+            "goals": goal_progress_items,
+            "goalsCompleted": completed_goals_count,
+            "goalsTotal": total_goals_count,
+            "goalsActive": len(active_goals),
+            # 学习统计
+            "wordsLearnedThisWeek": words_learned_this_week,
+            "studyMinutesThisWeek": study_minutes_this_week,
+            "totalMasteredWords": total_mastered_words,
         }
     }
