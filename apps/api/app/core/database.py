@@ -178,6 +178,19 @@ def migrate_journal_constraints() -> None:
             for row in constraints_list:
                 logger.info("  - %s: %s", row[0], row[1])
 
+            # 先清理可能重复的数据（删除同一用户、同一日期、同一时间段的重复记录，保留最新的）
+            logger.info("Cleaning duplicate data before adding new constraint...")
+            conn.execute(text("""
+                DELETE FROM daily_journals 
+                WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id, journal_date, time_slot ORDER BY created_at DESC) as rn
+                        FROM daily_journals
+                    ) ranked WHERE rn > 1
+                )
+            """))
+            logger.info("Duplicate data cleaned")
+
             # 删除所有旧的唯一约束
             for row in constraints_list:
                 conn.execute(text(f"ALTER TABLE daily_journals DROP CONSTRAINT IF EXISTS {row[0]}"))
@@ -201,7 +214,17 @@ def migrate_journal_constraints() -> None:
                     "WHERE conrelid = 'daily_journals'::regclass AND conname = 'uq_daily_journal_user_date_slot'"
                 ))
                 if not result.fetchone():
-                    logger.warning("New constraint missing, adding it again...")
+                    logger.warning("New constraint missing, trying to add it with data cleanup...")
+                    # 再次清理重复数据
+                    conn.execute(text("""
+                        DELETE FROM daily_journals 
+                        WHERE id IN (
+                            SELECT id FROM (
+                                SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id, journal_date, time_slot ORDER BY created_at DESC) as rn
+                                FROM daily_journals
+                            ) ranked WHERE rn > 1
+                        )
+                    """))
                     conn.execute(text(
                         "ALTER TABLE daily_journals ADD CONSTRAINT uq_daily_journal_user_date_slot "
                         "UNIQUE (user_id, journal_date, time_slot)"
