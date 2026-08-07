@@ -119,7 +119,7 @@ function JournalEntry() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
-            TODAY'S MOOD
+            TODAY&apos;S MOOD
           </h2>
           <p className="mt-1 text-[13px] text-text-tertiary">
             {journal ? "今天还不错" : "How are you feeling?"}

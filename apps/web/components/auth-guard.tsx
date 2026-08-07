@@ -18,6 +18,7 @@ const APP_PREFIXES = [
   "/analytics",
   "/chat",
   "/coach",
+  "/contacts",
   "/career",
   "/dashboard",
   "/english",

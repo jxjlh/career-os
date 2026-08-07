@@ -221,7 +221,7 @@ export default function WordsPage() {
           </li>
           <li className="flex items-start gap-2">
             <span className="mt-0.5 text-danger">•</span>
-            <span>评分"陌生"的单词会立即加入复习队列，确保掌握</span>
+            <span>评分&quot;陌生&quot;的单词会立即加入复习队列，确保掌握</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="mt-0.5 text-warning">•</span>
