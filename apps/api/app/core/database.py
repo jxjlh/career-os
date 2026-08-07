@@ -151,31 +151,23 @@ def migrate_journal_constraints() -> None:
             "WHERE conrelid = 'daily_journals'::regclass AND conname = 'uq_daily_journal_user_date_slot'"
         ))
         if result.fetchone():
-            return  # 新约束已存在
+            logger.info("New journal constraint already exists, skipping migration")
+            return
 
-        # 查找所有 unique 约束, 找到只含 (user_id, journal_date) 的旧约束并删除
+        # 暴力删除所有 unique 约束, 然后重建正确的
         constraints = conn.execute(text(
             """
-            SELECT c.conname, array_agg(a.attname ORDER BY u.ord) AS cols
-            FROM pg_constraint c
-            JOIN pg_class t ON c.conrelid = t.oid
-            JOIN pg_namespace n ON c.connamespace = n.oid
-            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
-            JOIN unnest(c.conkey) WITH ORDINALITY u(attnum, ord) ON u.attnum = a.attnum
-            WHERE t.relname = 'daily_journals' AND c.contype = 'u'
-            GROUP BY c.conname
+            SELECT conname FROM pg_constraint
+            WHERE conrelid = 'daily_journals'::regclass AND contype = 'u'
             """
         ))
-        for row in constraints:
-            cols = list(row[1])
-            # 旧约束: 只含 user_id 和 journal_date, 不含 time_slot
-            if "time_slot" not in cols and "user_id" in cols and "journal_date" in cols:
-                conn.execute(text(f"ALTER TABLE daily_journals DROP CONSTRAINT IF EXISTS {row[0]}"))
-                logger.info("Dropped old constraint %s on daily_journals", row[0])
+        for row in constraints.fetchall():
+            conn.execute(text(f"ALTER TABLE daily_journals DROP CONSTRAINT IF EXISTS {row[0]}"))
+            logger.info("Dropped constraint: %s", row[0])
 
-        # 添加新约束
+        # 添加新约束 (含 time_slot)
         conn.execute(text(
             "ALTER TABLE daily_journals ADD CONSTRAINT uq_daily_journal_user_date_slot "
             "UNIQUE (user_id, journal_date, time_slot)"
         ))
-        logger.info("Added new constraint uq_daily_journal_user_date_slot")
+        logger.info("Added new constraint uq_daily_journal_user_date_slot (user_id, journal_date, time_slot)")

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -218,94 +219,63 @@ def create_journal(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    """创建/更新某个时间段的日记. 按 (date, time_slot) upsert.
-    逻辑: 先精确查找 (date+time_slot), 找到则更新; 否则尝试 INSERT 新记录;
-    若 INSERT 因旧约束 (user_id, journal_date) 冲突失败, 则自动迁移约束并重试."""
-    if payload.journal_date:
-        try:
-            target_date = date.fromisoformat(payload.journal_date)
-        except ValueError:
-            raise HTTPException(status_code=422, detail={"code": "INVALID_DATE", "message": "日期格式应为 YYYY-MM-DD"})
-    else:
-        target_date = date.today()
+    """创建/更新某个时间段的日记. 按 (date, time_slot) upsert."""
+    try:
+        if payload.journal_date:
+            try:
+                target_date = date.fromisoformat(payload.journal_date)
+            except ValueError:
+                raise HTTPException(status_code=422, detail={"code": "INVALID_DATE", "message": "日期格式应为 YYYY-MM-DD"})
+        else:
+            target_date = date.today()
 
-    # 1. 精确查找 (user_id, journal_date, time_slot)
-    existing = (
-        db.query(DailyJournal)
-        .filter(
-            DailyJournal.user_id == current_user.id,
-            DailyJournal.journal_date == target_date,
-            DailyJournal.time_slot == payload.time_slot,
+        # 1. 精确查找 (user_id, journal_date, time_slot)
+        existing = (
+            db.query(DailyJournal)
+            .filter(
+                DailyJournal.user_id == current_user.id,
+                DailyJournal.journal_date == target_date,
+                DailyJournal.time_slot == payload.time_slot,
+            )
+            .first()
         )
-        .first()
-    )
 
-    # 2. 找到 → 更新
-    if existing:
-        existing.mood_index = payload.mood_index
-        existing.content = payload.content
-        existing.tags = payload.tags
-        existing.goal_id = payload.goal_id
-        existing.skill_id = payload.skill_id
-        existing.updated_at = datetime.utcnow()
-        db.commit()
-        db.refresh(existing)
-        return {"data": _to_dict(existing)}
+        # 2. 找到 → 更新
+        if existing:
+            existing.mood_index = payload.mood_index
+            existing.content = payload.content
+            existing.tags = payload.tags or []
+            existing.goal_id = payload.goal_id
+            existing.skill_id = payload.skill_id
+            existing.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(existing)
+            return {"data": _to_dict(existing)}
 
-    # 3. 没找到 → 尝试新建 (带约束迁移容错)
-    def _insert_journal() -> DailyJournal:
+        # 3. 没找到 → 尝试新建
         j = DailyJournal(
             user_id=current_user.id,
             journal_date=target_date,
             time_slot=payload.time_slot,
             mood_index=payload.mood_index,
             content=payload.content,
-            tags=payload.tags,
+            tags=payload.tags or [],
             goal_id=payload.goal_id,
             skill_id=payload.skill_id,
         )
         db.add(j)
         db.commit()
         db.refresh(j)
-        return j
-
-    try:
-        j = _insert_journal()
         return {"data": _to_dict(j)}
-    except Exception as e:
+
+    except HTTPException:
+        raise
+    except IntegrityError as e:
         db.rollback()
-        logger.warning("Journal INSERT failed (constraint conflict), trying to migrate: %s", e)
+        logger.warning("Journal INSERT conflict: %s. Falling back to update latest.", e)
 
-        # 4. INSERT 失败 → 尝试迁移约束后重试
+        # 4. 约束冲突 → 查找同日最新记录并覆盖
         try:
-            with db.connection() as conn:
-                # 查找并删除旧约束 (只含 user_id + journal_date, 不含 time_slot)
-                result = conn.execute(text(
-                    """
-                    SELECT conname FROM pg_constraint
-                    WHERE conrelid = 'daily_journals'::regclass AND contype = 'u'
-                    AND conname != 'uq_daily_journal_user_date_slot'
-                    """
-                ))
-                for row in result.fetchall():
-                    conn.execute(text(f"ALTER TABLE daily_journals DROP CONSTRAINT IF EXISTS {row[0]}"))
-                    logger.info("Dropped old constraint: %s", row[0])
-
-                # 添加新约束 (含 time_slot)
-                conn.execute(text(
-                    "ALTER TABLE daily_journals ADD CONSTRAINT uq_daily_journal_user_date_slot "
-                    "UNIQUE (user_id, journal_date, time_slot)"
-                ))
-                logger.info("Added new constraint uq_daily_journal_user_date_slot")
-
-            # 重试 INSERT
-            j = _insert_journal()
-            return {"data": _to_dict(j)}
-        except Exception as migrate_err:
-            db.rollback()
-            logger.error("Constraint migration + retry failed: %s", migrate_err)
-
-            # 5. 最终 fallback: 更新同日第一条记录
             fallback = (
                 db.query(DailyJournal)
                 .filter(
@@ -318,7 +288,7 @@ def create_journal(
             if fallback:
                 fallback.mood_index = payload.mood_index
                 fallback.content = payload.content
-                fallback.tags = payload.tags
+                fallback.tags = payload.tags or []
                 fallback.goal_id = payload.goal_id
                 fallback.skill_id = payload.skill_id
                 fallback.time_slot = payload.time_slot
@@ -326,8 +296,19 @@ def create_journal(
                 db.commit()
                 db.refresh(fallback)
                 return {"data": _to_dict(fallback)}
+        except Exception as fallback_err:
+            db.rollback()
+            logger.error("Journal fallback update failed: %s", fallback_err, exc_info=True)
 
-            raise HTTPException(status_code=500, detail={"code": "CREATE_FAILED", "message": "保存失败，请重试"})
+        raise HTTPException(status_code=409, detail={"code": "DUPLICATE", "message": "已存在记录，请刷新后重试"})
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error("Journal DB error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail={"code": "DB_ERROR", "message": "数据库错误，请稍后重试"})
+    except Exception as e:
+        db.rollback()
+        logger.error("Journal create unexpected error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail={"code": "CREATE_FAILED", "message": "保存失败，请重试"})
 
 
 @router.put("/journal/{journal_id}")
@@ -337,31 +318,42 @@ def update_journal(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    j = (
-        db.query(DailyJournal)
-        .filter(DailyJournal.id == journal_id, DailyJournal.user_id == current_user.id)
-        .first()
-    )
-    if j is None:
-        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Journal not found"})
+    try:
+        j = (
+            db.query(DailyJournal)
+            .filter(DailyJournal.id == journal_id, DailyJournal.user_id == current_user.id)
+            .first()
+        )
+        if j is None:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Journal not found"})
 
-    if payload.mood_index is not None:
-        j.mood_index = payload.mood_index
-    if payload.content is not None:
-        j.content = payload.content
-    if payload.tags is not None:
-        j.tags = payload.tags
-    if payload.goal_id is not None:
-        j.goal_id = payload.goal_id
-    if payload.skill_id is not None:
-        j.skill_id = payload.skill_id
-    if payload.time_slot is not None:
-        j.time_slot = payload.time_slot
-    j.updated_at = datetime.utcnow()
+        if payload.mood_index is not None:
+            j.mood_index = payload.mood_index
+        if payload.content is not None:
+            j.content = payload.content
+        if payload.tags is not None:
+            j.tags = payload.tags or []
+        if payload.goal_id is not None:
+            j.goal_id = payload.goal_id
+        if payload.skill_id is not None:
+            j.skill_id = payload.skill_id
+        if payload.time_slot is not None:
+            j.time_slot = payload.time_slot
+        j.updated_at = datetime.utcnow()
 
-    db.commit()
-    db.refresh(j)
-    return {"data": _to_dict(j)}
+        db.commit()
+        db.refresh(j)
+        return {"data": _to_dict(j)}
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error("Journal update DB error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail={"code": "DB_ERROR", "message": "数据库错误，请稍后重试"})
+    except Exception as e:
+        db.rollback()
+        logger.error("Journal update unexpected error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail={"code": "UPDATE_FAILED", "message": "更新失败，请重试"})
 
 
 @router.delete("/journal/{journal_id}")
