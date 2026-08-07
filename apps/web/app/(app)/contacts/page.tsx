@@ -15,6 +15,7 @@ import {
   UserPlus,
   UserCheck,
   QrCode,
+  Smile,
 } from "lucide-react";
 
 import { AiFriendRecommendation } from "@/components/life/social/ai-friend-recommendation";
@@ -25,6 +26,7 @@ import {
 } from "@/components/life/social/friend-card";
 import { ShareSheet } from "@/components/life/social/share-sheet";
 import { Button, Input, cn } from "@/components/ui";
+import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { apiFetch } from "@/lib/api";
 import {
   chatApi,
@@ -65,6 +67,7 @@ export default function ContactsPage() {
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -82,6 +85,12 @@ export default function ContactsPage() {
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2400);
+  }, []);
+
+  // 表情选择
+  const handleEmojiSelect = useCallback((emoji: string) => {
+    setMessageInput((prev) => prev + emoji);
+    setShowEmojiPicker(false);
   }, []);
 
   // 获取当前用户信息
@@ -558,6 +567,22 @@ export default function ContactsPage() {
                     >
                       <ImageIcon className="h-5 w-5" />
                     </Button>
+                    <div className="relative">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowEmojiPicker((v) => !v)}
+                        title="表情"
+                      >
+                        <Smile className="h-5 w-5" />
+                      </Button>
+                      {showEmojiPicker && (
+                        <EmojiPicker
+                          onSelect={handleEmojiSelect}
+                          onClose={() => setShowEmojiPicker(false)}
+                        />
+                      )}
+                    </div>
                     <Input
                       placeholder="输入消息..."
                       value={messageInput}
