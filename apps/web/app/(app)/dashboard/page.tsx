@@ -99,7 +99,7 @@ function DailyJournal() {
   const { data, isLoading } = useQuery<{ data: Journal[] }>({
     queryKey: ["journal", todayStr],
     queryFn: () => journalApi.getByDate(todayStr),
-    staleTime: 0,
+    staleTime: 60_000,
   });
 
   const entries = data?.data ?? [];

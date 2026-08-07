@@ -33,7 +33,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const { data: journalData, isLoading } = useQuery<{ data: Journal[] }>({
     queryKey: ["journal", date],
     queryFn: () => journalApi.getByDate(date),
-    staleTime: 0,
+    staleTime: 60_000,
   });
 
   const allJournals = journalData?.data ?? [];

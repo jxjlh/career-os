@@ -1,2 +1,4 @@
 # CareerOS SPA fallback — Cloudflare Pages
+# /api/* 路径直接跳过，交由 Function 代理或返回 404（不匹配 SPA fallback）
+/api/*    404
 /*    /index.html    200!

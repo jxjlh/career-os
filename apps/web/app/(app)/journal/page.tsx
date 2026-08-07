@@ -38,14 +38,14 @@ export default function JournalPage() {
   const { data: monthData, isLoading } = useQuery({
     queryKey: ["journal-month", year, month],
     queryFn: () => journalApi.listMonth(year, month),
-    staleTime: 0,
+    staleTime: 60_000,
   });
 
   const { data: dayData } = useQuery({
     queryKey: ["journal", selectedDate],
     queryFn: () => (selectedDate ? journalApi.getByDate(selectedDate) : Promise.resolve({ data: [] })),
     enabled: !!selectedDate,
-    staleTime: 0,
+    staleTime: 60_000,
   });
 
   const journals = monthData?.data?.journals ?? [];
