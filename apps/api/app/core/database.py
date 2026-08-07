@@ -124,10 +124,14 @@ def ensure_columns() -> None:
         for table, columns in additions.items():
             if table not in tables:
                 continue
-            existing = {col["name"] for col in inspect(conn).get_columns(table)}
-            for name, ddl in columns.items():
-                if name not in existing:
-                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+            try:
+                existing = {col["name"] for col in inspect(conn).get_columns(table)}
+                for name, ddl in columns.items():
+                    if name not in existing:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+            except Exception as e:  # noqa: BLE001
+                # 单表补列失败不能阻断其他表/启动（历史库结构差异较大）。
+                logger.error("ensure_columns failed for table %s: %s", table, e, exc_info=True)
 
 
 def get_db():
