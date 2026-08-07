@@ -95,6 +95,7 @@ export interface Journal {
   moodIndex: number;
   content?: string;
   tags?: string[];
+  photos?: string[];
   goalId?: string | null;
   skillId?: string | null;
   createdAt?: string;
@@ -121,6 +122,7 @@ export interface JournalCreatePayload {
   mood_index: number;
   content?: string;
   tags?: string[];
+  photos?: string[];
   goal_id?: string | null;
   skill_id?: string | null;
   time_slot?: string;
@@ -131,6 +133,7 @@ export interface JournalUpdatePayload {
   mood_index?: number;
   content?: string;
   tags?: string[];
+  photos?: string[];
   goal_id?: string | null;
   skill_id?: string | null;
   time_slot?: string;
@@ -161,6 +164,26 @@ export const journalApi = {
     apiFetch<{ ok: boolean }>(`${API}/${id}`, {
       method: "DELETE",
     }),
+
+  uploadImage: async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const token = isSupabaseConfigured ? await getAccessToken() :
+      typeof window !== "undefined" ? localStorage.getItem("career_os_token") : null;
+
+    const url = `${API_BASE}${API}/images`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+
+    if (!res.ok) throw new Error(`上传失败: ${res.status}`);
+
+    const data = await res.json() as { data: { url: string } };
+    return data.data.url;
+  },
 
   // 导出小记为 Markdown (支持按日期范围或按周)
   exportRange: async (startDate: string, endDate: string) => {

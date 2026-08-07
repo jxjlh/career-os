@@ -1,8 +1,8 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronDown, ImagePlus, X, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -11,6 +11,7 @@ import { journalApi, TIME_SLOTS, MOODS, getSlotMeta, getSubSlotMeta } from "@/li
 import { useI18n } from "@/lib/i18n";
 
 const QUICK_TAGS = ["工作", "学习", "生活", "思考", "休息"];
+const MAX_IMAGES = 9;
 
 interface JournalEditorProps {
   date: string;
@@ -22,10 +23,12 @@ interface JournalEditorProps {
  * - 4 个主时段 (上午/下午/晚上/深夜), 点击展开显示 2 小时子时段
  * - 心情 emoji 下方有描述文字
  * - 每个子时段可独立记录
+ * - 支持添加照片（上传/预览/删除）
  */
 export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [activeSlot, setActiveSlot] = useState<string>("morning_06");
   const [expandedMain, setExpandedMain] = useState<string | null>(null);
@@ -42,20 +45,30 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const [moodIndex, setMoodIndex] = useState<number | null>(null);
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<string[]>([]);
 
   useEffect(() => {
     if (existing) {
       setMoodIndex(existing.moodIndex);
       setContent(existing.content ?? "");
       setTags(existing.tags ?? []);
+      setPhotos(existing.photos ?? []);
     } else {
       setMoodIndex(null);
       setContent("");
       setTags([]);
+      setPhotos([]);
     }
   }, [existing?.id, activeSlot]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isEditing = !!existing;
+
+  const uploadImageMutation = useMutation({
+    mutationFn: (file: File) => journalApi.uploadImage(file),
+    onSuccess: (url) => {
+      setPhotos((prev) => [...prev, url]);
+    },
+  });
 
   const upsertMutation = useMutation({
     mutationFn: async () => {
@@ -64,6 +77,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
         mood_index: moodIndex,
         content: content.trim() || undefined,
         tags: tags.length > 0 ? tags : undefined,
+        photos: photos.length > 0 ? photos : undefined,
         time_slot: activeSlot,
         journal_date: date,
       };
@@ -75,6 +89,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal"] });
       queryClient.invalidateQueries({ queryKey: ["journal-month"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       onSaved?.();
     },
     onError: (error: any) => {
@@ -90,9 +105,11 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal"] });
       queryClient.invalidateQueries({ queryKey: ["journal-month"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setMoodIndex(null);
       setContent("");
       setTags([]);
+      setPhotos([]);
       onSaved?.();
     },
   });
@@ -108,6 +125,29 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
     upsertMutation.mutate();
   };
 
+  const handlePickImages = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFilesSelected = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const remaining = MAX_IMAGES - photos.length;
+    if (remaining <= 0) {
+      return;
+    }
+    const list = Array.from(files).slice(0, remaining);
+    // eslint-disable-next-line no-restricted-syntax
+    for (const f of list) {
+      // 用串行 mutation 方便状态管理，也避免并发时互相覆盖
+      // eslint-disable-next-line no-await-in-loop
+      await uploadImageMutation.mutateAsync(f);
+    }
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const formatDate = (d: string) => {
     const dateObj = new Date(d + "T00:00:00");
     const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][dateObj.getDay()];
@@ -119,6 +159,20 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
 
   return (
     <div className="w-full">
+      {/* 隐藏的文件选择器 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          handleFilesSelected(e.target.files);
+          // 允许再次选择同一文件
+          e.target.value = "";
+        }}
+      />
+
       {/* 日期标题 */}
       <div className="mb-4 flex items-center justify-between">
         <div>
@@ -288,6 +342,70 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
             </div>
           </div>
 
+          {/* 照片区域 */}
+          <div className="mb-5">
+            <div className="mb-2 flex items-center justify-between">
+              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-secondary">
+                照片
+              </label>
+              <span className="text-[10px] text-text-tertiary">{photos.length}/{MAX_IMAGES}</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {photos.map((url, i) => (
+                <div
+                  key={`${url}-${i}`}
+                  className="relative aspect-square overflow-hidden rounded-xl bg-surface/40 ring-1 ring-white/5"
+                >
+                  <img
+                    src={url}
+                    alt={`photo-${i}`}
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(i)}
+                    className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
+                    aria-label="删除图片"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+
+              {photos.length < MAX_IMAGES && (
+                <motion.button
+                  type="button"
+                  onClick={handlePickImages}
+                  disabled={uploadImageMutation.isPending}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="
+                    flex aspect-square flex-col items-center justify-center gap-1 rounded-xl
+                    border border-dashed border-white/15 bg-surface/20 text-text-tertiary
+                    transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary
+                  "
+                >
+                  {uploadImageMutation.isPending ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <ImagePlus className="h-5 w-5" />
+                  )}
+                  <span className="text-[10px]">{uploadImageMutation.isPending ? "上传中" : "添加照片"}</span>
+                </motion.button>
+              )}
+            </div>
+
+            {uploadImageMutation.isError && (
+              <p className="mt-2 text-[11px] text-danger">
+                图片上传失败：{uploadImageMutation.error?.message || "请稍后重试"}
+              </p>
+            )}
+          </div>
+
           {/* 内容输入 */}
           <div className="mb-5">
             <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-text-secondary">
@@ -337,13 +455,13 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
           {/* 保存按钮 */}
           <motion.button
             onClick={handleSave}
-            disabled={moodIndex === null || upsertMutation.isPending}
+            disabled={moodIndex === null || upsertMutation.isPending || uploadImageMutation.isPending}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
             className={`
               flex w-full items-center justify-center rounded-xl py-3 text-sm font-medium transition-all duration-200
-              ${moodIndex !== null
+              ${moodIndex !== null && !uploadImageMutation.isPending
                 ? "bg-primary text-white shadow-[0_4px_20px_rgba(139,92,246,0.3)] hover:bg-primary-hover cursor-pointer"
                 : "cursor-not-allowed bg-surface/40 text-text-tertiary"
               }

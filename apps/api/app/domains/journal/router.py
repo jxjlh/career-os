@@ -3,7 +3,7 @@ import logging
 from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import DailyJournal, Profile
+from app.services.storage import StorageService
 
 logger = logging.getLogger("app.domains.journal")
 router = APIRouter(tags=["journal"])
@@ -40,6 +41,7 @@ class JournalCreate(BaseModel):
     mood_index: int = Field(ge=0, le=4)
     content: str | None = None
     tags: list[str] = Field(default_factory=list)
+    photos: list[str] = Field(default_factory=list)
     goal_id: str | None = None
     skill_id: str | None = None
     time_slot: str = Field(default="morning")  # 接受任意字符串, 前端控制格式
@@ -50,6 +52,7 @@ class JournalUpdate(BaseModel):
     mood_index: int | None = Field(default=None, ge=0, le=4)
     content: str | None = None
     tags: list[str] | None = None
+    photos: list[str] | None = None
     goal_id: str | None = None
     skill_id: str | None = None
     time_slot: str | None = None
@@ -65,6 +68,7 @@ def _to_dict(j: DailyJournal) -> dict:
         "moodIndex": j.mood_index,
         "content": j.content,
         "tags": j.tags,
+        "photos": j.photos or [],
         "goalId": j.goal_id,
         "skillId": j.skill_id,
         "createdAt": j.created_at.isoformat() if j.created_at else None,
@@ -73,6 +77,22 @@ def _to_dict(j: DailyJournal) -> dict:
 
 
 # ── Endpoints ──────────────────────────────────────────────────────
+
+@router.post("/journal/images")
+def upload_journal_image(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    file: Annotated[UploadFile, File(...)],
+) -> dict:
+    """上传日记图片, 返回图片 URL."""
+    try:
+        storage = StorageService()
+        url = storage.upload_journal_image(file.file, file.filename or "photo.jpg", current_user.id)
+        return {"data": {"url": url}}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={"code": "BAD_REQUEST", "message": str(e)})
+    except Exception as e:
+        logger.error("Journal image upload failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail={"code": "UPLOAD_FAILED", "message": "上传失败，请稍后重试"})
 
 @router.get("/journal/month")
 def list_month_journals(
@@ -249,6 +269,7 @@ def create_journal(
             existing.mood_index = payload.mood_index
             existing.content = payload.content
             existing.tags = payload.tags or []
+            existing.photos = payload.photos or []
             existing.goal_id = payload.goal_id
             existing.skill_id = payload.skill_id
             existing.updated_at = datetime.utcnow()
@@ -265,6 +286,7 @@ def create_journal(
             mood_index=payload.mood_index,
             content=payload.content,
             tags=payload.tags or [],
+            photos=payload.photos or [],
             goal_id=payload.goal_id,
             skill_id=payload.skill_id,
         )
@@ -297,6 +319,7 @@ def create_journal(
                 existing_same_slot.mood_index = payload.mood_index
                 existing_same_slot.content = payload.content
                 existing_same_slot.tags = payload.tags or []
+                existing_same_slot.photos = payload.photos or []
                 existing_same_slot.goal_id = payload.goal_id
                 existing_same_slot.skill_id = payload.skill_id
                 existing_same_slot.updated_at = datetime.utcnow()
@@ -319,6 +342,7 @@ def create_journal(
                     mood_index=payload.mood_index,
                     content=payload.content,
                     tags=payload.tags or [],
+                    photos=payload.photos or [],
                     goal_id=payload.goal_id,
                     skill_id=payload.skill_id,
                 )
@@ -390,6 +414,8 @@ def update_journal(
             j.content = payload.content
         if payload.tags is not None:
             j.tags = payload.tags or []
+        if payload.photos is not None:
+            j.photos = payload.photos or []
         if payload.goal_id is not None:
             j.goal_id = payload.goal_id
         if payload.skill_id is not None:

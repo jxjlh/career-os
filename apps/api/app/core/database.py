@@ -85,6 +85,7 @@ def ensure_columns() -> None:
         "daily_journals": {
             "content": "TEXT",
             "tags": "JSON",
+            "photos": "JSON",
             "goal_id": "VARCHAR(36)",
             "skill_id": "VARCHAR(36)",
             "updated_at": "DATETIME",

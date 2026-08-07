@@ -1353,6 +1353,8 @@ class DailyJournal(Base):
     content: Mapped[str | None] = mapped_column(Text)
     # 标签, 如 ["工作", "学习", "生活"]
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # 照片 URL 数组
+    photos: Mapped[list[str]] = mapped_column(JSON, default=list)
     goal_id: Mapped[str | None] = mapped_column(
         ForeignKey("life_goals.id", ondelete="SET NULL"), index=True
     )

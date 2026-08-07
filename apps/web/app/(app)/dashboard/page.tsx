@@ -122,6 +122,20 @@ function DailyJournal() {
   const hasAnyContent = entries.some((e) => e.content && e.content.trim().length > 0);
   const latestEntry = entries.length > 0 ? entries[entries.length - 1] : null;
 
+  // 收集所有照片（去重）
+  const allPhotos: string[] = [];
+  const seenPhotoUrls = new Set<string>();
+  for (const e of entries) {
+    if (e.photos && e.photos.length > 0) {
+      for (const p of e.photos) {
+        if (!seenPhotoUrls.has(p)) {
+          seenPhotoUrls.add(p);
+          allPhotos.push(p);
+        }
+      }
+    }
+  }
+
   return (
     <section className="mt-10">
       {/* 标题行 */}
@@ -133,6 +147,7 @@ function DailyJournal() {
           <p className="mt-1 text-[13px] text-text-tertiary">
             {today.getMonth() + 1}月{today.getDate()}日 · {weekday}
             {recordedCount > 0 && ` · 已记录 ${recordedCount} 个时段`}
+            {allPhotos.length > 0 && ` · ${allPhotos.length} 张照片`}
           </p>
         </div>
         <Link
@@ -198,6 +213,127 @@ function DailyJournal() {
           </div>
         )}
       </div>
+
+      {/* 照片墙 */}
+      {allPhotos.length > 0 && (
+        <Link href="/journal" className="block mt-4">
+          <div className="rounded-xl border border-white/5 bg-surface/30 p-4 transition-colors hover:bg-surface/50">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+                今日照片 · {allPhotos.length}
+              </span>
+              <span className="text-[10px] text-primary/80">查看全部 →</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
+              {allPhotos.slice(0, 5).map((url, i) => (
+                <div
+                  key={url}
+                  className="relative aspect-square overflow-hidden rounded-lg bg-surface/40 ring-1 ring-white/5"
+                >
+                  <img
+                    src={url}
+                    alt={`daily-photo-${i}`}
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
+                    }}
+                  />
+                </div>
+              ))}
+              {allPhotos.length > 5 && (
+                <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-surface-elevated/60 ring-1 ring-white/5">
+                  <span className="text-[13px] font-semibold text-text-primary">
+                    +{allPhotos.length - 5}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </Link>
+      )}
+
+      {/* 各时段小记卡片 */}
+      {entries.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {entries.map((entry) => {
+            const moodMeta = MOODS[entry.moodIndex];
+            const mainSlot = TIME_SLOTS.find((s) =>
+              s.subSlots.some((ss) => ss.key === entry.timeSlot)
+            );
+            const subSlot = mainSlot?.subSlots.find((ss) => ss.key === entry.timeSlot);
+            return (
+              <Link
+                key={entry.id}
+                href="/journal"
+                className="block rounded-xl border border-white/5 bg-surface/20 p-3 transition-all duration-200 hover:bg-surface/40 hover:border-white/10"
+              >
+                <div className="flex items-start gap-3">
+                  {/* 左侧: 时段 + 心情 */}
+                  <div className="flex w-[84px] shrink-0 flex-col items-center gap-1 rounded-lg bg-surface/40 py-2">
+                    <span className="text-xs opacity-70">{mainSlot?.icon}</span>
+                    <span className="text-lg">{moodMeta?.emoji}</span>
+                    <span className="text-[9px] font-medium text-text-tertiary">
+                      {subSlot?.label ?? mainSlot?.label ?? entry.timeSlot}
+                    </span>
+                  </div>
+
+                  {/* 右侧: 内容 + 照片 + 标签 */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-medium text-text-secondary">
+                        {moodMeta?.label}
+                      </span>
+                      {entry.tags && entry.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {entry.tags.slice(0, 3).map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] text-primary/90"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {entry.content && (
+                      <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-text-primary/90">
+                        {entry.content}
+                      </p>
+                    )}
+                    {entry.photos && entry.photos.length > 0 && (
+                      <div className="mt-2 grid grid-cols-4 gap-1">
+                        {entry.photos.slice(0, 4).map((p, i) => (
+                          <div
+                            key={`${entry.id}-${i}`}
+                            className="relative aspect-square overflow-hidden rounded-md bg-surface/40"
+                          >
+                            <img
+                              src={p}
+                              alt={`entry-photo-${i}`}
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
+                              }}
+                            />
+                            {i === 3 && entry.photos!.length > 4 && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                                <span className="text-[11px] font-semibold text-white">
+                                  +{entry.photos!.length - 4}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

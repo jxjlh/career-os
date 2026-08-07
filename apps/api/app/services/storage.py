@@ -73,6 +73,32 @@ class StorageService:
                 pass
         return self._upload_local(path, content)
 
+    def upload_journal_image(
+        self,
+        file: BinaryIO,
+        filename: str,
+        user_id: str,
+    ) -> str:
+        """上传日记图片, 返回 URL."""
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        ext = Path(filename).suffix or ".jpg"
+        if ext.lower() not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
+            ext = ".jpg"
+        date_str = datetime.utcnow().strftime("%Y%m%d")
+        path = f"journal/{user_id}/{date_str}/{timestamp}{ext}"
+
+        content = file.read()
+        if len(content) > 8 * 1024 * 1024:
+            raise ValueError("日记图片过大，请上传 8MB 以内的图片")
+        content_type = self._guess_content_type(ext)
+
+        if self._supabase_configured():
+            try:
+                return self._upload_supabase(path, content, content_type)
+            except Exception:
+                pass
+        return self._upload_local(path, content)
+
     def _supabase_configured(self) -> bool:
         """检查 Supabase 是否完整配置."""
         return bool(
