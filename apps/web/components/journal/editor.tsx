@@ -1,34 +1,35 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { Journal } from "@/lib/journal";
-import { journalApi, TIME_SLOTS, getSlotMeta } from "@/lib/journal";
+import { journalApi, TIME_SLOTS, MOODS, getSlotMeta, getSubSlotMeta } from "@/lib/journal";
 import { useI18n } from "@/lib/i18n";
 
-const MOOD_EMOJIS = ["😵", "😐", "🙂", "😎", "✨"] as const;
 const QUICK_TAGS = ["工作", "学习", "生活", "思考", "休息"];
 
 interface JournalEditorProps {
-  date: string; // YYYY-MM-DD
+  date: string;
   onSaved?: () => void;
 }
 
 /**
- * 每日小记编辑器: 支持一天多个时间段.
- * 顶部时间段切换, 每个时间段可独立记录心情 + 内容 + 标签.
+ * 每日小记编辑器:
+ * - 4 个主时段 (上午/下午/晚上/深夜), 点击展开显示 2 小时子时段
+ * - 心情 emoji 下方有描述文字
+ * - 每个子时段可独立记录
  */
 export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
 
-  // 当前选中的时间段
-  const [activeSlot, setActiveSlot] = useState<string>("morning");
+  const [activeSlot, setActiveSlot] = useState<string>("morning_06");
+  const [expandedMain, setExpandedMain] = useState<string | null>(null);
 
-  // 获取当前日期所有时间段的日记
   const { data: journalData, isLoading } = useQuery<{ data: Journal[] }>({
     queryKey: ["journal", date],
     queryFn: () => journalApi.getByDate(date),
@@ -42,7 +43,6 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
 
-  // 当 existing 数据变化时同步到本地状态
   useEffect(() => {
     if (existing) {
       setMoodIndex(existing.moodIndex);
@@ -58,7 +58,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const isEditing = !!existing;
 
   const upsertMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (moodIndex === null) throw new Error("请选择心情");
       const payload = {
         mood_index: moodIndex,
@@ -111,6 +111,9 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
     return `${dateObj.getMonth() + 1}月${dateObj.getDate()}日 · ${weekday}`;
   };
 
+  const activeSubSlot = getSubSlotMeta(activeSlot);
+  const activeMain = getSlotMeta(activeSlot);
+
   return (
     <div className="w-full">
       {/* 日期标题 */}
@@ -120,7 +123,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
             {formatDate(date)}
           </h3>
           <p className="text-[13px] text-text-tertiary">
-            {isEditing ? "编辑这个时间段的小记" : "记录这个时间段的感受"}
+            {isEditing ? "编辑这个小记" : "记录这个时间段的感受"}
           </p>
         </div>
         {isEditing && (
@@ -139,45 +142,110 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
         )}
       </div>
 
-      {/* 时间段切换 */}
-      <div className="mb-5 grid grid-cols-4 gap-2">
+      {/* 主时段切换 + 可展开子时段 */}
+      <div className="mb-5 space-y-2">
         {TIME_SLOTS.map((slot) => {
-          const slotJournal = allJournals.find((j) => j.timeSlot === slot.key);
-          const isActive = activeSlot === slot.key;
+          const isActive = activeMain.key === slot.key;
+          const isExpanded = expandedMain === slot.key;
+          const slotJournals = allJournals.filter((j) =>
+            slot.subSlots.some((ss) => ss.key === j.timeSlot)
+          );
+
           return (
-            <motion.button
-              key={slot.key}
-              onClick={() => setActiveSlot(slot.key)}
-              whileTap={{ scale: 0.95 }}
-              transition={{ duration: 0.15, ease: "easeOut" }}
-              className={`
-                relative flex flex-col items-center gap-1 rounded-xl py-2.5 transition-all duration-200
-                ${isActive
-                  ? "bg-primary/15 ring-1 ring-primary/40 shadow-[0_0_16px_rgba(139,92,246,0.2)]"
-                  : "bg-surface/40 hover:bg-surface-elevated/60"
-                }
-              `}
-            >
-              <span className="text-lg">{slot.icon}</span>
-              <span className={`text-[11px] font-medium ${isActive ? "text-primary" : "text-text-tertiary"}`}>
-                {slot.label}
-              </span>
-              {/* 已记录标记 */}
-              {slotJournal && (
-                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success" />
-              )}
-            </motion.button>
+            <div key={slot.key}>
+              {/* 主时段按钮 */}
+              <motion.button
+                onClick={() => {
+                  setExpandedMain(isExpanded ? null : slot.key);
+                  // 切到该时段的第一个子时段
+                  if (!isExpanded) {
+                    setActiveSlot(slot.subSlots[0]?.key ?? slot.key);
+                  }
+                }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
+                className={`
+                  relative flex w-full items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200
+                  ${isActive
+                    ? "bg-primary/10 ring-1 ring-primary/30"
+                    : "bg-surface/40 hover:bg-surface-elevated/60"
+                  }
+                `}
+              >
+                <span className="text-lg">{slot.icon}</span>
+                <div className="flex-1 text-left">
+                  <span className={`text-[13px] font-medium ${isActive ? "text-primary" : "text-text-secondary"}`}>
+                    {slot.label}
+                  </span>
+                  <span className="ml-2 text-[10px] text-text-tertiary">
+                    {slot.range}
+                  </span>
+                </div>
+                {/* 已记录数量 */}
+                {slotJournals.length > 0 && (
+                  <span className="rounded-full bg-success/20 px-2 py-0.5 text-[10px] font-medium text-success">
+                    {slotJournals.length}
+                  </span>
+                )}
+                <ChevronDown
+                  className={`h-4 w-4 text-text-tertiary transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                />
+              </motion.button>
+
+              {/* 子时段 (展开时显示) */}
+              <AnimatePresence>
+                {isExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-1 flex flex-wrap gap-1.5 pl-4">
+                      {slot.subSlots.map((ss) => {
+                        const ssJournal = allJournals.find((j) => j.timeSlot === ss.key);
+                        const isSsActive = activeSlot === ss.key;
+                        return (
+                          <button
+                            key={ss.key}
+                            onClick={() => setActiveSlot(ss.key)}
+                            className={`
+                              flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all duration-150
+                              ${isSsActive
+                                ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                                : "bg-surface/30 text-text-tertiary hover:bg-surface-elevated/50"
+                              }
+                            `}
+                          >
+                            <span>{ss.label}</span>
+                            {ssJournal && (
+                              <span className="text-[10px]">
+                                {MOODS[ssJournal.moodIndex]?.emoji}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           );
         })}
       </div>
 
-      {/* 当前时间段信息 */}
-      <div className="mb-4 flex items-center gap-2 text-[11px] text-text-tertiary">
-        <span>{getSlotMeta(activeSlot).icon}</span>
-        <span>{getSlotMeta(activeSlot).label}</span>
-        <span className="text-text-tertiary/60">·</span>
-        <span>{getSlotMeta(activeSlot).range}</span>
-      </div>
+      {/* 当前子时段信息 */}
+      {activeSubSlot && (
+        <div className="mb-4 flex items-center gap-2 text-[11px] text-text-tertiary">
+          <span>{activeMain.icon}</span>
+          <span>{activeMain.label}</span>
+          <span className="text-text-tertiary/60">·</span>
+          <span>{activeSubSlot.label}</span>
+          <span className="text-text-tertiary/60">时段</span>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex h-32 items-center justify-center">
@@ -185,29 +253,33 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
         </div>
       ) : (
         <>
-          {/* 心情选择 */}
+          {/* 心情选择 (带描述) */}
           <div className="mb-5">
             <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-text-secondary">
               {t("journal.moodLabel")}
             </label>
-            <div className="flex items-center gap-2">
-              {MOOD_EMOJIS.map((m, i) => (
+            <div className="grid grid-cols-5 gap-2">
+              {MOODS.map((mood, i) => (
                 <motion.button
-                  key={m}
+                  key={mood.emoji}
                   onClick={() => setMoodIndex(i)}
-                  whileHover={{ scale: 1.15 }}
+                  whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.9 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
                   className={`
-                    flex h-12 w-12 items-center justify-center rounded-xl text-xl transition-all duration-200
+                    flex flex-col items-center gap-1 rounded-xl py-2.5 transition-all duration-200
                     ${moodIndex === i
-                      ? "bg-primary/15 ring-1 ring-primary/50 shadow-[0_0_16px_rgba(139,92,246,0.25)]"
+                      ? "bg-primary/15 ring-1 ring-primary/50 shadow-[0_0_12px_rgba(139,92,246,0.2)]"
                       : "bg-surface/40 hover:bg-surface-elevated/60"
                     }
                   `}
                   aria-label={`mood ${i}`}
                 >
-                  {m}
+                  <span className="text-xl">{mood.emoji}</span>
+                  <span className={`text-[10px] font-medium ${moodIndex === i ? "text-primary" : "text-text-tertiary"}`}>
+                    {mood.label}
+                  </span>
+                  <span className="text-[9px] text-text-tertiary/70">{mood.desc}</span>
                 </motion.button>
               ))}
             </div>

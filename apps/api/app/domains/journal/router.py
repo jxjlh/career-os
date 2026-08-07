@@ -41,7 +41,7 @@ class JournalCreate(BaseModel):
     tags: list[str] = Field(default_factory=list)
     goal_id: str | None = None
     skill_id: str | None = None
-    time_slot: str = Field(default="morning", pattern="^(morning|afternoon|evening|night)$")
+    time_slot: str = Field(default="morning")  # 接受任意字符串, 前端控制格式
     journal_date: str | None = None  # YYYY-MM-DD, 默认今天
 
 
@@ -51,6 +51,7 @@ class JournalUpdate(BaseModel):
     tags: list[str] | None = None
     goal_id: str | None = None
     skill_id: str | None = None
+    time_slot: str | None = None
 
 
 # ── Helpers ────────────────────────────────────────────────────────
@@ -111,10 +112,23 @@ def export_journals(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     year: int | None = Query(None, description="年份, 默认全部"),
+    start: str | None = Query(None, description="开始日期 YYYY-MM-DD"),
+    end: str | None = Query(None, description="结束日期 YYYY-MM-DD"),
 ) -> StreamingResponse:
-    """导出所有小记为 Markdown 文件, 方便回忆."""
+    """导出小记为 Markdown 文件. 支持 year 或 start/end 日期范围."""
     query = db.query(DailyJournal).filter(DailyJournal.user_id == current_user.id)
-    if year:
+
+    if start and end:
+        try:
+            start_date = date.fromisoformat(start)
+            end_date = date.fromisoformat(end)
+            query = query.filter(
+                DailyJournal.journal_date >= start_date,
+                DailyJournal.journal_date <= end_date,
+            )
+        except ValueError:
+            pass
+    elif year:
         query = query.filter(
             text("EXTRACT(YEAR FROM journal_date) = :year")
         ).params(year=year)
@@ -142,6 +156,14 @@ def export_journals(
 
         slot_label = SLOT_LABELS.get(j.time_slot, j.time_slot)
         slot_icon = SLOT_ICONS.get(j.time_slot, "")
+        # 处理子时段 key: "morning_06" → "上午 06-08"
+        if "_" in j.time_slot:
+            main_key = j.time_slot.split("_")[0]
+            slot_label = SLOT_LABELS.get(main_key, main_key)
+            slot_icon = SLOT_ICONS.get(main_key, "")
+            sub_hour = j.time_slot.split("_")[1] if len(j.time_slot.split("_")) > 1 else ""
+            if sub_hour:
+                slot_label = f"{slot_label} {sub_hour}-{int(sub_hour)+2:02d}" if sub_hour.isdigit() else slot_label
         mood = MOOD_EMOJIS[j.mood_index] if 0 <= j.mood_index < len(MOOD_EMOJIS) else "🙂"
 
         lines.append(f"### {slot_icon} {slot_label} {mood}")
@@ -158,7 +180,12 @@ def export_journals(
 
     markdown = "\n".join(lines)
 
-    filename = f"journals-{year}.md" if year else "journals-all.md"
+    if start and end:
+        filename = f"journals-{start}_to_{end}.md"
+    elif year:
+        filename = f"journals-{year}.md"
+    else:
+        filename = "journals-all.md"
     return StreamingResponse(
         io.BytesIO(markdown.encode("utf-8")),
         media_type="text/markdown; charset=utf-8",
@@ -303,6 +330,8 @@ def update_journal(
         j.goal_id = payload.goal_id
     if payload.skill_id is not None:
         j.skill_id = payload.skill_id
+    if payload.time_slot is not None:
+        j.time_slot = payload.time_slot
     j.updated_at = datetime.utcnow()
 
     db.commit()

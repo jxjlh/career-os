@@ -4,9 +4,10 @@ import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
 
 import type { Journal } from "@/lib/journal";
+import { MOODS } from "@/lib/journal";
 import { useI18n } from "@/lib/i18n";
 
-const MOOD_EMOJIS = ["😵", "😐", "🙂", "😎", "✨"] as const;
+const MOOD_EMOJIS = MOODS.map((m) => m.emoji);
 const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
 
 interface CalendarProps {

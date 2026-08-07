@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 
@@ -26,22 +26,36 @@ type ProgressEnvelope = {
 
 /**
  * WeeklyPlanProgress —— Dashboard 首页「本周进度」模块。
- *
- * 编辑部式杂志排版: 大数字完成率 + 7 天圆点 + 今日任务摘要.
- * 点击整体跳转 /planner 进入完整周计划.
+ * 无计划时可直接点击「生成」按钮, 调用 /planner/generate 生成 AI 周计划.
  */
 export function WeeklyPlanProgress() {
   const { t } = useI18n();
+  const queryClient = useQueryClient();
   const { data } = useQuery<ProgressEnvelope>({
     queryKey: ["planner-progress"],
     queryFn: () => apiFetch("/planner/progress"),
-    staleTime: 30_000,
+    staleTime: 10_000,
   });
+
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setGenError(null);
+    try {
+      await apiFetch("/planner/generate", { method: "POST" });
+      await queryClient.invalidateQueries({ queryKey: ["planner-progress"] });
+    } catch (err: any) {
+      setGenError(err?.message || "生成失败，请稍后重试");
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const progress = data?.data;
   const completionPct = Math.round((progress?.completionRate ?? 0) * 100);
 
-  // count-up 动画
   const [displayedPct, setDisplayedPct] = useState(0);
   useEffect(() => {
     if (completionPct === displayedPct) return;
@@ -60,20 +74,17 @@ export function WeeklyPlanProgress() {
     return () => clearInterval(id);
   }, [completionPct, displayedPct]);
 
-  // 7 天圆点: 用 todayTasks 推不出每天的完成情况, 这里仅做视觉示意
-  // (后端 progress 端点不返回每天细节, 这里用本周完成率映射)
   const weekDays = ["M", "T", "W", "T", "F", "S", "S"];
   const today = new Date().getDay();
   const todayIdx = today === 0 ? 6 : today - 1;
   const dots = weekDays.map((_, i) => {
     if (!progress || progress.totalTasks === 0) return false;
-    // 已过去的天: 按完成率推算
     if (i < todayIdx) return progress.completionRate >= 0.5;
     if (i === todayIdx) return progress.todayTasks > 0 && progress.todayDone === progress.todayTasks && progress.todayTasks > 0;
     return false;
   });
 
-  // 无计划时显示极简空状态
+  // 无计划时显示生成按钮
   if (!progress || !progress.planId) {
     return (
       <motion.section
@@ -89,13 +100,15 @@ export function WeeklyPlanProgress() {
           <div>
             <p className="text-[13px] text-text-secondary">{t("planner.noPlan")}</p>
             <p className="mt-0.5 text-[11px] text-text-tertiary">{t("planner.weeklyPlanProgressDesc")}</p>
+            {genError && <p className="mt-1 text-[11px] text-danger">{genError}</p>}
           </div>
-          <a
-            href="/planner"
-            className="font-display text-[11px] font-semibold uppercase tracking-[0.14em] text-primary hover:text-primary-glow"
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="font-display text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-colors hover:text-primary-glow disabled:opacity-50"
           >
-            {t("planner.generateNow")} →
-          </a>
+            {generating ? "生成中..." : "立即生成 →"}
+          </button>
         </div>
       </motion.section>
     );
@@ -113,7 +126,6 @@ export function WeeklyPlanProgress() {
           {t("planner.thisWeekProgress")}
         </h2>
 
-        {/* 大数字完成率 + 今日任务 */}
         <div className="mt-3 flex items-end justify-between gap-6">
           <div className="flex items-baseline gap-2">
             <motion.span
@@ -138,7 +150,6 @@ export function WeeklyPlanProgress() {
           </div>
         </div>
 
-        {/* 7 天圆点 */}
         <div className="mt-4 flex items-center gap-3">
           {weekDays.map((d, i) => (
             <div key={i} className="flex flex-col items-center gap-1.5">
@@ -150,13 +161,11 @@ export function WeeklyPlanProgress() {
               />
             </div>
           ))}
-          {/* 右侧分钟数 */}
           <span className="ml-auto text-[11px] text-text-tertiary">
             {progress.completedMinutes}/{progress.totalMinutes} {t("planner.minutes")}
           </span>
         </div>
 
-        {/* weeklyFocus 一句话寄语 */}
         {progress.weeklyFocus && (
           <p className="mt-3 max-w-md text-[13px] leading-relaxed text-text-secondary group-hover:text-text">
             {progress.weeklyFocus}

@@ -14,7 +14,7 @@ import {
   StreakCard,
   WeeklyPlanProgress,
 } from "@/components/dashboard";
-import { journalApi, TIME_SLOTS } from "@/lib/journal";
+import { journalApi, TIME_SLOTS, MOODS } from "@/lib/journal";
 
 type Envelope = { data: any };
 
@@ -96,7 +96,7 @@ export default function DashboardPage() {
   );
 }
 
-const MOOD_EMOJIS = ["😵", "😐", "🙂", "😎", "✨"] as const;
+const MOOD_EMOJIS = MOODS.map((m) => m.emoji);
 
 /**
  * Journal Entry —— Dashboard 上的小记入口卡片.
