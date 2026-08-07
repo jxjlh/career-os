@@ -10,25 +10,15 @@ import {
   ActiveGoals,
   Hero,
   LifeMapPreview,
-  LifeStats,
   StreakCard,
   WeeklyPlanProgress,
 } from "@/components/dashboard";
-import { journalApi, TIME_SLOTS, MOODS } from "@/lib/journal";
+import { journalApi, TIME_SLOTS, MOODS, type Journal } from "@/lib/journal";
 
 type Envelope = { data: any };
 
 /**
  * CareerOS Dashboard —— 年轻人的人生操作系统首页。
- *
- * 取代传统 StatCard grid + EChart + calendar 的 Dashboard 表达，
- * 改用 Hero / Streak / ActiveGoals / LifeMap / Mood / LifeStats 六段式叙事。
- *
- * 不破坏现有功能：
- *  - onboarding 引导卡片保留
- *  - /dashboard/ai-advice 保留为底部轻量 AI 提示（不再做成 Card）
- *  - /dashboard/summary / trends / calendar API 不动，仅在首页不再展示
- *    （trend/calendar 数据已在 /analytics 页面展示，非删除功能）
  */
 export default function DashboardPage() {
   const onboarding = useQuery<Envelope>({
@@ -66,19 +56,16 @@ export default function DashboardPage() {
       {/* 3. Active Goals —— 轻量 Row 列表 */}
       <ActiveGoals />
 
-      {/* 4. Weekly Plan Progress —— 本周计划进度 (AI 周计划入口) */}
+      {/* 4. Weekly Plan Progress —— 本周计划进度 */}
       <WeeklyPlanProgress />
 
       {/* 5. Life Map —— 人生轨迹预览 */}
       <LifeMapPreview />
 
-      {/* 6. Mood → Journal 入口 */}
-      <JournalEntry />
+      {/* 6. Daily Journal —— 每日小记详情 (合并原 TODAY'S MOOD + 每日小记) */}
+      <DailyJournal />
 
-      {/* 7. Life Stats —— 杂志排版数字 */}
-      <LifeStats />
-
-      {/* 7. AI 提示 —— 保留功能，极轻量，不再做成 Card */}
+      {/* 7. AI 提示 —— 保留功能 */}
       {advice.data?.data?.advice && (
         <section className="mt-12 border-t border-border-subtle/60 pt-6">
           <div className="flex items-center gap-2">
@@ -97,16 +84,19 @@ export default function DashboardPage() {
 }
 
 const MOOD_EMOJIS = MOODS.map((m) => m.emoji);
+const MOOD_LABELS = MOODS.map((m) => m.label);
 
 /**
- * Journal Entry —— Dashboard 上的小记入口卡片.
- * 显示今天各个时间段的心情记录, 可视化为时间线.
+ * DailyJournal —— Dashboard 上的每日小记详情组件.
+ * 合并了原 TODAY'S MOOD (时间段可视化) 和 每日小记详情.
+ * 只展示每日小记的完整信息.
  */
-function JournalEntry() {
+function DailyJournal() {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][today.getDay()];
 
-  const { data } = useQuery<{ data: { moodIndex: number; timeSlot: string; content?: string }[] }>({
+  const { data, isLoading } = useQuery<{ data: Journal[] }>({
     queryKey: ["journal", todayStr],
     queryFn: () => journalApi.getByDate(todayStr),
     staleTime: 0,
@@ -118,70 +108,96 @@ function JournalEntry() {
     ? Math.round(entries.reduce((sum, e) => sum + e.moodIndex, 0) / recordedCount)
     : null;
 
+  // 找到每个主时段的最新记录
+  const getSlotEntry = (slotKey: string) => {
+    const slot = TIME_SLOTS.find((s) => s.key === slotKey);
+    if (!slot) return null;
+    // 查找该主时段下所有子时段的记录，取最新的
+    const slotEntries = entries.filter((e) =>
+      slot.subSlots.some((ss) => ss.key === e.timeSlot)
+    );
+    return slotEntries.length > 0 ? slotEntries[slotEntries.length - 1] : null;
+  };
+
+  const hasAnyContent = entries.some((e) => e.content && e.content.trim().length > 0);
+  const latestEntry = entries.length > 0 ? entries[entries.length - 1] : null;
+
   return (
     <section className="mt-10">
+      {/* 标题行 */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
-            TODAY&apos;S MOOD
+            每日小记
           </h2>
           <p className="mt-1 text-[13px] text-text-tertiary">
-            {recordedCount > 0
-              ? `今天已记录 ${recordedCount} 个时间段`
-              : "How are you feeling?"}
+            {today.getMonth() + 1}月{today.getDate()}日 · {weekday}
+            {recordedCount > 0 && ` · 已记录 ${recordedCount} 个时段`}
           </p>
         </div>
         <Link
           href="/journal"
-          className="text-[12px] text-text-tertiary transition-colors hover:text-text-secondary"
+          className="text-[12px] text-primary transition-colors hover:text-primary-glow"
         >
-          {recordedCount > 0 ? "查看/编辑 →" : "开始记录 →"}
+          {recordedCount > 0 ? "编辑详情 →" : "开始记录 →"}
         </Link>
       </div>
 
-      {/* 时间段可视化 */}
-      <div className="mt-3 flex items-center gap-1.5">
-        {TIME_SLOTS.map((slot) => {
-          const entry = entries.find((e) => e.timeSlot === slot.key);
-          return (
-            <Link
-              key={slot.key}
-              href="/journal"
-              className="group relative flex flex-1 flex-col items-center gap-1 rounded-xl py-2.5 transition-all duration-200 hover:bg-surface/40"
-              title={entry ? `${slot.label}: ${entry.content || "已记录"}` : `${slot.label}: 未记录`}
-            >
-              {/* 时间段图标 */}
-              <span className={`text-base transition-opacity ${entry ? "opacity-100" : "opacity-30"}`}>
-                {slot.icon}
-              </span>
-              {/* 心情 emoji 或空圆点 */}
-              {entry ? (
-                <span className="text-sm">{MOOD_EMOJIS[entry.moodIndex]}</span>
-              ) : (
-                <span className="h-2 w-2 rounded-full border border-white/15" />
-              )}
-              {/* 时间段标签 */}
-              <span className="text-[9px] font-medium uppercase tracking-wider text-text-tertiary">
-                {slot.label}
-              </span>
-              {/* 已记录指示线 */}
-              <div
-                className={`absolute -bottom-px h-0.5 w-full rounded-full transition-colors ${
-                  entry ? "bg-primary/40" : "bg-transparent"
-                }`}
-              />
-            </Link>
-          );
-        })}
-      </div>
-
-      {/* 平均心情 */}
-      {avgMood !== null && (
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-text-tertiary">
-          <span>平均心情</span>
-          <span className="text-sm">{MOOD_EMOJIS[avgMood]}</span>
+      {/* 时间段可视化 + 心情详情 */}
+      <div className="mt-3 rounded-xl border border-white/5 bg-surface/30 p-4">
+        {/* 时间段心情条 */}
+        <div className="flex items-center gap-2">
+          {TIME_SLOTS.map((slot) => {
+            const entry = getSlotEntry(slot.key);
+            const subSlot = entry ? (slot.subSlots.find((ss) => ss.key === entry.timeSlot) ?? slot.subSlots[0]) : null;
+            return (
+              <Link
+                key={slot.key}
+                href="/journal"
+                className="group flex flex-1 flex-col items-center gap-1 rounded-lg py-2 transition-all duration-200 hover:bg-surface-elevated/40"
+              >
+                <span className={`text-lg transition-opacity ${entry ? "opacity-100" : "opacity-25"}`}>
+                  {slot.icon}
+                </span>
+                {entry ? (
+                  <span className="text-lg">{MOOD_EMOJIS[entry.moodIndex]}</span>
+                ) : (
+                  <span className="h-4 w-4 rounded-full border border-white/10" />
+                )}
+                <span className="text-[9px] font-medium uppercase tracking-wider text-text-tertiary">
+                  {slot.label}
+                </span>
+                {subSlot && (
+                  <span className="text-[8px] text-text-tertiary/60">{subSlot.label}</span>
+                )}
+              </Link>
+            );
+          })}
         </div>
-      )}
+
+        {/* 心情统计 */}
+        {avgMood !== null && (
+          <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
+            <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
+              <span>今日平均心情</span>
+              <span className="text-base">{MOOD_EMOJIS[avgMood]}</span>
+              <span className="text-[11px] text-text-tertiary/70">{MOOD_LABELS[avgMood]}</span>
+            </div>
+            {hasAnyContent && latestEntry && (
+              <span className="max-w-[50%] truncate text-right text-[11px] text-text-tertiary/70">
+                最新: {latestEntry.content}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* 未记录提示 */}
+        {recordedCount === 0 && (
+          <div className="mt-3 text-center">
+            <p className="text-[12px] text-text-tertiary">点击时间段开始记录你的心情</p>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

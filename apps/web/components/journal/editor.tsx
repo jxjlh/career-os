@@ -77,6 +77,9 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
       queryClient.invalidateQueries({ queryKey: ["journal-month"] });
       onSaved?.();
     },
+    onError: (error: any) => {
+      console.error("保存失败:", error);
+    },
   });
 
   const deleteMutation = useMutation({
@@ -369,7 +372,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
               animate={{ opacity: 1, y: 0 }}
               className="mt-3 text-center text-[13px] text-danger"
             >
-              ✗ 保存失败，请重试
+              ✗ {upsertMutation.error?.message || "保存失败，请重试"}
             </motion.div>
           )}
         </>
