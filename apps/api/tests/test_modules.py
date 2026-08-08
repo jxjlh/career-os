@@ -1,6 +1,8 @@
 import time
 import uuid
+from types import SimpleNamespace
 
+from app.domains.explorer.router import _select_search_providers
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -47,6 +49,66 @@ def test_skills_matrix_and_progress() -> None:
         )
         assert resp.status_code == 200
         assert resp.json()["data"]["currentLevel"] == 4
+
+
+def test_skill_categories_detail_and_knowledge() -> None:
+    skill_name = f"分类详情技能-{uuid.uuid4().hex[:8]}"
+    with client() as c:
+        created = c.post(
+            "/api/v1/skills",
+            headers=HEADERS,
+            json={"name": skill_name, "category": "学习", "currentLevel": 2, "targetLevel": 8},
+        )
+        assert created.status_code == 201
+        skill_id = created.json()["data"]["skillId"]
+        assert created.json()["data"]["learningStatus"] == "learning"
+
+        moved = c.patch(
+            f"/api/v1/skills/{skill_id}",
+            headers=HEADERS,
+            json={"learningStatus": "mastered"},
+        )
+        assert moved.status_code == 200
+        assert moved.json()["data"]["learningStatus"] == "mastered"
+        assert moved.json()["data"]["currentLevel"] == 2
+
+        detail = c.get(f"/api/v1/skills/{skill_id}/detail", headers=HEADERS)
+        assert detail.status_code == 200
+        assert detail.json()["data"]["skill"]["skillId"] == skill_id
+        assert "planStats" in detail.json()["data"]
+
+        knowledge = c.post(f"/api/v1/skills/{skill_id}/knowledge", headers=HEADERS)
+        assert knowledge.status_code == 200
+        assert knowledge.json()["data"]["knowledgePoints"]
+
+        resource_job = c.post(
+            f"/api/v1/skills/{skill_id}/resources",
+            headers=HEADERS,
+            json={"query": "入门", "limit": 5},
+        )
+        assert resource_job.status_code == 202
+        assert resource_job.json()["data"]["provider"] == "bilibili"
+
+        task = c.post(
+            "/api/v1/planner/tasks",
+            headers=HEADERS,
+            json={"title": "完成技能练习", "day": 2, "estimatedMinutes": 45, "skillId": skill_id},
+        )
+        assert task.status_code == 201
+        assert task.json()["data"]["skillId"] == skill_id
+
+        detail_after_task = c.get(f"/api/v1/skills/{skill_id}/detail", headers=HEADERS)
+        assert detail_after_task.status_code == 200
+        assert any(item["id"] == task.json()["data"]["id"] for item in detail_after_task.json()["data"]["tasks"])
+
+
+def test_skill_resources_only_select_bilibili_provider(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.domains.explorer.router.get_search_providers",
+        lambda: [SimpleNamespace(name="bilibili"), SimpleNamespace(name="mock")],
+    )
+    providers = _select_search_providers(["bilibili"])
+    assert [provider.name for provider in providers] == ["bilibili"]
 
 
 def test_english_books_use_complete_relation_data() -> None:

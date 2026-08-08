@@ -36,6 +36,7 @@ class ManualTaskCreate(BaseModel):
     day: int = Field(default=1, ge=1, le=7)
     estimatedMinutes: int = Field(default=60, ge=10, le=600)
     notes: str | None = None
+    skillId: str | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -214,6 +215,7 @@ def add_manual_task(
         status="todo",
         sort_order=db.query(PlanTask).filter(PlanTask.plan_id == plan.id).count() + 1,
         notes=payload.notes,
+        skill_id=payload.skillId,
         ai_generated=False,
         task_type="learning",
         difficulty="medium",

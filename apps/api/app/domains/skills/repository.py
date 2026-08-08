@@ -39,7 +39,19 @@ class UserSkillRepository(BaseRepository[UserSkill]):
         rows = self.db.query(UserSkill).filter(UserSkill.user_id == user_id).all()
         return {row.skill_id: row for row in rows}
 
-    def upsert(self, user_id: str, skill_id: str, current: int, target: int, confidence: float, notes: str | None) -> UserSkill:
+    def get_by_user_and_skill(self, user_id: str, skill_id: str) -> UserSkill | None:
+        return self.db.query(UserSkill).filter(UserSkill.user_id == user_id, UserSkill.skill_id == skill_id).first()
+
+    def upsert(
+        self,
+        user_id: str,
+        skill_id: str,
+        current: int,
+        target: int,
+        confidence: float,
+        notes: str | None,
+        learning_status: str | None = None,
+    ) -> UserSkill:
         row = (
             self.db.query(UserSkill)
             .filter(UserSkill.user_id == user_id, UserSkill.skill_id == skill_id)
@@ -50,6 +62,8 @@ class UserSkillRepository(BaseRepository[UserSkill]):
             self.db.add(row)
         row.current_level = current
         row.target_level = target
+        if learning_status is not None:
+            row.learning_status = learning_status
         row.confidence = confidence
         row.notes = notes
         return row

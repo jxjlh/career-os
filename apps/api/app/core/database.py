@@ -52,6 +52,9 @@ def ensure_columns() -> None:
         "user_profiles": {
             "life_motto": "VARCHAR(300)",
         },
+        "user_skills": {
+            "learning_status": "VARCHAR(16) DEFAULT 'learning'",
+        },
         # ── Sprint 10: AI 周计划增强 ──
         "weekly_plans": {
             "weekly_focus": "TEXT",
@@ -136,6 +139,13 @@ def ensure_columns() -> None:
                         # 同时保持每张表只建立一个连接，避免测试和启动变慢。
                         with conn.begin_nested():
                             conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+                            if table == "user_skills" and name == "learning_status":
+                                conn.execute(
+                                    text(
+                                        "UPDATE user_skills SET learning_status = "
+                                        "CASE WHEN target_level >= current_level THEN 'mastered' ELSE 'learning' END"
+                                    )
+                                )
                         existing.add(name)
                         logger.info("Added missing column %s.%s", table, name)
                     except Exception as e:

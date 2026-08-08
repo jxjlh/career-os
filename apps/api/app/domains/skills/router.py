@@ -1,14 +1,15 @@
 from datetime import date, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db.models import PlanTask, Profile, Skill, UserSkill, WeeklyPlan
+from app.db.models import BackgroundJob, PlanTask, Profile, Skill, UserSkill, WeeklyPlan
 from app.domains.skills.service import SkillService
+from app.domains.explorer.router import run_search_job
 from app.providers.ai import registry as ai_registry
 from app.providers.ai.base import extract_json
 
@@ -20,6 +21,7 @@ class SkillProgressUpdate(BaseModel):
     targetLevel: int = Field(ge=1, le=10)
     confidence: float = Field(default=0, ge=0, le=100)
     notes: str | None = None
+    learningStatus: Literal["mastered", "learning"] | None = None
 
 
 class SkillCreate(BaseModel):
@@ -28,17 +30,24 @@ class SkillCreate(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     currentLevel: int = Field(default=1, ge=1, le=10)
     targetLevel: int = Field(default=5, ge=1, le=10)
+    learningStatus: Literal["mastered", "learning"] = "learning"
 
 
 class SkillUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     category: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=500)
+    learningStatus: Literal["mastered", "learning"] | None = None
 
 
 class SkillRecommendationRequest(BaseModel):
     currentSituation: str | None = Field(default=None, max_length=2000)
     weeklyMinutes: int = Field(default=420, ge=30, le=10080)
+
+
+class SkillResourceSearchRequest(BaseModel):
+    query: str = Field(default="", max_length=160)
+    limit: int = Field(default=12, ge=1, le=20)
 
 
 @router.get("/skills")
@@ -79,6 +88,7 @@ def create_skill(
         skill_id=skill.id,
         current_level=payload.currentLevel,
         target_level=payload.targetLevel,
+        learning_status=payload.learningStatus,
     )
     db.add(row)
     db.commit()
@@ -106,8 +116,14 @@ def update_skill(
         skill.category = payload.category.strip()
     if payload.description is not None:
         skill.description = payload.description
-    db.commit()
     user_skill = db.query(UserSkill).filter(UserSkill.user_id == current_user.id, UserSkill.skill_id == skill_id).first()
+    if payload.learningStatus is not None:
+        if user_skill is None:
+            user_skill = UserSkill(user_id=current_user.id, skill_id=skill_id, learning_status=payload.learningStatus)
+            db.add(user_skill)
+        else:
+            user_skill.learning_status = payload.learningStatus
+    db.commit()
     from app.domains.skills.service import skill_dict
 
     return {"data": skill_dict(skill, user_skill)}
@@ -145,10 +161,79 @@ def update_skill_progress(
             payload.targetLevel,
             payload.confidence,
             payload.notes,
+            payload.learningStatus,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Skill not found"}) from exc
     return {"data": result}
+
+
+@router.get("/skills/{skill_id}/detail")
+def skill_detail(
+    skill_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    try:
+        return {"data": SkillService(db).detail(current_user, skill_id)}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Skill not found"}) from exc
+
+
+@router.post("/skills/{skill_id}/knowledge")
+async def skill_knowledge(
+    skill_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    skill = db.query(Skill).filter(Skill.id == skill_id).first()
+    if skill is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Skill not found"})
+    user_skill = db.query(UserSkill).filter(UserSkill.user_id == current_user.id, UserSkill.skill_id == skill_id).first()
+    current_level = user_skill.current_level if user_skill else 0
+    target_level = user_skill.target_level if user_skill else 5
+    prompt = (
+        "你是学习教练。请根据技能、当前等级和目标等级，列出用户需要掌握的具体知识点。"
+        '严格返回 JSON：{"knowledgePoints":[{"title":"","description":"","order":1}]}。'
+        f"技能: {skill.name}\n描述: {skill.description or '未填写'}\n当前等级: {current_level}\n目标等级: {target_level}"
+    )
+    parsed = None
+    try:
+        parsed = extract_json(await ai_registry.get_ai_provider().complete([{"role": "user", "content": prompt}], temperature=0.3, max_tokens=1000))
+    except Exception:
+        parsed = None
+    points = parsed.get("knowledgePoints", []) if isinstance(parsed, dict) else []
+    if not points:
+        points = [
+            {"title": f"理解 {skill.name} 的核心概念", "description": "能够用自己的话解释定义、边界和常见应用。", "order": 1},
+            {"title": f"完成一次 {skill.name} 实操", "description": "围绕真实场景完成一个可验证的小练习。", "order": 2},
+            {"title": f"复盘 {skill.name} 的常见问题", "description": "能够识别错误并说明排查和改进步骤。", "order": 3},
+        ]
+    return {"data": {"skillId": skill.id, "skillName": skill.name, "knowledgePoints": points[:12], "provider": "ai" if parsed else "fallback"}}
+
+
+@router.post("/skills/{skill_id}/resources", status_code=202)
+def skill_resources(
+    skill_id: str,
+    payload: SkillResourceSearchRequest,
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    skill = db.query(Skill).filter(Skill.id == skill_id).first()
+    if skill is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Skill not found"})
+    query = f"{skill.name} {payload.query}".strip()
+    job = BackgroundJob(
+        user_id=current_user.id,
+        job_type="skill_bilibili_search",
+        payload={"query": query, "providers": ["bilibili"]},
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    background_tasks.add_task(run_search_job, job.id, query, payload.limit, current_user.language, ["bilibili"])
+    return {"data": {"jobId": job.id, "status": job.status, "provider": "bilibili"}}
 
 
 @router.post("/skills/{skill_id}/recommendations")

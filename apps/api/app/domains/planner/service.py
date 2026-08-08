@@ -230,6 +230,12 @@ class PlannerService:
         self.db.query(PlanTask).filter(PlanTask.plan_id == plan.id).delete()
 
         prompt, whitelist = self.context.build(user_id, weekly_minutes, goal_ids=goal_ids)
+        priority_skill_rows = (
+            self.db.query(Skill)
+            .filter(Skill.id.in_(priority_skills or []))
+            .all()
+        )
+        whitelist["skill"].update(skill.id for skill in priority_skill_rows)
         input_data = {
             "week_start": week_start.isoformat(),
             "weekly_minutes": weekly_minutes,
@@ -371,8 +377,13 @@ class PlannerService:
             .order_by((UserSkill.target_level - UserSkill.current_level).desc())
             .first()
         )
+        if priority_skills:
+            selected_skill = self.db.query(Skill).filter(Skill.id.in_(priority_skills)).first()
+            if selected_skill is not None:
+                skill_row = selected_skill
 
-        topics = priority_skills[:3]
+        priority_skill_rows = self.db.query(Skill).filter(Skill.id.in_(priority_skills)).all() if priority_skills else []
+        topics = [skill.name for skill in priority_skill_rows[:3]]
         if not topics and skill_row:
             topics = [skill_row.name]
         if not topics:

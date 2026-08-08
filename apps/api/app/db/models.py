@@ -139,6 +139,7 @@ class UserSkill(Base):
     skill_id: Mapped[str] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), index=True)
     current_level: Mapped[int] = mapped_column(SmallInteger, default=1)
     target_level: Mapped[int] = mapped_column(SmallInteger, default=5)
+    learning_status: Mapped[str] = mapped_column(String(16), default="learning", index=True)
     confidence: Mapped[float] = mapped_column(Float, default=0)
     notes: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)

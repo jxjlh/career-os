@@ -53,9 +53,23 @@ def resource_dict(resource: LearningResource, state: str = "discovered") -> dict
     }
 
 
-async def run_search_job(job_id: str, query: str, limit: int, language: str) -> None:
-    started = time.monotonic()
+def _select_search_providers(provider_names: list[str] | None = None) -> list:
     providers = get_search_providers()
+    if not provider_names:
+        return providers
+    selected = set(provider_names)
+    return [provider for provider in providers if provider.name in selected]
+
+
+async def run_search_job(
+    job_id: str,
+    query: str,
+    limit: int,
+    language: str,
+    provider_names: list[str] | None = None,
+) -> None:
+    started = time.monotonic()
+    providers = _select_search_providers(provider_names)
     responses = await asyncio.gather(
         *(provider.search(query, limit=limit, language=language) for provider in providers),
         return_exceptions=True,
@@ -161,7 +175,14 @@ def explore_search(
     db.add(job)
     db.commit()
     db.refresh(job)
-    background_tasks.add_task(run_search_job, job.id, payload.query, payload.limit, current_user.language)
+    background_tasks.add_task(
+        run_search_job,
+        job.id,
+        payload.query,
+        payload.limit,
+        current_user.language,
+        payload.providers or None,
+    )
     return {
         "data": {
             "jobId": job.id,

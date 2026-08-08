@@ -1,7 +1,18 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Loader2, Search, Sparkles, Target } from "lucide-react";
+import {
+  Check,
+  ExternalLink,
+  Loader2,
+  Pencil,
+  Plus,
+  Search,
+  Sparkles,
+  Target,
+  Trash2,
+  Video,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { EChart } from "@/components/chart";
@@ -9,49 +20,231 @@ import { Badge, Button, Card, Input, SectionHeader, Skeleton, Textarea } from "@
 import { apiFetch } from "@/lib/api";
 
 type Envelope = { data: any };
+type SkillCategory = "learning" | "mastered";
+
+const CATEGORY_LABELS: Record<SkillCategory, string> = {
+  learning: "想学的技能",
+  mastered: "已经会的技能",
+};
 
 export default function SkillsPage() {
   const queryClient = useQueryClient();
-  const [selectedId, setSelectedId] = useState<string>("");
-  const [situation, setSituation] = useState("");
+  const [activeCategory, setActiveCategory] = useState<SkillCategory>("learning");
+  const [selectedId, setSelectedId] = useState("");
+  const [newSkillName, setNewSkillName] = useState("");
+
+  const matrix = useQuery<Envelope>({ queryKey: ["skill-matrix"], queryFn: () => apiFetch("/skills/matrix") });
+  const items = useMemo(() => matrix.data?.data.items || [], [matrix.data]);
+  const categorySkills = useMemo(
+    () => items.filter((skill: any) => (skill.learningStatus || "learning") === activeCategory),
+    [activeCategory, items],
+  );
+  const selected = items.find((skill: any) => skill.skillId === selectedId) || null;
+  const selectedSkillId = selected?.skillId || "";
+
+  useEffect(() => {
+    if (!categorySkills.some((skill: any) => skill.skillId === selectedId)) {
+      setSelectedId(categorySkills[0]?.skillId || "");
+    }
+  }, [categorySkills, selectedId]);
+
+  const createSkill = useMutation({
+    mutationFn: () => apiFetch<Envelope>("/skills", {
+      method: "POST",
+      body: JSON.stringify({ name: newSkillName.trim(), category: "自定义", currentLevel: 1, targetLevel: 5, learningStatus: "learning" }),
+    }),
+    onSuccess: (response) => {
+      setNewSkillName("");
+      setActiveCategory("learning");
+      setSelectedId(response.data.skillId);
+      void queryClient.invalidateQueries({ queryKey: ["skill-matrix"] });
+    },
+  });
+
+  const updateSkill = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: any }) => apiFetch(`/skills/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["skill-matrix"] }),
+  });
+
+  const deleteSkill = useMutation({
+    mutationFn: (id: string) => apiFetch(`/skills/${id}`, { method: "DELETE" }),
+    onSuccess: (_, id) => {
+      if (id === selectedId) setSelectedId("");
+      void queryClient.invalidateQueries({ queryKey: ["skill-matrix"] });
+    },
+  });
+
+  const updateProgress = useMutation({
+    mutationFn: ({ id, current, target, confidence }: { id: string; current: number; target: number; confidence: number }) => apiFetch(`/skills/${id}/progress`, {
+      method: "PUT",
+      body: JSON.stringify({ currentLevel: current, targetLevel: target, confidence }),
+    }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["skill-matrix"] });
+      void queryClient.invalidateQueries({ queryKey: ["skill-detail", selectedSkillId] });
+    },
+  });
+
+  const radarOption = {
+    tooltip: {},
+    radar: { indicator: items.slice(0, 8).map((skill: any) => ({ name: skill.name, max: 10 })), radius: "65%" },
+    series: [{ type: "radar", data: [
+      { value: items.slice(0, 8).map((skill: any) => skill.currentLevel || 0), name: "当前水平", areaStyle: { opacity: 0.18 } },
+      { value: items.slice(0, 8).map((skill: any) => skill.targetLevel || 0), name: "目标水平" },
+    ] }],
+    legend: { bottom: 0, textStyle: { color: "var(--muted)" } },
+  };
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader title="技能矩阵" subtitle="先看全局能力结构，再进入任意技能制定学习路径。" />
+      <Card className="p-4">
+        {matrix.isLoading ? <Skeleton className="h-[300px]" /> : <EChart option={radarOption} height={320} />}
+      </Card>
+
+      <div className="grid grid-cols-2 gap-3">
+        {(Object.keys(CATEGORY_LABELS) as SkillCategory[]).map((category) => (
+          <Button
+            key={category}
+            className="h-12 justify-between px-4"
+            variant={activeCategory === category ? "primary" : "outline"}
+            onClick={() => setActiveCategory(category)}
+          >
+            <span>{CATEGORY_LABELS[category]}</span>
+            <Badge variant={activeCategory === category ? "ai" : "default"}>{items.filter((skill: any) => (skill.learningStatus || "learning") === category).length}</Badge>
+          </Button>
+        ))}
+      </div>
+
+      <Card className="p-4">
+        <SectionHeader
+          title={CATEGORY_LABELS[activeCategory]}
+          subtitle="点击一个技能，查看等级、知识点、B站资源、考核和计划。"
+          action={(
+            <div className="flex gap-2">
+              <Input
+                className="w-36"
+                value={newSkillName}
+                onChange={(event) => setNewSkillName(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter" && newSkillName.trim()) createSkill.mutate(); }}
+                placeholder="添加技能名称"
+              />
+              <Button size="sm" variant="primary" disabled={!newSkillName.trim() || createSkill.isPending} onClick={() => createSkill.mutate()}>
+                {createSkill.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}添加
+              </Button>
+            </div>
+          )}
+        />
+        {categorySkills.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">还没有{CATEGORY_LABELS[activeCategory]}，从右上角添加一个技能。</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {categorySkills.map((skill: any) => (
+              <SkillCard
+                key={skill.skillId}
+                skill={skill}
+                selected={skill.skillId === selectedSkillId}
+                onSelect={() => setSelectedId(skill.skillId)}
+                onMove={() => updateSkill.mutate({ id: skill.skillId, payload: { learningStatus: activeCategory === "learning" ? "mastered" : "learning" } })}
+                onRename={(name) => updateSkill.mutate({ id: skill.skillId, payload: { name } })}
+                onDelete={() => { if (window.confirm(`删除技能“${skill.name}”？`)) deleteSkill.mutate(skill.skillId); }}
+              />
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {selected && <SkillDetail skill={selected} detailKey={selectedSkillId} onProgress={(current, target, confidence) => updateProgress.mutate({ id: selectedSkillId, current, target, confidence })} />}
+    </div>
+  );
+}
+
+function SkillCard({ skill, selected, onSelect, onMove, onRename, onDelete }: { skill: any; selected: boolean; onSelect: () => void; onMove: () => void; onRename: (name: string) => void; onDelete: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(skill.name);
+  const progress = Math.min(100, Math.round(((skill.currentLevel || 0) / Math.max(skill.targetLevel || 1, 1)) * 100));
+  const moveLabel = skill.learningStatus === "mastered" ? "移到想学" : "移到已经会";
+
+  return (
+    <Card className={`cursor-pointer p-4 transition ${selected ? "border-primary/60 bg-primary/5" : "hover:border-primary/30"}`} onClick={onSelect}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          {editing ? <Input value={name} onChange={(event) => setName(event.target.value)} onClick={(event) => event.stopPropagation()} /> : <h3 className="truncate text-sm font-semibold">{skill.name}</h3>}
+          <p className="mt-1 text-xs text-muted">{skill.category}</p>
+        </div>
+        <Badge variant={selected ? "primary" : "default"}>{skill.currentLevel || 0}/{skill.targetLevel || 0}</Badge>
+      </div>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} /></div>
+      <div className="mt-2 flex items-center justify-between text-[11px] text-muted"><span>掌握度 {progress}%</span><Target className="h-3.5 w-3.5" /></div>
+      <div className="mt-3 flex flex-wrap gap-1.5" onClick={(event) => event.stopPropagation()}>
+        {editing ? <Button size="sm" onClick={() => { onRename(name.trim()); setEditing(false); }}>保存名称</Button> : <Button size="sm" variant="ghost" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5" />修改</Button>}
+        <Button size="sm" variant="ghost" onClick={onMove}>{moveLabel}</Button>
+        <Button size="sm" variant="ghost" onClick={onDelete}><Trash2 className="h-3.5 w-3.5 text-danger" /></Button>
+      </div>
+    </Card>
+  );
+}
+
+function SkillDetail({ skill, detailKey, onProgress }: { skill: any; detailKey: string; onProgress: (current: number, target: number, confidence: number) => void }) {
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
+  const [knowledgePoints, setKnowledgePoints] = useState<any[]>([]);
   const [questions, setQuestions] = useState<any[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
   const [assessment, setAssessment] = useState<any>(null);
-
-  const matrix = useQuery<Envelope>({ queryKey: ["skill-matrix"], queryFn: () => apiFetch("/skills/matrix") });
-  const plan = useQuery<Envelope>({ queryKey: ["planner-current"], queryFn: () => apiFetch("/planner/current") });
-  const items = matrix.data?.data.items || [];
-  const selected = items.find((skill: any) => skill.skillId === selectedId) || items[0];
-  const selectedSkillId = selected?.skillId || "";
-  const learningSkills = useMemo(() => items.filter((skill: any) => (skill.targetLevel || 0) > (skill.currentLevel || 0) || (skill.targetLevel || 0) > 0), [items]);
+  const [newTask, setNewTask] = useState({ title: "", day: "1", minutes: "30" });
+  const detail = useQuery<Envelope>({ queryKey: ["skill-detail", detailKey], queryFn: () => apiFetch(`/skills/${detailKey}/detail`), enabled: Boolean(detailKey) });
+  const data = detail.data?.data || {};
+  const currentSkill = data.skill || skill;
+  const [current, setCurrent] = useState(Math.max(1, currentSkill.currentLevel || 1));
+  const [target, setTarget] = useState(Math.max(1, currentSkill.targetLevel || 5));
+  const [confidence, setConfidence] = useState(currentSkill.confidence || 0);
 
   useEffect(() => {
-    if (!selectedId && items.length > 0) setSelectedId(items[0].skillId);
-  }, [items, selectedId]);
+    setSearchQuery(""); setSearchResults([]); setKnowledgePoints([]); setQuestions([]); setAnswers([]); setAssessment(null);
+    setCurrent(Math.max(1, skill.currentLevel || 1)); setTarget(Math.max(1, skill.targetLevel || 5)); setConfidence(skill.confidence || 0);
+  }, [detailKey, skill]);
 
-  const update = useMutation({
-    mutationFn: ({ id, current, target }: { id: string; current: number; target: number }) => apiFetch(`/skills/${id}/progress`, { method: "PUT", body: JSON.stringify({ currentLevel: current, targetLevel: target, confidence: 0 }) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["skill-matrix"] }),
-  });
-  const recommendation = useMutation({
-    mutationFn: () => apiFetch<Envelope>(`/skills/${selectedSkillId}/recommendations`, { method: "POST", body: JSON.stringify({ currentSituation: situation, weeklyMinutes: 420 }) }),
+  const generateKnowledge = useMutation({
+    mutationFn: () => apiFetch<Envelope>(`/skills/${detailKey}/knowledge`, { method: "POST" }),
+    onSuccess: (response) => setKnowledgePoints(response.data.knowledgePoints || []),
   });
   const generatePlan = useMutation({
-    mutationFn: () => apiFetch<Envelope>("/planner/generate", { method: "POST", body: JSON.stringify({ weeklyStudyMinutes: 420, prioritySkills: [selectedSkillId], goalIds: [] }) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["planner-current"] }),
+    mutationFn: () => apiFetch(`/planner/generate`, { method: "POST", body: JSON.stringify({ weeklyStudyMinutes: 420, prioritySkills: [detailKey], goalIds: [] }) }),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["skill-detail", detailKey] }); },
   });
-  const saveResource = useMutation({
-    mutationFn: (resourceId: string) => apiFetch("/library/bookmarks", { method: "POST", body: JSON.stringify({ resourceId }) }),
+  const addTask = useMutation({
+    mutationFn: () => apiFetch(`/planner/tasks`, { method: "POST", body: JSON.stringify({ title: newTask.title.trim(), day: Number(newTask.day), estimatedMinutes: Number(newTask.minutes), skillId: detailKey }) }),
+    onSuccess: () => { setNewTask({ title: "", day: "1", minutes: "30" }); void queryClient.invalidateQueries({ queryKey: ["skill-detail", detailKey] }); },
+  });
+  const updateTask = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: any }) => apiFetch(`/planner/tasks/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["skill-detail", detailKey] }),
+  });
+  const toggleTask = useMutation({
+    mutationFn: (id: string) => apiFetch(`/planner/tasks/${id}/toggle`, { method: "PATCH" }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["skill-detail", detailKey] }),
+  });
+  const deleteTask = useMutation({
+    mutationFn: (id: string) => apiFetch(`/planner/tasks/${id}`, { method: "DELETE" }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["skill-detail", detailKey] }),
+  });
+  const saveResource = useMutation({ mutationFn: (resourceId: string) => apiFetch("/library/bookmarks", { method: "POST", body: JSON.stringify({ resourceId }) }) });
+  const startAssessment = useMutation({
+    mutationFn: () => apiFetch<Envelope>("/career/assessment", { method: "POST", body: JSON.stringify({ topic: currentSkill.name }) }),
+    onSuccess: (response) => { const nextQuestions = response.data.questions || []; setQuestions(nextQuestions); setAnswers(nextQuestions.map(() => "")); setAssessment(null); },
+  });
+  const submitAssessment = useMutation({
+    mutationFn: () => apiFetch<Envelope>("/career/assessment", { method: "POST", body: JSON.stringify({ topic: currentSkill.name, answers: questions.map((question, index) => ({ question: question.question, answer: answers[index] || "" })) }) }),
+    onSuccess: (response) => setAssessment(response.data),
   });
 
-  const searchResources = async (queryOverride?: string) => {
-    const query = queryOverride?.trim() || searchQuery.trim() || `${selected?.name || "技能"} 学习资源 官方教程 实战`;
+  const searchResources = async () => {
     setSearching(true); setSearchResults([]);
     try {
-      const response = await apiFetch<Envelope>("/explore/search", { method: "POST", body: JSON.stringify({ query, limit: 12 }) });
+      const response = await apiFetch<Envelope>(`/skills/${detailKey}/resources`, { method: "POST", body: JSON.stringify({ query: searchQuery.trim(), limit: 12 }) });
       for (let index = 0; index < 30; index += 1) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         const job = await apiFetch<Envelope>(`/explore/jobs/${response.data.jobId}`);
@@ -61,22 +254,54 @@ export default function SkillsPage() {
     } finally { setSearching(false); }
   };
 
-  const startAssessment = useMutation({
-    mutationFn: () => apiFetch<Envelope>("/career/assessment", { method: "POST", body: JSON.stringify({ topic: selected?.name || "当前技能" }) }),
-    onSuccess: (response) => { const nextQuestions = response.data.questions || []; setQuestions(nextQuestions); setAnswers(nextQuestions.map(() => "")); setAssessment(null); },
+  const progressPercent = Math.min(100, Math.round((current / Math.max(target, 1)) * 100));
+  const dailyProgress = Array.from({ length: 7 }, (_, index) => {
+    const dayTasks = (data.tasks || []).filter((task: any) => task.day === index + 1);
+    return dayTasks.length ? Math.round((dayTasks.filter((task: any) => task.status === "done").length / dayTasks.length) * 100) : 0;
   });
-  const submitAssessment = useMutation({
-    mutationFn: () => apiFetch<Envelope>("/career/assessment", { method: "POST", body: JSON.stringify({ topic: selected?.name || "当前技能", answers: questions.map((question, index) => ({ question: question.question, answer: answers[index] || "" })) }) }),
-    onSuccess: (response) => setAssessment(response.data),
-  });
+  const progressOption = { xAxis: { type: "category", data: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"] }, yAxis: { type: "value", max: 100 }, tooltip: { valueSuffix: "%" }, series: [{ type: "bar", data: dailyProgress, itemStyle: { borderRadius: [6, 6, 0, 0] } }] };
 
-  const radarOption = { tooltip: {}, radar: { indicator: items.slice(0, 8).map((skill: any) => ({ name: skill.name, max: 10 })), radius: "65%" }, series: [{ type: "radar", data: [{ value: items.slice(0, 8).map((skill: any) => skill.currentLevel || 0), name: "当前水平", areaStyle: { opacity: 0.18 } }, { value: items.slice(0, 8).map((skill: any) => skill.targetLevel || 0), name: "目标水平" }] }], legend: { bottom: 0, textStyle: { color: "var(--muted)" } } };
+  return (
+    <Card className="space-y-5 p-4" key={detailKey}>
+      <SectionHeader title={`${currentSkill.name} · 技能详情`} subtitle="点击技能后才显示等级、资源、考核和学习计划。" action={<Badge variant="ai"><Sparkles className="h-3.5 w-3.5" />AI 学习工作区</Badge>} />
+      {detail.isLoading ? <Skeleton className="h-32" /> : <>
+        <div className="grid gap-3 md:grid-cols-4">
+          <Stat label="当前等级" value={`${current}/10`} />
+          <Stat label="目标等级" value={`${target}/10`} />
+          <Stat label="掌握度" value={`${progressPercent}%`} />
+          <Stat label="本周完成" value={`${data.planStats?.done || 0}/${data.planStats?.total || 0}`} />
+        </div>
 
-  return <div className="space-y-5"><SectionHeader title="技能矩阵" subtitle="先看全局能力结构，再进入任意技能制定学习路径。" /><Card className="p-4">{matrix.isLoading ? <Skeleton className="h-[300px]" /> : <EChart option={radarOption} height={300} />}</Card><Card className="p-4"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">想学的技能</h2><p className="mt-1 text-xs text-muted">点击技能后，下面会展示 AI 推荐资源、搜索结果、计划和考核。</p></div><Target className="h-5 w-5 text-primary" /></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{learningSkills.map((skill: any) => <button key={skill.skillId} type="button" onClick={() => { setSelectedId(skill.skillId); setSearchResults([]); setAssessment(null); }} className={`rounded-xl border p-3 text-left transition ${selectedSkillId === skill.skillId ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"}`}><div className="flex items-start justify-between gap-2"><p className="text-sm font-semibold">{skill.name}</p><Badge>{skill.category}</Badge></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, ((skill.currentLevel || 0) / Math.max(1, skill.targetLevel || 10)) * 100)}%` }} /></div><p className="mt-1 text-[11px] text-muted">当前 {skill.currentLevel || 0} · 目标 {skill.targetLevel || 0} · 差距 {skill.gap || 0}</p></button>)}</div></Card>{selected && <Card className="p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{selected.name}</h2><p className="mt-1 text-xs text-muted">{selected.description || "为这个技能建立可执行的学习闭环。"}</p></div><div className="flex gap-2"><Button size="sm" onClick={() => recommendation.mutate()} disabled={recommendation.isPending}>{recommendation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}AI 推荐路径</Button><Button size="sm" variant="outline" onClick={() => generatePlan.mutate()} disabled={generatePlan.isPending}>生成学习计划</Button></div></div><div className="mt-4 grid gap-3 md:grid-cols-2"><div><p className="mb-1 text-xs font-medium text-muted">当前学习情况</p><Textarea value={situation} onChange={(event) => setSituation(event.target.value)} placeholder="填写基础、目标、可投入时间或正在学习的内容" /></div><div><p className="mb-1 text-xs font-medium text-muted">调整当前 / 目标等级</p><SkillLevelEditor skill={selected} onSave={(current, target) => update.mutate({ id: selectedSkillId, current, target })} /></div></div><div className="mt-4 flex flex-col gap-2 sm:flex-row"><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") searchResources(); }} placeholder={`搜索 ${selected.name} 的学习资源`} /><Button variant="outline" onClick={() => searchResources()} disabled={searching}>{searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}搜索资源</Button></div>{recommendation.data?.data && <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_1fr]"><div><h3 className="text-sm font-semibold">AI 推荐学习资源</h3><div className="mt-2 space-y-2">{(recommendation.data.data.resources || []).map((resource: any) => <div key={resource.title} className="rounded-lg border border-border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{resource.title}</p><Badge>{resource.type}</Badge></div><p className="mt-1 text-xs text-muted">{resource.reason}</p><div className="mt-2 flex gap-2"><Button size="sm" variant="outline" onClick={() => { setSearchQuery(resource.query); searchResources(resource.query); }}><Search className="h-3.5 w-3.5" />搜索资源</Button></div></div>)}</div></div><div><h3 className="text-sm font-semibold">7 天学习计划</h3><div className="mt-2 space-y-2">{(recommendation.data.data.plan || []).map((task: any) => <div key={`${task.day}-${task.title}`} className="rounded-lg bg-surface-muted/50 p-2 text-xs"><span className="mr-2 text-primary">Day {task.day}</span>{task.title}<span className="ml-2 text-muted">{task.minutes} 分钟</span></div>)}</div></div></div>}{searchResults.length > 0 && <div className="mt-4"><h3 className="text-sm font-semibold">搜索引擎结果</h3><div className="mt-2 space-y-2">{searchResults.map((resource: any, index: number) => <div key={resource.resourceId || index} className="flex items-center gap-3 rounded-lg border border-border p-3"><Search className="h-4 w-4 shrink-0 text-primary" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{resource.title}</p><p className="truncate text-xs text-muted">{resource.sourceName || resource.provider} · {resource.description || resource.snippet}</p></div><Button size="sm" variant="ghost" onClick={() => saveResource.mutate(resource.resourceId)}>收藏</Button><a href={resource.url} target="_blank" rel="noreferrer"><Button size="sm" variant="outline">打开<ExternalLink className="h-3 w-3" /></Button></a></div>)}</div></div>}<div className="mt-4 border-t border-border pt-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">AI 学习考核</h3><Button size="sm" variant="outline" onClick={() => startAssessment.mutate()} disabled={startAssessment.isPending}>生成考核题</Button></div>{questions.length > 0 && <div className="mt-3 space-y-3">{questions.map((question, index) => <div key={`${question.question}-${index}`}><p className="text-xs font-medium">{index + 1}. {question.question}</p><Textarea className="mt-1 min-h-[60px]" value={answers[index] || ""} onChange={(event) => setAnswers((current) => current.map((answer, answerIndex) => answerIndex === index ? event.target.value : answer))} placeholder="写下你的理解、练习过程或结果" /></div>)}<Button size="sm" onClick={() => submitAssessment.mutate()} disabled={submitAssessment.isPending}>提交并评分</Button></div>}{assessment && <div className="mt-3 rounded-xl bg-success/10 p-4"><p className="text-2xl font-bold text-success">{assessment.score} 分</p><p className="mt-1 text-xs text-muted">{assessment.feedback}</p></div>}</div></Card>}<Card className="p-4"><h2 className="text-sm font-semibold">技能等级管理</h2><div className="mt-3 space-y-2">{items.map((skill: any) => <SkillLevelEditor key={skill.skillId} skill={skill} onSave={(current, target) => update.mutate({ id: skill.skillId, current, target })} />)}</div></Card><Card className="p-4"><h2 className="text-sm font-semibold">本周计划执行</h2><div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">{(plan.data?.data.tasks || []).filter((task: any) => task.skillId === selectedSkillId).map((task: any) => <div key={task.id} className="rounded-lg border border-border p-3 text-xs"><p className={task.status === "done" ? "line-through text-muted" : ""}>{task.title}</p><p className="mt-1 text-muted">周{task.day} · {task.estimatedMinutes} 分钟</p></div>)}</div><p className="mt-2 text-xs text-muted">生成计划后，这里会显示该技能关联的本周任务。</p></Card></div>;
+        <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+          <Card className="p-4"><SectionHeader title="技能等级管理" subtitle="只管理当前选中的技能。" /><div className="space-y-3"><LevelSlider label="当前等级" value={current} onChange={setCurrent} /><LevelSlider label="目标等级" value={target} min={1} onChange={setTarget} /><LevelSlider label="信心度" value={confidence} max={100} onChange={setConfidence} /><Button size="sm" onClick={() => onProgress(current, target, confidence)}><Check className="h-3.5 w-3.5" />保存等级</Button></div></Card>
+          <Card className="p-4"><SectionHeader title="技能进度可视化" subtitle="按周查看每天的学习计划完成率。" /><EChart option={progressOption} height={210} /></Card>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card className="p-4"><SectionHeader title="AI 需要掌握的知识点" action={<Button size="sm" variant="outline" onClick={() => generateKnowledge.mutate()} disabled={generateKnowledge.isPending}>{generateKnowledge.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}生成知识点</Button>} />{knowledgePoints.length === 0 ? <p className="text-sm text-muted">点击生成，AI 会根据当前等级列出具体学习重点。</p> : <div className="space-y-2">{knowledgePoints.map((point: any, index: number) => <div key={`${point.title}-${index}`} className="rounded-xl bg-surface-muted/50 p-3"><p className="text-sm font-medium">{index + 1}. {point.title || point}</p>{point.description && <p className="mt-1 text-xs text-muted">{point.description}</p>}</div>)}</div>}</Card>
+          <Card className="p-4"><SectionHeader title="B站学习资源" subtitle="只搜索哔哩哔哩视频。" action={<Button size="sm" variant="outline" onClick={() => void searchResources()} disabled={searching}>{searching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}搜索B站</Button>} /><div className="flex gap-2"><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchResources(); }} placeholder={`搜索 ${currentSkill.name} 视频`} /><Badge variant="primary"><Video className="h-3.5 w-3.5" />B站</Badge></div>{searchResults.length > 0 && <div className="mt-3 space-y-2">{searchResults.map((resource: any) => <div key={resource.resourceId} className="rounded-xl border border-border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{resource.title}</p><Badge>{resource.sourceName || "哔哩哔哩"}</Badge></div><p className="mt-1 text-xs text-muted">{resource.description || "B站学习视频"}</p><div className="mt-2 flex gap-2"><Button size="sm" variant="ghost" onClick={() => saveResource.mutate(resource.resourceId)}>收藏</Button><a href={resource.url} target="_blank" rel="noreferrer"><Button size="sm" variant="outline">打开视频<ExternalLink className="h-3 w-3" /></Button></a></div></div>)}</div>}{!searching && searchResults.length === 0 && <p className="mt-3 text-xs text-muted">输入关键词后搜索，只返回B站资源。</p>}</Card>
+        </div>
+
+        <Card className="p-4"><SectionHeader title="AI 学习考核" subtitle="根据当前技能生成题目，提交后自动评分。" action={<Button size="sm" variant="outline" onClick={() => startAssessment.mutate()} disabled={startAssessment.isPending}>{startAssessment.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Target className="h-3.5 w-3.5" />}生成考核题</Button>} />{questions.length > 0 && <div className="space-y-3">{questions.map((question, index) => <div key={`${question.question}-${index}`}><p className="text-xs font-medium">{index + 1}. {question.question}</p><Textarea className="mt-1 min-h-[60px]" value={answers[index] || ""} onChange={(event) => setAnswers((currentAnswers) => currentAnswers.map((answer, answerIndex) => answerIndex === index ? event.target.value : answer))} placeholder="写下你的理解、练习过程或结果" /></div>)}<Button size="sm" onClick={() => submitAssessment.mutate()} disabled={submitAssessment.isPending}>提交并评分</Button></div>}{assessment && <div className="mt-3 rounded-xl bg-success/10 p-4"><p className="text-2xl font-bold text-success">{assessment.score} 分</p><p className="mt-1 text-xs text-muted">{assessment.feedback}</p></div>}</Card>
+
+        <Card className="p-4"><SectionHeader title="学习计划与进度" subtitle="AI 先生成周计划，你也可以手动增删计划。" action={<Button size="sm" variant="primary" onClick={() => generatePlan.mutate()} disabled={generatePlan.isPending}>{generatePlan.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}生成周计划</Button>} /><div className="grid gap-3 md:grid-cols-4"><Stat label="计划完成率" value={`${data.planStats?.completionRate || 0}%`} /><Stat label="已完成任务" value={`${data.planStats?.done || 0}`} /><Stat label="计划任务" value={`${data.planStats?.total || 0}`} /><Stat label="完成分钟" value={`${data.planStats?.completedMinutes || 0}`} /></div><div className="mt-4 flex flex-wrap gap-2"><Input className="min-w-[220px] flex-1" value={newTask.title} onChange={(event) => setNewTask({ ...newTask, title: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter" && newTask.title.trim()) addTask.mutate(); }} placeholder="添加一个学习计划" /><Input className="w-20" type="number" min="1" max="7" value={newTask.day} onChange={(event) => setNewTask({ ...newTask, day: event.target.value })} /><Input className="w-24" type="number" min="10" max="600" value={newTask.minutes} onChange={(event) => setNewTask({ ...newTask, minutes: event.target.value })} /><Button size="sm" onClick={() => addTask.mutate()} disabled={!newTask.title.trim() || addTask.isPending}><Plus className="h-3.5 w-3.5" />添加计划</Button></div><div className="mt-4 space-y-2">{(data.tasks || []).length === 0 ? <p className="text-sm text-muted">还没有计划，先让 AI 生成或手动添加一个。</p> : (data.tasks || []).map((task: any) => <PlanTaskRow key={task.id} task={task} onToggle={() => toggleTask.mutate(task.id)} onDelete={() => { if (window.confirm("删除这条学习计划？")) deleteTask.mutate(task.id); }} onSave={(payload) => updateTask.mutate({ id: task.id, payload })} />)}</div></Card>
+      </>}
+    </Card>
+  );
 }
 
-function SkillLevelEditor({ skill, onSave }: { skill: any; onSave: (current: number, target: number) => void }) {
-  const [current, setCurrent] = useState(skill.currentLevel || 0);
-  const [target, setTarget] = useState(skill.targetLevel || 5);
-  return <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-3"><div className="min-w-[120px] flex-1"><p className="text-sm font-medium">{skill.name}</p><p className="text-xs text-muted">{skill.category}</p></div><span className="text-xs text-muted">当前 {current}</span><input type="range" min="0" max="10" value={current} onChange={(event) => setCurrent(Number(event.target.value))} className="w-24 accent-[var(--primary)]" /><span className="text-xs text-muted">目标 {target}</span><input type="range" min="1" max="10" value={target} onChange={(event) => setTarget(Number(event.target.value))} className="w-24 accent-[var(--primary)]" /><Button size="sm" onClick={() => onSave(current, target)}>保存</Button></div>;
+function Stat({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl bg-surface-muted/50 p-3"><p className="text-xs text-muted">{label}</p><p className="mt-1 text-xl font-semibold">{value}</p></div>;
+}
+
+function LevelSlider({ label, value, min = 0, max = 10, onChange }: { label: string; value: number; min?: number; max?: number; onChange: (value: number) => void }) {
+  return <label className="block"><div className="mb-1 flex justify-between text-xs text-muted"><span>{label}</span><span>{value}</span></div><input type="range" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} className="w-full accent-[var(--primary)]" /></label>;
+}
+
+function PlanTaskRow({ task, onToggle, onDelete, onSave }: { task: any; onToggle: () => void; onDelete: () => void; onSave: (payload: any) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(task.title);
+  const [day, setDay] = useState(String(task.day));
+  const [minutes, setMinutes] = useState(String(task.estimatedMinutes));
+  return <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border p-3"><button type="button" className={`flex h-7 w-7 items-center justify-center rounded-full border ${task.status === "done" ? "border-success bg-success text-white" : "border-border"}`} onClick={onToggle}><Check className="h-3.5 w-3.5" /></button>{editing ? <><Input className="min-w-[180px] flex-1" value={title} onChange={(event) => setTitle(event.target.value)} /><Input className="w-16" type="number" min="1" max="7" value={day} onChange={(event) => setDay(event.target.value)} /><Input className="w-20" type="number" min="10" max="600" value={minutes} onChange={(event) => setMinutes(event.target.value)} /><Button size="sm" onClick={() => { onSave({ title: title.trim(), day: Number(day), estimatedMinutes: Number(minutes) }); setEditing(false); }}>保存</Button></> : <><div className="min-w-[180px] flex-1"><p className={task.status === "done" ? "text-sm line-through text-muted" : "text-sm"}>{task.title}</p><p className="mt-1 text-xs text-muted">周{task.day} · {task.estimatedMinutes} 分钟</p></div><Button size="sm" variant="ghost" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5" />修改</Button></>}<Button size="sm" variant="ghost" onClick={onDelete}><Trash2 className="h-3.5 w-3.5 text-danger" /></Button></div>;
 }
