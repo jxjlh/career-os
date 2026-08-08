@@ -46,35 +46,40 @@ from app.domains.chat.router import router as chat_router
 
 settings = get_settings()
 logger = logging.getLogger("app.main")
+_lifespan_initialized = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _lifespan_initialized
+
     setup_logging()
-    if settings.app_env in ("dev", "test"):
-        ensure_columns()
-        migrate_journal_constraints()
-        Base.metadata.create_all(bind=engine)
-        # 幂等写入 Bucket List 种子目录, 保证页面有可消费内容
-        with SessionLocal() as db:
-            seed_bucket_data(db)
-            seed_word_books(db)
-    else:
-        # 生产自愈：补建缺失的表 + 补已存在表缺失的列。
-        # 根因：Alembic 从未在生产跑过（alembic_version 表不存在），早期表由更早版本
-        # 的 create_all 建好，但后续 ORM 新增的表（life_goals、user_profiles 等）从未
-        # 被创建 → /life/* 与 /profile 查询报 "relation does not exist" → 500。
-        # create_all 仅 CREATE IF NOT EXISTS（不改已有表/列），ensure_columns 再幂等补
-        # 已有表缺失的列。两者都对已存在对象 no-op，安全重复执行。
-        try:
-            Base.metadata.create_all(bind=engine)
+    if not _lifespan_initialized:
+        if settings.app_env in ("dev", "test"):
             ensure_columns()
             migrate_journal_constraints()
-            # 幂等写入英语种子词库
+            Base.metadata.create_all(bind=engine)
+            # 幂等写入 Bucket List 和英语种子数据。
             with SessionLocal() as db:
+                seed_bucket_data(db)
                 seed_word_books(db)
-        except Exception as e:  # noqa: BLE001
-            logger.error("production schema self-heal failed: %s", e, exc_info=True)
+        else:
+            # 生产自愈：补建缺失的表 + 补已存在表缺失的列。
+            # 根因：Alembic 从未在生产跑过（alembic_version 表不存在），早期表由更早版本
+            # 的 create_all 建好，但后续 ORM 新增的表（life_goals、user_profiles 等）从未
+            # 被创建 → /life/* 与 /profile 查询报 "relation does not exist" → 500。
+            # create_all 仅 CREATE IF NOT EXISTS（不改已有表/列），ensure_columns 再幂等补
+            # 已有表缺失的列。两者都对已存在对象 no-op，安全重复执行。
+            try:
+                Base.metadata.create_all(bind=engine)
+                ensure_columns()
+                migrate_journal_constraints()
+                # 幂等写入英语种子词库
+                with SessionLocal() as db:
+                    seed_word_books(db)
+            except Exception as e:  # noqa: BLE001
+                logger.error("production schema self-heal failed: %s", e, exc_info=True)
+        _lifespan_initialized = True
     yield
 
 

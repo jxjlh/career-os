@@ -341,7 +341,7 @@ def planner_progress(
         today_tasks_count = len(today_tasks)
 
     # ── 2. 人生目标进度 ──────────────────────────────────────────────
-    from app.db.models import LifeGoal, Goal as TaskGoal
+    from app.db.models import GoalTask, LifeGoal
 
     active_goals = (
         db.query(LifeGoal)
@@ -365,13 +365,13 @@ def planner_progress(
     for g in active_goals:
         # 查询该目标下的任务完成情况
         tasks_done = (
-            db.query(TaskGoal)
-            .filter(TaskGoal.life_goal_id == g.id, TaskGoal.status == "done")
+            db.query(GoalTask)
+            .filter(GoalTask.life_goal_id == g.id, GoalTask.status == "done")
             .count()
         )
         tasks_total = (
-            db.query(TaskGoal)
-            .filter(TaskGoal.life_goal_id == g.id)
+            db.query(GoalTask)
+            .filter(GoalTask.life_goal_id == g.id)
             .count()
         )
         goal_progress_items.append({

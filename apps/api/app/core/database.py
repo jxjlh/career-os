@@ -125,18 +125,24 @@ def ensure_columns() -> None:
     for table, columns in additions.items():
         if table not in tables:
             continue
-        for name, ddl in columns.items():
-            try:
-                # 每个列使用独立事务。PostgreSQL 某个历史列定义失败时，
-                # 不应让同一张表后续列（尤其是 daily_journals.time_slot）全部跳过。
-                with engine.begin() as conn:
-                    existing = {col["name"] for col in inspect(conn).get_columns(table)}
-                    if name not in existing:
-                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+        try:
+            with engine.begin() as conn:
+                existing = {col["name"] for col in inspect(conn).get_columns(table)}
+                for name, ddl in columns.items():
+                    if name in existing:
+                        continue
+                    try:
+                        # 用 savepoint 隔离单列失败，避免 PostgreSQL 事务进入 aborted 状态，
+                        # 同时保持每张表只建立一个连接，避免测试和启动变慢。
+                        with conn.begin_nested():
+                            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+                        existing.add(name)
                         logger.info("Added missing column %s.%s", table, name)
-            except Exception as e:
-                # 单列补失败不能阻断服务启动；下次启动会继续尝试该列。
-                logger.error("ensure_columns failed for %s.%s: %s", table, name, e, exc_info=True)
+                    except Exception as e:
+                        logger.error("ensure_columns failed for %s.%s: %s", table, name, e, exc_info=True)
+        except Exception as e:
+            # 单表补列失败不能阻断服务启动；下次启动会继续尝试该表。
+            logger.error("ensure_columns failed for table %s: %s", table, e, exc_info=True)
 
 
 def get_db():
