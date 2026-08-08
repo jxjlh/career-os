@@ -1,4 +1,4 @@
-import { apiFetch, API_BASE } from "@/lib/api";
+import { ApiError, apiFetch, API_BASE } from "@/lib/api";
 import { getAccessToken, isSupabaseConfigured } from "@/lib/supabase";
 
 // ── 心情定义 ────────────────────────────────────────────────────────
@@ -175,11 +175,20 @@ export const journalApi = {
     const url = `${API_BASE}${API}/images`;
     const res = await fetch(url, {
       method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { Authorization: token ? `Bearer ${token}` : "Bearer dev" },
       body: formData,
     });
 
-    if (!res.ok) throw new Error(`上传失败: ${res.status}`);
+    if (!res.ok) {
+      let message = `上传失败 (${res.status})`;
+      try {
+        const payload = await res.json() as { detail?: { message?: string }; error?: { message?: string } };
+        message = payload.error?.message || payload.detail?.message || message;
+      } catch {
+        // 保留状态码提示
+      }
+      throw new ApiError(message, undefined, res.status);
+    }
 
     const data = await res.json() as { data: { url: string } };
     return data.data.url;

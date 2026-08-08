@@ -18,6 +18,7 @@ def test_journal_multiple_slots_same_day() -> None:
             json={
                 "mood_index": 3,
                 "content": "早上好",
+                "photos": ["/media/journal/dev/20260808/morning.jpg"],
                 "time_slot": "morning_06",
                 "journal_date": "2026-08-08",
             },
@@ -25,6 +26,7 @@ def test_journal_multiple_slots_same_day() -> None:
         )
         assert first.status_code == 200
         assert first.json()["data"]["timeSlot"] == "morning_06"
+        assert first.json()["data"]["photos"] == ["/media/journal/dev/20260808/morning.jpg"]
 
         second = client.post(
             "/api/v1/journal",

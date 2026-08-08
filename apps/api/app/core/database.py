@@ -39,6 +39,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 
 def ensure_columns() -> None:
     """开发环境幂等补列: 老库没有新列时直接添加, 不依赖 Alembic 版本链."""
+    timestamp_ddl = "TIMESTAMP WITH TIME ZONE" if engine.dialect.name == "postgresql" else "DATETIME"
     additions = {
         "life_goals": {
             "budget": "VARCHAR(120)",
@@ -65,14 +66,14 @@ def ensure_columns() -> None:
             "skill_ids": "JSON",
             "context_snapshot": "JSON",
             "ai_content_id": "VARCHAR(36)",
-            "updated_at": "DATETIME",
+            "updated_at": timestamp_ddl,
         },
         "plan_tasks": {
             "description": "TEXT",
             "task_type": "VARCHAR(24) DEFAULT 'learning'",
             "difficulty": "VARCHAR(16) DEFAULT 'medium'",
             "priority": "VARCHAR(16) DEFAULT 'medium'",
-            "completed_at": "DATETIME",
+            "completed_at": timestamp_ddl,
             "ai_generated": "BOOLEAN DEFAULT 0",
             "resource_url": "TEXT",
             "estimated_outcome": "VARCHAR(200)",
@@ -88,7 +89,7 @@ def ensure_columns() -> None:
             "photos": "JSON",
             "goal_id": "VARCHAR(36)",
             "skill_id": "VARCHAR(36)",
-            "updated_at": "DATETIME",
+            "updated_at": timestamp_ddl,
             "time_slot": "VARCHAR(20) DEFAULT 'morning'",
         },
         # ── Sprint 12: Chat & Groups ──
@@ -96,15 +97,15 @@ def ensure_columns() -> None:
             "name": "VARCHAR(120)",
             "avatar_url": "TEXT",
             "owner_id": "VARCHAR(36)",
-            "last_message_at": "DATETIME",
+            "last_message_at": timestamp_ddl,
             "last_message_preview": "VARCHAR(500)",
-            "updated_at": "DATETIME",
+            "updated_at": timestamp_ddl,
         },
         "conversation_members": {
             "role": "VARCHAR(16) DEFAULT 'member'",
-            "last_read_at": "DATETIME",
+            "last_read_at": timestamp_ddl,
             "muted": "BOOLEAN DEFAULT 0",
-            "joined_at": "DATETIME",
+            "joined_at": timestamp_ddl,
         },
         "chat_messages": {
             "message_type": "VARCHAR(16) DEFAULT 'text'",
@@ -114,25 +115,28 @@ def ensure_columns() -> None:
             "system_action": "VARCHAR(40)",
             "system_meta": "JSON",
             "reply_to_id": "VARCHAR(36)",
-            "deleted_at": "DATETIME",
+            "deleted_at": timestamp_ddl,
         },
         "message_reads": {
-            "read_at": "DATETIME",
+            "read_at": timestamp_ddl,
         },
     }
     tables = set(inspect(engine).get_table_names())
-    with engine.begin() as conn:
-        for table, columns in additions.items():
-            if table not in tables:
-                continue
+    for table, columns in additions.items():
+        if table not in tables:
+            continue
+        for name, ddl in columns.items():
             try:
-                existing = {col["name"] for col in inspect(conn).get_columns(table)}
-                for name, ddl in columns.items():
+                # 每个列使用独立事务。PostgreSQL 某个历史列定义失败时，
+                # 不应让同一张表后续列（尤其是 daily_journals.time_slot）全部跳过。
+                with engine.begin() as conn:
+                    existing = {col["name"] for col in inspect(conn).get_columns(table)}
                     if name not in existing:
                         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
-            except Exception as e:  # noqa: BLE001
-                # 单表补列失败不能阻断其他表/启动（历史库结构差异较大）。
-                logger.error("ensure_columns failed for table %s: %s", table, e, exc_info=True)
+                        logger.info("Added missing column %s.%s", table, name)
+            except Exception as e:
+                # 单列补失败不能阻断服务启动；下次启动会继续尝试该列。
+                logger.error("ensure_columns failed for %s.%s: %s", table, name, e, exc_info=True)
 
 
 def get_db():

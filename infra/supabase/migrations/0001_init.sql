@@ -82,7 +82,8 @@ insert into storage.buckets (id, name, public)
 values
   ('projects', 'projects', false),
   ('interviews', 'interviews', false),
-  ('avatars', 'avatars', false)
+  ('avatars', 'avatars', false),
+  ('journal-images', 'journal-images', false)
 on conflict (id) do nothing;
 
 insert into storage.buckets (id, name, public)
@@ -100,6 +101,10 @@ create policy "interviews_owner_all" on storage.objects
 create policy "avatars_owner_all" on storage.objects
   for all using (bucket_id = 'avatars' and (storage.foldername(name))[2] = auth.uid()::text)
   with check (bucket_id = 'avatars' and (storage.foldername(name))[2] = auth.uid()::text);
+
+create policy "journal_images_owner_all" on storage.objects
+  for all using (bucket_id = 'journal-images' and (storage.foldername(name))[2] = auth.uid()::text)
+  with check (bucket_id = 'journal-images' and (storage.foldername(name))[2] = auth.uid()::text);
 
 create policy "life_records_owner_all" on storage.objects
   for all using (bucket_id = 'life-records' and (storage.foldername(name))[2] = auth.uid()::text)

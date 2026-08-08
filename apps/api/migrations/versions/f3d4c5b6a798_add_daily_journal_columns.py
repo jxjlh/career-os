@@ -37,14 +37,16 @@ def upgrade() -> None:
         return
 
     existing = {c["name"] for c in inspector.get_columns("daily_journals")}
+    timestamp_ddl = "TIMESTAMP WITH TIME ZONE" if _is_postgres() else "DATETIME"
     columns: list[tuple[str, str]] = [
         ("content", "TEXT"),
         ("tags", "JSON"),
+        ("photos", "JSON"),
         # SQLite 的 ALTER TABLE ADD COLUMN 不支持外键约束，这里仅补列，
         # 外键关系由 ORM 层保证（models.py 中已声明）。
         ("goal_id", "VARCHAR(36)"),
         ("skill_id", "VARCHAR(36)"),
-        ("updated_at", "DATETIME"),
+        ("updated_at", timestamp_ddl),
         ("time_slot", "VARCHAR(20) DEFAULT 'morning'"),
     ]
     for name, ddl in columns:

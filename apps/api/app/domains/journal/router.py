@@ -61,6 +61,8 @@ class JournalUpdate(BaseModel):
 # ── Helpers ────────────────────────────────────────────────────────
 
 def _to_dict(j: DailyJournal) -> dict:
+    storage = StorageService()
+    photos = [storage.get_download_url(photo) or photo for photo in (j.photos or [])]
     return {
         "id": j.id,
         "journalDate": j.journal_date.isoformat(),
@@ -68,7 +70,7 @@ def _to_dict(j: DailyJournal) -> dict:
         "moodIndex": j.mood_index,
         "content": j.content,
         "tags": j.tags,
-        "photos": j.photos or [],
+        "photos": photos,
         "goalId": j.goal_id,
         "skillId": j.skill_id,
         "createdAt": j.created_at.isoformat() if j.created_at else None,

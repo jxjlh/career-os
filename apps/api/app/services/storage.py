@@ -1,6 +1,5 @@
 """存储服务: 封装 Supabase Storage 和本地回退."""
 
-import io
 from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
@@ -33,7 +32,7 @@ class StorageService:
         conversation_id: str,
     ) -> str:
         """上传聊天图片, 返回 URL."""
-        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
         ext = Path(filename).suffix or ".jpg"
         path = f"chat/{conversation_id}/{user_id}/{timestamp}{ext}"
 
@@ -54,7 +53,7 @@ class StorageService:
         user_id: str,
     ) -> str:
         """上传用户头像, 返回公共 URL."""
-        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
         safe_filename = filename or "avatar.jpg"
         ext = Path(safe_filename).suffix or ".jpg"
         if ext.lower() not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
@@ -80,7 +79,7 @@ class StorageService:
         user_id: str,
     ) -> str:
         """上传日记图片, 返回 URL."""
-        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
         ext = Path(filename).suffix or ".jpg"
         if ext.lower() not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
             ext = ".jpg"
@@ -94,7 +93,10 @@ class StorageService:
 
         if self._supabase_configured():
             try:
-                return self._upload_supabase(path, content, content_type)
+                self._ensure_bucket("journal-images")
+                self._upload_supabase(path, content, content_type, bucket="journal-images")
+                # 日记桶保持私有，数据库只保存对象路径；读取时由 API 生成短期签名 URL。
+                return path
             except Exception:
                 pass
         return self._upload_local(path, content)
@@ -106,9 +108,15 @@ class StorageService:
             and self.settings.supabase_service_role_key
         )
 
-    def _upload_supabase(self, path: str, content: bytes, content_type: str) -> str:
+    def _upload_supabase(
+        self,
+        path: str,
+        content: bytes,
+        content_type: str,
+        bucket: str = "chat-images",
+    ) -> str:
         """上传到 Supabase Storage，失败时抛出异常由调用方处理."""
-        url = f"{self.settings.supabase_url}/storage/v1/object/chat-images/{path}"
+        url = f"{self.settings.supabase_url}/storage/v1/object/{bucket}/{path}"
         headers = {
             "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
             "Content-Type": content_type,
@@ -120,7 +128,23 @@ class StorageService:
         if response.status_code >= 400:
             raise RuntimeError(f"Supabase upload failed: HTTP {response.status_code}")
 
-        return f"{self.settings.supabase_url}/storage/v1/object/public/chat-images/{path}"
+        return f"{self.settings.supabase_url}/storage/v1/object/public/{bucket}/{path}"
+
+    def _ensure_bucket(self, bucket: str) -> None:
+        """确保 Supabase Storage 桶存在；已存在时保持幂等。"""
+        url = f"{self.settings.supabase_url}/storage/v1/bucket"
+        headers = {
+            "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
+            "Content-Type": "application/json",
+        }
+        with httpx.Client(timeout=15.0, trust_env=False) as client:
+            response = client.post(
+                url,
+                headers=headers,
+                json={"id": bucket, "name": bucket, "public": False},
+            )
+        if response.status_code >= 400 and response.status_code not in (400, 409):
+            raise RuntimeError(f"Supabase bucket setup failed: HTTP {response.status_code}")
 
     def _upload_local(self, path: str, content: bytes) -> str:
         """上传到本地 media 目录."""
@@ -148,7 +172,8 @@ class StorageService:
             return path
 
         if self._supabase_configured():
-            url = f"{self.settings.supabase_url}/storage/v1/object/sign/chat-images/{path}"
+            bucket = "journal-images" if path.startswith("journal/") else "chat-images"
+            url = f"{self.settings.supabase_url}/storage/v1/object/sign/{bucket}/{path}"
             headers = {"Authorization": f"Bearer {self.settings.supabase_service_role_key}"}
 
             try:
