@@ -82,7 +82,7 @@ export default function WordsPage() {
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">单词学习</h1>
-        <p className="mt-1 text-sm text-muted">选择词书，按周计划科学学习</p>
+        <p className="mt-1 text-sm text-muted">每本词书使用完整词书关系数据，按周计划科学学习</p>
       </div>
 
       {loading && (

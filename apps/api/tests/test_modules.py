@@ -49,6 +49,22 @@ def test_skills_matrix_and_progress() -> None:
         assert resp.json()["data"]["currentLevel"] == 4
 
 
+def test_english_books_use_complete_relation_data() -> None:
+    with client() as c:
+        books = c.get("/api/v1/english/books", headers=HEADERS)
+        assert books.status_code == 200
+        cet4 = next(book for book in books.json()["data"] if book["code"] == "cet4")
+        assert cet4["totalWords"] == 8806
+
+        page = c.get(
+            f"/api/v1/english/books/{cet4['id']}/words?offset=5000&limit=100",
+            headers=HEADERS,
+        )
+        assert page.status_code == 200
+        assert len(page.json()["data"]) == 100
+        assert all(word["spelling"] and word["meaning"] for word in page.json()["data"])
+
+
 def test_custom_skill_crud_and_career_assessment() -> None:
     skill_name = f"自定义技能-{uuid.uuid4().hex[:8]}"
     with client() as c:

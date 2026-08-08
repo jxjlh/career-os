@@ -1,25 +1,29 @@
 """英语学习种子词库.
 
 dev/test 环境启动时通过 lifespan 幂等写入, 保证 /english 页面有词书可消费.
-生产环境也执行: 清理旧的低质量词数据, 替换为 JSON 种子文件中的精选词汇.
+生产环境也执行: 清理旧的截断词数据, 替换为 JSON 种子文件中的完整词书关系数据.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import uuid
 from pathlib import Path
 
-from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
-from app.db.models import UserWord, Word, WordBook
+from app.db.models import UserWord, Word, WordBook, WordReviewLog
 
 SEEDS_DIR = Path(__file__).parent / "seeds"
 logger = logging.getLogger("app.english.seed")
 
 # 种子文件的版本号 —— 修改词书内容后递增此版本号可触发全量重建
-SEED_VERSION = "2026-08-06-v6-dictionary-data"
+SEED_VERSION = "2026-08-08-v7-complete-relation-data"
+
+
+def stable_word_id(book_code: str, spelling: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"career-os:word:{book_code}:{spelling.casefold()}"))
 
 
 def seed_word_books(db: Session) -> None:
@@ -75,33 +79,60 @@ def seed_word_books(db: Session) -> None:
                     # 版本相同, 跳过
                     continue
 
-                # 版本不同 → 全量替换: 先删旧词和用户进度, 再插入新词
-                old_book_id = book.id
-                db.execute(delete(UserWord).where(UserWord.book_id == old_book_id))
-                db.execute(delete(Word).where(Word.book_id == old_book_id))
-                db.commit()
-                # 重新获取词书对象, 避免session缓存问题
-                db.expire_all()
-                book = db.query(WordBook).filter(WordBook.id == old_book_id).first()
+                # 版本不同 → 按拼写更新/补齐，保留已有 Word.id、UserWord 和复习日志。
+                # 不能直接删除整本词书，否则用户已经积累的背词进度会丢失。
                 book.name = data.get("name", code)
                 book.level = data.get("level", code)
                 book.total_words = len(words_data)
                 logger.info("Rebuilding word book: %s (%d words)", code, len(words_data))
 
-            # 插入单词
-            for idx, w in enumerate(words_data):
-                db.add(
-                    Word(
-                        book_id=book.id,
-                        spelling=w["spelling"],
-                        phonetic=w.get("phonetic"),
-                        pos=w.get("pos"),
-                        meaning=w.get("meaning", ""),
-                        example_en=w.get("example_en"),
-                        example_zh=w.get("example_zh"),
-                        sort_order=idx,
+            existing_words = db.query(Word).filter(Word.book_id == book.id).all()
+            existing_by_spelling = {word.spelling.casefold(): word for word in existing_words}
+            seeded_spellings: set[str] = set()
+            new_mappings: list[dict] = []
+            for idx, word_data in enumerate(words_data):
+                spelling = word_data["spelling"]
+                spelling_key = spelling.casefold()
+                seeded_spellings.add(spelling_key)
+                word = existing_by_spelling.get(spelling_key)
+                if word is None:
+                    new_mappings.append(
+                        {
+                            "id": stable_word_id(code, spelling),
+                            "book_id": book.id,
+                            "spelling": spelling,
+                            "phonetic": word_data.get("phonetic"),
+                            "pos": word_data.get("pos"),
+                            "meaning": word_data.get("meaning", "暂无释义"),
+                            "example_en": word_data.get("example_en"),
+                            "example_zh": word_data.get("example_zh"),
+                            "sort_order": idx,
+                        }
                     )
-                )
+                    continue
+                word.spelling = spelling
+                word.phonetic = word_data.get("phonetic")
+                word.pos = word_data.get("pos")
+                word.meaning = word_data.get("meaning", "暂无释义")
+                word.example_en = word_data.get("example_en")
+                word.example_zh = word_data.get("example_zh")
+                word.sort_order = idx
+
+            for start in range(0, len(new_mappings), 1000):
+                db.bulk_insert_mappings(Word, new_mappings[start : start + 1000])
+
+            # 仅清理没有用户进度、没有复习日志的旧词条；有历史记录的保留在词书末尾。
+            progress_word_ids = {
+                row.word_id for row in db.query(UserWord.word_id).filter(UserWord.book_id == book.id).all()
+            }
+            review_word_ids = {
+                row.word_id for row in db.query(WordReviewLog.word_id).filter(WordReviewLog.word_id.in_([w.id for w in existing_words])).all()
+            }
+            for word in existing_words:
+                if word.spelling.casefold() not in seeded_spellings and word.id not in progress_word_ids and word.id not in review_word_ids:
+                    db.delete(word)
+
+            db.flush()
 
             # 在 description 中嵌入版本号, 用于下次启动判断是否需要重建
             base_desc = data.get("description", "")
@@ -110,4 +141,3 @@ def seed_word_books(db: Session) -> None:
     except Exception as e:
         logger.error("Failed to seed word books: %s", str(e))
         db.rollback()
-
