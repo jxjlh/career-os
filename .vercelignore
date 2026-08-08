@@ -1,0 +1,12 @@
+apps/api/
+apps/web/.next/
+apps/web/out/
+apps/web/node_modules/
+apps/web/.turbo/
+apps/web/.vercel/
+.git/
+.pytest_cache/
+.ruff_cache/
+temp_dictionary_data/
+*.db
+*.sqlite3
