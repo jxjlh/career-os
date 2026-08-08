@@ -7,14 +7,33 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.security import get_current_user
 from app.db.models import BackgroundJob, Profile, ReadingBook
-from app.domains.explorer.router import run_search_job
+from app.domains.reading.sources import search_book_sources
 from app.providers.ai import registry as ai_registry
 from app.providers.ai.base import extract_json
 
 router = APIRouter(tags=["reading"])
+
+
+async def run_book_source_search_job(job_id: str, query: str, limit: int, language: str) -> None:
+    db = SessionLocal()
+    try:
+        job = db.get(BackgroundJob, job_id)
+        if job is None:
+            return
+        job.result = await search_book_sources(query, limit=limit, language=language)
+        job.status = "succeeded"
+        db.commit()
+    except Exception as exc:  # pragma: no cover - background/network boundary
+        job = db.get(BackgroundJob, job_id)
+        if job is not None:
+            job.status = "failed"
+            job.error = str(exc)
+            db.commit()
+    finally:
+        db.close()
 
 
 class ReadingBookCreate(BaseModel):
@@ -223,5 +242,5 @@ def search_reading_books(
     db.add(job)
     db.commit()
     db.refresh(job)
-    background_tasks.add_task(run_search_job, job.id, f"完整出版书籍 {payload.query}", payload.limit, current_user.language)
+    background_tasks.add_task(run_book_source_search_job, job.id, payload.query, payload.limit, current_user.language)
     return {"data": {"jobId": job.id, "pollUrl": f"/api/v1/explore/jobs/{job.id}"}}

@@ -21,6 +21,8 @@ function ReadingSection() {
   const [searching, setSearching] = useState(false);
   const [sourceSearchBookId, setSourceSearchBookId] = useState<string | null>(null);
   const [sourceMessages, setSourceMessages] = useState<Record<string, string>>({});
+  const [sourceResults, setSourceResults] = useState<Record<string, any[]>>({});
+  const [savingSource, setSavingSource] = useState<string | null>(null);
 
   const books = useQuery<Envelope>({
     queryKey: ["reading-books"],
@@ -49,9 +51,10 @@ function ReadingSection() {
     onSuccess: (response) => setRecommendations(response.data.books || []),
   });
 
-  const searchBookResources = async (searchTerm: string) => {
+  const searchBookResources = async (searchTerm: string, showInSearchResults = true) => {
     if (!searchTerm.trim()) return [];
-    setSearching(true); setSearchResults([]);
+    setSearching(true);
+    if (showInSearchResults) setSearchResults([]);
     try {
       const response = await apiFetch<Envelope>("/library/reading/search", { method: "POST", body: JSON.stringify({ query: searchTerm.trim(), limit: 10 }) });
       for (let index = 0; index < 30; index += 1) {
@@ -59,7 +62,7 @@ function ReadingSection() {
         const job = await apiFetch<Envelope>(`/explore/jobs/${response.data.jobId}`);
         if (job.data.status === "succeeded") {
           const results = job.data.result.items || [];
-          setSearchResults(results);
+          if (showInSearchResults) setSearchResults(results);
           return results;
         }
         if (job.data.status === "failed") return [];
@@ -105,18 +108,31 @@ function ReadingSection() {
     setSourceSearchBookId(book.id);
     setSourceMessages((current) => ({ ...current, [book.id]: "正在搜索可阅读来源…" }));
     try {
-      const results = await searchBookResources(book.title);
-      const source = results.find((item: any) => item.url);
-      if (!source) {
-        setSourceMessages((current) => ({ ...current, [book.id]: "暂时没有找到可阅读来源，请稍后重试或先用上方搜索书籍。" }));
+      const results = await searchBookResources(book.title, false);
+      setSourceResults((current) => ({ ...current, [book.id]: results.filter((item: any) => item.isBookSource && item.url) }));
+      if (results.length === 0) {
+        setSourceMessages((current) => ({ ...current, [book.id]: "暂时没有找到可阅读来源，请稍后重试。" }));
         return;
       }
-      await updateBook.mutateAsync({ id: book.id, payload: { sourceUrl: source.url, author: source.author || book.author, description: source.description || book.description, isComplete: source.isComplete ?? book.isComplete } });
-      setSourceMessages((current) => ({ ...current, [book.id]: "已找到来源，现在可以开始阅读。" }));
+      setSourceMessages((current) => ({ ...current, [book.id]: `找到 ${results.length} 个来源，请选择一个保存到系统。` }));
     } catch (error) {
       setSourceMessages((current) => ({ ...current, [book.id]: error instanceof Error ? error.message : "搜索来源失败，请稍后重试。" }));
     } finally {
       setSourceSearchBookId(null);
+    }
+  };
+
+  const saveBookSource = async (book: any, source: any) => {
+    const key = `${book.id}:${source.url}`;
+    setSavingSource(key);
+    try {
+      await updateBook.mutateAsync({ id: book.id, payload: { sourceUrl: source.url, author: source.author || book.author, description: source.description || source.snippet || book.description, isComplete: source.isComplete ?? book.isComplete } });
+      setSourceResults((current) => ({ ...current, [book.id]: [] }));
+      setSourceMessages((current) => ({ ...current, [book.id]: `已保存 ${source.sourceName || "该来源"}，现在可以开始阅读。` }));
+    } catch (error) {
+      setSourceMessages((current) => ({ ...current, [book.id]: error instanceof Error ? error.message : "保存来源失败，请稍后重试。" }));
+    } finally {
+      setSavingSource(null);
     }
   };
 
@@ -134,15 +150,15 @@ function ReadingSection() {
       </Card>
 
       <div className="flex flex-wrap gap-2">{[["all", "全部"], ...Object.entries(STATUS_LABELS)].map(([key, label]) => <button key={key} type="button" onClick={() => setStatus(key)} className={`rounded-full border px-3 py-1.5 text-xs ${status === key ? "border-primary bg-primary/10 text-primary" : "border-border text-muted"}`}>{label} {key === "all" ? items.length : items.filter((book: any) => book.status === key).length}</button>)}</div>
-      {visibleBooks.length === 0 ? <Card className="p-8"><EmptyState title="还没有这类书籍" description="从 AI 推荐、搜索结果或输入书名开始。" /></Card> : <div className="grid gap-3 md:grid-cols-2">{visibleBooks.map((book: any) => <ReadingBookCard key={book.id} book={book} onUpdate={(payload) => updateBook.mutate({ id: book.id, payload })} onFindSource={() => void findBookSource(book)} searchingSource={sourceSearchBookId === book.id} sourceMessage={sourceMessages[book.id]} onDelete={() => { if (window.confirm(`删除《${book.title}》？`)) deleteBook.mutate(book.id); }} />)}</div>}
+      {visibleBooks.length === 0 ? <Card className="p-8"><EmptyState title="还没有这类书籍" description="从 AI 推荐、搜索结果或输入书名开始。" /></Card> : <div className="grid gap-3 md:grid-cols-2">{visibleBooks.map((book: any) => <ReadingBookCard key={book.id} book={book} onUpdate={(payload) => updateBook.mutate({ id: book.id, payload })} onFindSource={() => void findBookSource(book)} onSaveSource={(source) => void saveBookSource(book, source)} sourceResults={sourceResults[book.id] || []} searchingSource={sourceSearchBookId === book.id} savingSource={savingSource} sourceMessage={sourceMessages[book.id]} onDelete={() => { if (window.confirm(`删除《${book.title}》？`)) deleteBook.mutate(book.id); }} />)}</div>}
     </div>
   );
 }
 
-function ReadingBookCard({ book, onUpdate, onFindSource, searchingSource, sourceMessage, onDelete }: { book: any; onUpdate: (payload: any) => void; onFindSource: () => void; searchingSource: boolean; sourceMessage?: string; onDelete: () => void }) {
+function ReadingBookCard({ book, onUpdate, onFindSource, onSaveSource, sourceResults, searchingSource, savingSource, sourceMessage, onDelete }: { book: any; onUpdate: (payload: any) => void; onFindSource: () => void; onSaveSource: (source: any) => void; sourceResults: any[]; searchingSource: boolean; savingSource: string | null; sourceMessage?: string; onDelete: () => void }) {
   const [page, setPage] = useState(String(book.currentPage || 0));
   const progress = Number(book.progressPercent || 0);
-  return <Card className="p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold">{book.title}</h3><p className="mt-1 text-xs text-muted">{book.author || "作者未填写"}</p></div><div className="flex items-center gap-1"><Badge variant={book.status === "finished" ? "success" : book.status === "reading" ? "primary" : "default"}>{STATUS_LABELS[book.status] || book.status}</Badge>{book.isComplete && <Badge variant="success">完整版</Badge>}</div></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-muted"><span>{progress}%</span><span>{book.currentPage}{book.totalPages ? ` / ${book.totalPages} 页` : " 页"}</span></div><div className="mt-3 flex flex-wrap gap-2"><Input className="w-28" type="number" min="0" value={page} onChange={(event) => setPage(event.target.value)} /><Button size="sm" onClick={() => onUpdate({ currentPage: Number(page), status: Number(page) > 0 ? "reading" : book.status })}><Check className="h-3.5 w-3.5" />保存进度</Button><select className="h-8 rounded-[10px] border border-border bg-surface px-2 text-xs" value={book.status} onChange={(event) => onUpdate({ status: event.target.value })}><option value="want">想看</option><option value="reading">在读</option><option value="finished">已看</option><option value="unread">未看</option></select><Button size="sm" variant="ghost" onClick={onDelete}><Trash2 className="h-3.5 w-3.5 text-danger" /></Button></div>{book.targetDate && <p className="mt-2 text-xs text-muted">计划完成：{book.targetDate} · 每天 {book.dailyMinutes || "—"} 分钟</p>}{book.planNote && <p className="mt-1 text-xs text-text-secondary">{book.planNote}</p>}{book.sourceUrl ? <a className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline" href={book.sourceUrl} target="_blank" rel="noreferrer"><BookOpen className="h-3 w-3" />开始阅读 <ExternalLink className="h-3 w-3" /></a> : <><Button className="mt-2" size="sm" variant="outline" disabled={searchingSource} onClick={onFindSource}>{searchingSource ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}{searchingSource ? "正在搜索…" : "搜索可阅读来源"}</Button>{sourceMessage && <p className="mt-2 text-xs text-muted">{sourceMessage}</p>}</>}</Card>;
+  return <Card className="p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold">{book.title}</h3><p className="mt-1 text-xs text-muted">{book.author || "作者未填写"}</p></div><div className="flex items-center gap-1"><Badge variant={book.status === "finished" ? "success" : book.status === "reading" ? "primary" : "default"}>{STATUS_LABELS[book.status] || book.status}</Badge>{book.isComplete && <Badge variant="success">完整版</Badge>}</div></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-muted"><span>{progress}%</span><span>{book.currentPage}{book.totalPages ? ` / ${book.totalPages} 页` : " 页"}</span></div><div className="mt-3 flex flex-wrap gap-2"><Input className="w-28" type="number" min="0" value={page} onChange={(event) => setPage(event.target.value)} /><Button size="sm" onClick={() => onUpdate({ currentPage: Number(page), status: Number(page) > 0 ? "reading" : book.status })}><Check className="h-3.5 w-3.5" />保存进度</Button><select className="h-8 rounded-[10px] border border-border bg-surface px-2 text-xs" value={book.status} onChange={(event) => onUpdate({ status: event.target.value })}><option value="want">想看</option><option value="reading">在读</option><option value="finished">已看</option><option value="unread">未看</option></select><Button size="sm" variant="ghost" onClick={onDelete}><Trash2 className="h-3.5 w-3.5 text-danger" /></Button></div>{book.targetDate && <p className="mt-2 text-xs text-muted">计划完成：{book.targetDate} · 每天 {book.dailyMinutes || "—"} 分钟</p>}{book.planNote && <p className="mt-1 text-xs text-text-secondary">{book.planNote}</p>}{book.sourceUrl ? <a className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline" href={book.sourceUrl} target="_blank" rel="noreferrer"><BookOpen className="h-3 w-3" />开始阅读 <ExternalLink className="h-3 w-3" /></a> : <><Button className="mt-2" size="sm" variant="outline" disabled={searchingSource} onClick={onFindSource}>{searchingSource ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}{searchingSource ? "正在搜索…" : "搜索可阅读来源"}</Button>{sourceMessage && <p className="mt-2 text-xs text-muted">{sourceMessage}</p>}{sourceResults.length > 0 && <div className="mt-3 space-y-2 rounded-xl border border-border bg-surface-muted/30 p-2">{sourceResults.map((source: any) => <div key={source.url} className="flex items-center justify-between gap-2 rounded-lg bg-surface p-2"><div className="min-w-0"><p className="truncate text-xs font-medium">{source.title}</p><p className="mt-0.5 text-[11px] text-muted">{source.sourceName}</p></div><div className="flex shrink-0 gap-1"><a href={source.url} target="_blank" rel="noreferrer"><Button size="sm" variant="ghost">查看</Button></a><Button size="sm" onClick={() => onSaveSource(source)} disabled={savingSource === `${book.id}:${source.url}`}>{savingSource === `${book.id}:${source.url}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <BookOpen className="h-3 w-3" />}保存到系统</Button></div></div>)}</div>}</>}</Card>;
 }
 
 export default function LibraryPage() {
