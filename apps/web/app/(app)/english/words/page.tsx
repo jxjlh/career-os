@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, ChevronRight, Flame, GraduationCap, Loader2, Calendar, Target, RotateCcw, AlertTriangle } from "lucide-react";
+import { BookOpen, ChevronRight, Flame, GraduationCap, Loader2, Calendar, Target, RotateCcw, AlertTriangle, List } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -198,6 +198,15 @@ export default function WordsPage() {
                     {startingId === book.id ? "初始化中..." : "启用此词书"}
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="查看完整词表"
+                  onClick={() => router.push(`/english/words/catalog?bookId=${book.id}`)}
+                >
+                  <List className="h-3.5 w-3.5" />
+                  完整词表
+                </Button>
               </div>
             </Card>
           );

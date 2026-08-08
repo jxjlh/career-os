@@ -49,6 +49,45 @@ def test_skills_matrix_and_progress() -> None:
         assert resp.json()["data"]["currentLevel"] == 4
 
 
+def test_custom_skill_crud_and_career_assessment() -> None:
+    skill_name = f"自定义技能-{uuid.uuid4().hex[:8]}"
+    with client() as c:
+        created = c.post(
+            "/api/v1/skills",
+            headers=HEADERS,
+            json={"name": skill_name, "category": "实战", "currentLevel": 2, "targetLevel": 8},
+        )
+        assert created.status_code == 201
+        skill_id = created.json()["data"]["skillId"]
+        assert created.json()["data"]["targetLevel"] == 8
+
+        updated = c.patch(f"/api/v1/skills/{skill_id}", headers=HEADERS, json={"name": f"{skill_name}-改名"})
+        assert updated.status_code == 200
+        assert updated.json()["data"]["name"].endswith("-改名")
+
+        questions = c.post(
+            "/api/v1/career/assessment",
+            headers=HEADERS,
+            json={"topic": skill_name, "level": "入门"},
+        )
+        assert questions.status_code == 200
+        assert len(questions.json()["data"]["questions"]) == 5
+
+        scored = c.post(
+            "/api/v1/career/assessment",
+            headers=HEADERS,
+            json={
+                "topic": skill_name,
+                "answers": [{"question": "如何应用？", "answer": "我会结合项目拆解步骤并验证结果。"}],
+            },
+        )
+        assert scored.status_code == 200
+        assert 0 <= scored.json()["data"]["score"] <= 100
+
+        deleted = c.delete(f"/api/v1/skills/{skill_id}", headers=HEADERS)
+        assert deleted.status_code == 204
+
+
 def test_planner_generate() -> None:
     with client() as c:
         resp = c.post(

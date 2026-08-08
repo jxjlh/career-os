@@ -21,6 +21,17 @@ class SituationCreate(BaseModel):
     weeklyHours: float | None = Field(default=None, ge=0, le=168)
 
 
+class AssessmentAnswer(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+    answer: str = Field(default="", max_length=3000)
+
+
+class AssessmentRequest(BaseModel):
+    topic: str = Field(min_length=1, max_length=200)
+    level: str = Field(default="入门", max_length=40)
+    answers: list[AssessmentAnswer] = Field(default_factory=list, max_length=8)
+
+
 @router.post("/career/suggestions")
 async def career_suggestions(
     payload: SituationCreate,
@@ -93,3 +104,51 @@ def _fallback_suggestions(situation: str, target_role: str | None) -> list[dict]
             "weeks": 2,
         },
     ]
+
+
+@router.post("/career/assessment")
+async def career_assessment(
+    payload: AssessmentRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+) -> dict:
+    """生成学习考察题并对完成的回答评分，AI 不可用时使用可解释的兜底评分。"""
+    if not payload.answers:
+        prompt = (
+            "你是学习教练。请为下面的技能生成 5 道开放式考察题，覆盖概念、应用和排错。"
+            '严格返回 JSON: {"questions":[{"question":"...","rubric":"..."}]}。'
+            f"技能: {payload.topic}\n水平: {payload.level}"
+        )
+        provider = ai_registry.get_ai_provider()
+        try:
+            parsed = extract_json(await provider.complete([{"role": "user", "content": prompt}], temperature=0.4, max_tokens=900))
+        except Exception:
+            parsed = None
+        questions = parsed.get("questions", []) if isinstance(parsed, dict) else []
+        if not questions:
+            questions = [
+                {"question": f"请用自己的话解释 {payload.topic} 的核心概念。", "rubric": "概念准确、表达清楚"},
+                {"question": f"在真实项目中，你会如何使用 {payload.topic}？", "rubric": "能联系场景并给出步骤"},
+                {"question": f"学习 {payload.topic} 时最容易出现什么问题？如何排查？", "rubric": "能识别风险并提出排错方法"},
+                {"question": f"请设计一个 30 分钟的 {payload.topic} 练习。", "rubric": "目标明确、练习可执行"},
+                {"question": f"你准备如何证明自己掌握了 {payload.topic}？", "rubric": "有可验证的产出或指标"},
+            ]
+        return {"data": {"topic": payload.topic, "questions": questions[:5], "score": None}}
+
+    provider = ai_registry.get_ai_provider()
+    prompt = (
+        "你是学习教练，请按每题 0-100 分评价回答，返回 JSON。"
+        '格式: {"score":数字,"feedback":"...","items":[{"question":"...","score":数字,"feedback":"..."}]}。'
+        f"技能: {payload.topic}\n水平: {payload.level}\n回答: {payload.answers}"
+    )
+    try:
+        parsed = extract_json(await provider.complete([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=900))
+    except Exception:
+        parsed = None
+    if isinstance(parsed, dict) and isinstance(parsed.get("score"), (int, float)):
+        return {"data": {"topic": payload.topic, "score": round(max(0, min(100, parsed["score"])), 1), "feedback": parsed.get("feedback", ""), "items": parsed.get("items", [])}}
+    items = []
+    for answer in payload.answers:
+        length_score = min(100, max(20, len(answer.answer.strip()) * 2)) if answer.answer.strip() else 0
+        items.append({"question": answer.question, "score": length_score, "feedback": "补充一个具体例子或操作步骤" if length_score < 70 else "回答包含了可验证的学习内容"})
+    score = round(sum(item["score"] for item in items) / max(len(items), 1), 1)
+    return {"data": {"topic": payload.topic, "score": score, "feedback": "评分基于回答完整度；继续补充项目案例可获得更准确的 AI 评分。", "items": items}}

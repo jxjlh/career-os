@@ -158,7 +158,7 @@ function CompletedGoalDetail({ goal, onDeleteGoal }: { goal: LifeGoal; onDeleteG
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold">完成详情</p>
         <div className="flex items-center gap-2">
-          <Link href="/dashboard" className="text-xs font-medium text-primary">
+          <Link href={`/life/goals/${goal.id}`} className="text-xs font-medium text-primary">
             查看完整目标 →
           </Link>
           <button
