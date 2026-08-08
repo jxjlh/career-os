@@ -167,6 +167,9 @@ if frontend_dir.exists():
         candidate = frontend_dir / full_path
         if candidate.is_file():
             return FileResponse(candidate)
+        route_index = candidate / "index.html"
+        if route_index.is_file():
+            return FileResponse(route_index)
         # 其他所有路径 → index.html（SPA fallback）
         index_file = frontend_dir / "index.html"
         return FileResponse(index_file)
