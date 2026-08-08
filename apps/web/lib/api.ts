@@ -106,6 +106,9 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     const message = serverMsg || localizedMsg || `请求失败 (${res.status})`;
     throw new ApiError(message, serverCode, res.status);
   }
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return res.json() as Promise<T>;
 }
 

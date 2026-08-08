@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import BackgroundJob, PlanTask, Profile, Skill, UserSkill, WeeklyPlan
-from app.domains.skills.service import SkillService
 from app.domains.explorer.router import run_search_job
+from app.domains.planner.service import _recompute_plan_stats
+from app.domains.skills.service import SkillService
 from app.providers.ai import registry as ai_registry
 from app.providers.ai.base import extract_json
 
@@ -41,6 +42,11 @@ class SkillUpdate(BaseModel):
 
 
 class SkillRecommendationRequest(BaseModel):
+    currentSituation: str | None = Field(default=None, max_length=2000)
+    weeklyMinutes: int = Field(default=420, ge=30, le=10080)
+
+
+class SkillPlanRequest(BaseModel):
     currentSituation: str | None = Field(default=None, max_length=2000)
     weeklyMinutes: int = Field(default=420, ge=30, le=10080)
 
@@ -272,9 +278,91 @@ async def skill_recommendations(
                 {"day": day, "title": f"学习 {skill.name}：第 {day} 天练习", "minutes": max(30, payload.weeklyMinutes // 7), "outcome": "完成一段笔记或一个练习结果"}
                 for day in range(1, 8)
             ],
-            "assessment": [f"能否解释 {skill.name} 的核心概念？", f"能否独立完成一个真实场景练习？", f"能否复盘并说明自己的取舍？"],
+            "assessment": [f"能否解释 {skill.name} 的核心概念？", "能否独立完成一个真实场景练习？", "能否复盘并说明自己的取舍？"],
         }
     return {"data": {"skillId": skill.id, "skillName": skill.name, **parsed, "provider": provider_name}}
+
+
+@router.post("/skills/{skill_id}/plan")
+async def generate_skill_plan(
+    skill_id: str,
+    payload: SkillPlanRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """为当前技能生成并持久化本周七天计划，避免依赖全局计划的技能关联推断。"""
+    recommendation = await skill_recommendations(
+        skill_id,
+        SkillRecommendationRequest(
+            currentSituation=payload.currentSituation,
+            weeklyMinutes=payload.weeklyMinutes,
+        ),
+        current_user,
+        db,
+    )
+    data = recommendation["data"]
+    week_start = date.today() - timedelta(days=date.today().weekday())
+    plan = (
+        db.query(WeeklyPlan)
+        .filter(WeeklyPlan.user_id == current_user.id, WeeklyPlan.week_start == week_start)
+        .first()
+    )
+    if plan is None:
+        plan = WeeklyPlan(user_id=current_user.id, week_start=week_start, title=f"{data['skillName']} 本周计划")
+        db.add(plan)
+        db.flush()
+
+    db.query(PlanTask).filter(PlanTask.plan_id == plan.id, PlanTask.skill_id == skill_id).delete(
+        synchronize_session=False
+    )
+    plan_items = data.get("plan") or []
+    tasks: list[PlanTask] = []
+    for index in range(1, 8):
+        item = next((candidate for candidate in plan_items if int(candidate.get("day") or 0) == index), None)
+        title = str(item.get("title") if item else f"学习 {data['skillName']}：第 {index} 天练习").strip()
+        minutes = int(item.get("minutes") if item else max(30, payload.weeklyMinutes // 7))
+        task = PlanTask(
+            plan_id=plan.id,
+            user_id=current_user.id,
+            title=title[:300],
+            day=index,
+            estimated_minutes=max(10, min(minutes, 600)),
+            status="todo",
+            sort_order=index,
+            description=(str(item.get("outcome"))[:500] if item and item.get("outcome") else None),
+            task_type="learning" if index < 7 else "review",
+            difficulty="medium",
+            priority="medium",
+            ai_generated=data.get("provider") == "ai",
+            skill_id=skill_id,
+        )
+        db.add(task)
+        tasks.append(task)
+    plan.status = "active"
+    plan.title = f"{data['skillName']} 本周计划"
+    plan.skill_ids = sorted(set((plan.skill_ids or []) + [skill_id]))
+    _recompute_plan_stats(db, plan)
+    db.commit()
+    for task in tasks:
+        db.refresh(task)
+    return {
+        "data": {
+            "skillId": skill_id,
+            "skillName": data["skillName"],
+            "provider": data.get("provider", "fallback"),
+            "tasks": [
+                {
+                    "id": task.id,
+                    "skillId": task.skill_id,
+                    "title": task.title,
+                    "day": task.day,
+                    "estimatedMinutes": task.estimated_minutes,
+                    "status": task.status,
+                }
+                for task in tasks
+            ],
+        }
+    }
 
 
 @router.get("/skills/{skill_id}/weekly-tasks")

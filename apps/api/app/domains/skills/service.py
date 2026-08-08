@@ -7,15 +7,19 @@ from app.domains.skills.repository import SkillRepository, UserSkillRepository
 
 
 def skill_dict(skill: Skill, user_skill: UserSkill | None) -> dict:
+    current_level = user_skill.current_level if user_skill else 0
+    target_level = user_skill.target_level if user_skill else 0
     return {
         "skillId": skill.id,
         "name": skill.name,
         "category": skill.category,
         "description": skill.description,
         "icon": skill.icon,
-        "currentLevel": user_skill.current_level if user_skill else 0,
-        "targetLevel": user_skill.target_level if user_skill else 0,
-        "gap": (user_skill.target_level - user_skill.current_level) if user_skill else 0,
+        "currentLevel": current_level,
+        "targetLevel": target_level,
+        "gap": (target_level - current_level) if user_skill else 0,
+        "masteryPercent": round(min(100, max(0, current_level * 10)), 1),
+        "targetProgressPercent": round(min(100, max(0, current_level * 100 / target_level)), 1) if target_level else 0,
         "learningStatus": user_skill.learning_status if user_skill else "learning",
         "confidence": user_skill.confidence if user_skill else 0,
         "notes": user_skill.notes if user_skill else None,

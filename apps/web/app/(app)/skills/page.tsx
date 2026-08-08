@@ -162,7 +162,7 @@ export default function SkillsPage() {
 function SkillCard({ skill, selected, onSelect, onMove, onRename, onDelete }: { skill: any; selected: boolean; onSelect: () => void; onMove: () => void; onRename: (name: string) => void; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(skill.name);
-  const progress = Math.min(100, Math.round(((skill.currentLevel || 0) / Math.max(skill.targetLevel || 1, 1)) * 100));
+  const progress = Number(skill.masteryPercent ?? Math.min(100, Math.round(((skill.currentLevel || 0) / 10) * 100)));
   const moveLabel = skill.learningStatus === "mastered" ? "移到想学" : "移到已经会";
 
   return (
@@ -179,7 +179,7 @@ function SkillCard({ skill, selected, onSelect, onMove, onRename, onDelete }: { 
       <div className="mt-3 flex flex-wrap gap-1.5" onClick={(event) => event.stopPropagation()}>
         {editing ? <Button size="sm" onClick={() => { onRename(name.trim()); setEditing(false); }}>保存名称</Button> : <Button size="sm" variant="ghost" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5" />修改</Button>}
         <Button size="sm" variant="ghost" onClick={onMove}>{moveLabel}</Button>
-        <Button size="sm" variant="ghost" onClick={onDelete}><Trash2 className="h-3.5 w-3.5 text-danger" /></Button>
+        <Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); onDelete(); }}><Trash2 className="h-3.5 w-3.5 text-danger" /></Button>
       </div>
     </Card>
   );
@@ -194,6 +194,8 @@ function SkillDetail({ skill, detailKey, onProgress }: { skill: any; detailKey: 
   const [questions, setQuestions] = useState<any[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
   const [assessment, setAssessment] = useState<any>(null);
+  const [resourceMessage, setResourceMessage] = useState("");
+  const [planMessage, setPlanMessage] = useState("");
   const [newTask, setNewTask] = useState({ title: "", day: "1", minutes: "30" });
   const detail = useQuery<Envelope>({ queryKey: ["skill-detail", detailKey], queryFn: () => apiFetch(`/skills/${detailKey}/detail`), enabled: Boolean(detailKey) });
   const data = detail.data?.data || {};
@@ -203,7 +205,7 @@ function SkillDetail({ skill, detailKey, onProgress }: { skill: any; detailKey: 
   const [confidence, setConfidence] = useState(currentSkill.confidence || 0);
 
   useEffect(() => {
-    setSearchQuery(""); setSearchResults([]); setKnowledgePoints([]); setQuestions([]); setAnswers([]); setAssessment(null);
+    setSearchQuery(""); setSearchResults([]); setKnowledgePoints([]); setQuestions([]); setAnswers([]); setAssessment(null); setResourceMessage(""); setPlanMessage("");
     setCurrent(Math.max(1, skill.currentLevel || 1)); setTarget(Math.max(1, skill.targetLevel || 5)); setConfidence(skill.confidence || 0);
   }, [detailKey, skill]);
 
@@ -211,9 +213,10 @@ function SkillDetail({ skill, detailKey, onProgress }: { skill: any; detailKey: 
     mutationFn: () => apiFetch<Envelope>(`/skills/${detailKey}/knowledge`, { method: "POST" }),
     onSuccess: (response) => setKnowledgePoints(response.data.knowledgePoints || []),
   });
-  const generatePlan = useMutation({
-    mutationFn: () => apiFetch(`/planner/generate`, { method: "POST", body: JSON.stringify({ weeklyStudyMinutes: 420, prioritySkills: [detailKey], goalIds: [] }) }),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["skill-detail", detailKey] }); },
+  const generatePlan = useMutation<Envelope, Error>({
+    mutationFn: () => apiFetch<Envelope>(`/skills/${detailKey}/plan`, { method: "POST", body: JSON.stringify({ weeklyMinutes: 420 }) }),
+    onSuccess: (response) => { setPlanMessage(`已生成 ${response.data.tasks?.length || 0} 天计划。`); void queryClient.invalidateQueries({ queryKey: ["skill-detail", detailKey] }); },
+    onError: (error) => setPlanMessage(error.message || "生成计划失败，请稍后重试。"),
   });
   const addTask = useMutation({
     mutationFn: () => apiFetch(`/planner/tasks`, { method: "POST", body: JSON.stringify({ title: newTask.title.trim(), day: Number(newTask.day), estimatedMinutes: Number(newTask.minutes), skillId: detailKey }) }),
@@ -242,19 +245,34 @@ function SkillDetail({ skill, detailKey, onProgress }: { skill: any; detailKey: 
   });
 
   const searchResources = async () => {
-    setSearching(true); setSearchResults([]);
+    setSearching(true); setSearchResults([]); setResourceMessage("");
     try {
       const response = await apiFetch<Envelope>(`/skills/${detailKey}/resources`, { method: "POST", body: JSON.stringify({ query: searchQuery.trim(), limit: 12 }) });
+      let finished = false;
       for (let index = 0; index < 30; index += 1) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         const job = await apiFetch<Envelope>(`/explore/jobs/${response.data.jobId}`);
-        if (job.data.status === "succeeded") { setSearchResults(job.data.result.items || []); break; }
-        if (job.data.status === "failed") break;
+        if (job.data.status === "succeeded") {
+          const items = job.data.result.items || [];
+          setSearchResults(items);
+          setResourceMessage(items.length ? `找到 ${items.length} 个 B 站学习资源。` : "暂时没有找到资源，请换一个关键词重试。");
+          finished = true;
+          break;
+        }
+        if (job.data.status === "failed") {
+          setResourceMessage(job.data.error || "B 站搜索失败，请稍后重试。");
+          finished = true;
+          break;
+        }
       }
+      if (!finished) setResourceMessage("搜索超时，请稍后重试。");
+    } catch (error) {
+      setResourceMessage(error instanceof Error ? error.message : "B 站搜索失败，请稍后重试。");
     } finally { setSearching(false); }
   };
 
   const progressPercent = Math.min(100, Math.round((current / Math.max(target, 1)) * 100));
+  const masteryPercent = Number(currentSkill.masteryPercent ?? Math.min(100, current * 10));
   const dailyProgress = Array.from({ length: 7 }, (_, index) => {
     const dayTasks = (data.tasks || []).filter((task: any) => task.day === index + 1);
     return dayTasks.length ? Math.round((dayTasks.filter((task: any) => task.status === "done").length / dayTasks.length) * 100) : 0;
@@ -268,7 +286,7 @@ function SkillDetail({ skill, detailKey, onProgress }: { skill: any; detailKey: 
         <div className="grid gap-3 md:grid-cols-4">
           <Stat label="当前等级" value={`${current}/10`} />
           <Stat label="目标等级" value={`${target}/10`} />
-          <Stat label="掌握度" value={`${progressPercent}%`} />
+          <Stat label="掌握度" value={`${masteryPercent}%`} />
           <Stat label="本周完成" value={`${data.planStats?.done || 0}/${data.planStats?.total || 0}`} />
         </div>
 
@@ -279,12 +297,12 @@ function SkillDetail({ skill, detailKey, onProgress }: { skill: any; detailKey: 
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="p-4"><SectionHeader title="AI 需要掌握的知识点" action={<Button size="sm" variant="outline" onClick={() => generateKnowledge.mutate()} disabled={generateKnowledge.isPending}>{generateKnowledge.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}生成知识点</Button>} />{knowledgePoints.length === 0 ? <p className="text-sm text-muted">点击生成，AI 会根据当前等级列出具体学习重点。</p> : <div className="space-y-2">{knowledgePoints.map((point: any, index: number) => <div key={`${point.title}-${index}`} className="rounded-xl bg-surface-muted/50 p-3"><p className="text-sm font-medium">{index + 1}. {point.title || point}</p>{point.description && <p className="mt-1 text-xs text-muted">{point.description}</p>}</div>)}</div>}</Card>
-          <Card className="p-4"><SectionHeader title="B站学习资源" subtitle="只搜索哔哩哔哩视频。" action={<Button size="sm" variant="outline" onClick={() => void searchResources()} disabled={searching}>{searching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}搜索B站</Button>} /><div className="flex gap-2"><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchResources(); }} placeholder={`搜索 ${currentSkill.name} 视频`} /><Badge variant="primary"><Video className="h-3.5 w-3.5" />B站</Badge></div>{searchResults.length > 0 && <div className="mt-3 space-y-2">{searchResults.map((resource: any) => <div key={resource.resourceId} className="rounded-xl border border-border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{resource.title}</p><Badge>{resource.sourceName || "哔哩哔哩"}</Badge></div><p className="mt-1 text-xs text-muted">{resource.description || "B站学习视频"}</p><div className="mt-2 flex gap-2"><Button size="sm" variant="ghost" onClick={() => saveResource.mutate(resource.resourceId)}>收藏</Button><a href={resource.url} target="_blank" rel="noreferrer"><Button size="sm" variant="outline">打开视频<ExternalLink className="h-3 w-3" /></Button></a></div></div>)}</div>}{!searching && searchResults.length === 0 && <p className="mt-3 text-xs text-muted">输入关键词后搜索，只返回B站资源。</p>}</Card>
+          <Card className="p-4"><SectionHeader title="B站学习资源" subtitle="只搜索哔哩哔哩视频。" action={<Button size="sm" variant="outline" onClick={() => void searchResources()} disabled={searching}>{searching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}搜索B站</Button>} /><div className="flex gap-2"><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchResources(); }} placeholder={`搜索 ${currentSkill.name} 视频`} /><Badge variant="primary"><Video className="h-3.5 w-3.5" />B站</Badge></div>{resourceMessage && <p className="mt-3 text-xs text-muted">{resourceMessage}</p>}{searchResults.length > 0 && <div className="mt-3 space-y-2">{searchResults.map((resource: any) => <div key={resource.resourceId} className="rounded-xl border border-border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{resource.title}</p><Badge>{resource.sourceName || "哔哩哔哩"}</Badge></div><p className="mt-1 text-xs text-muted">{resource.description || "B站学习视频"}</p><div className="mt-2 flex gap-2"><Button size="sm" variant="ghost" onClick={() => saveResource.mutate(resource.resourceId)}>收藏</Button><a href={resource.url} target="_blank" rel="noreferrer"><Button size="sm" variant="outline">打开视频<ExternalLink className="h-3 w-3" /></Button></a></div></div>)}</div>}{!searching && !resourceMessage && searchResults.length === 0 && <p className="mt-3 text-xs text-muted">输入关键词后搜索，只返回B站资源。</p>}</Card>
         </div>
 
         <Card className="p-4"><SectionHeader title="AI 学习考核" subtitle="根据当前技能生成题目，提交后自动评分。" action={<Button size="sm" variant="outline" onClick={() => startAssessment.mutate()} disabled={startAssessment.isPending}>{startAssessment.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Target className="h-3.5 w-3.5" />}生成考核题</Button>} />{questions.length > 0 && <div className="space-y-3">{questions.map((question, index) => <div key={`${question.question}-${index}`}><p className="text-xs font-medium">{index + 1}. {question.question}</p><Textarea className="mt-1 min-h-[60px]" value={answers[index] || ""} onChange={(event) => setAnswers((currentAnswers) => currentAnswers.map((answer, answerIndex) => answerIndex === index ? event.target.value : answer))} placeholder="写下你的理解、练习过程或结果" /></div>)}<Button size="sm" onClick={() => submitAssessment.mutate()} disabled={submitAssessment.isPending}>提交并评分</Button></div>}{assessment && <div className="mt-3 rounded-xl bg-success/10 p-4"><p className="text-2xl font-bold text-success">{assessment.score} 分</p><p className="mt-1 text-xs text-muted">{assessment.feedback}</p></div>}</Card>
 
-        <Card className="p-4"><SectionHeader title="学习计划与进度" subtitle="AI 先生成周计划，你也可以手动增删计划。" action={<Button size="sm" variant="primary" onClick={() => generatePlan.mutate()} disabled={generatePlan.isPending}>{generatePlan.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}生成周计划</Button>} /><div className="grid gap-3 md:grid-cols-4"><Stat label="计划完成率" value={`${data.planStats?.completionRate || 0}%`} /><Stat label="已完成任务" value={`${data.planStats?.done || 0}`} /><Stat label="计划任务" value={`${data.planStats?.total || 0}`} /><Stat label="完成分钟" value={`${data.planStats?.completedMinutes || 0}`} /></div><div className="mt-4 flex flex-wrap gap-2"><Input className="min-w-[220px] flex-1" value={newTask.title} onChange={(event) => setNewTask({ ...newTask, title: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter" && newTask.title.trim()) addTask.mutate(); }} placeholder="添加一个学习计划" /><Input className="w-20" type="number" min="1" max="7" value={newTask.day} onChange={(event) => setNewTask({ ...newTask, day: event.target.value })} /><Input className="w-24" type="number" min="10" max="600" value={newTask.minutes} onChange={(event) => setNewTask({ ...newTask, minutes: event.target.value })} /><Button size="sm" onClick={() => addTask.mutate()} disabled={!newTask.title.trim() || addTask.isPending}><Plus className="h-3.5 w-3.5" />添加计划</Button></div><div className="mt-4 space-y-2">{(data.tasks || []).length === 0 ? <p className="text-sm text-muted">还没有计划，先让 AI 生成或手动添加一个。</p> : (data.tasks || []).map((task: any) => <PlanTaskRow key={task.id} task={task} onToggle={() => toggleTask.mutate(task.id)} onDelete={() => { if (window.confirm("删除这条学习计划？")) deleteTask.mutate(task.id); }} onSave={(payload) => updateTask.mutate({ id: task.id, payload })} />)}</div></Card>
+        <Card className="p-4"><SectionHeader title="学习计划与进度" subtitle="AI 先生成当前技能的周计划，你也可以手动增删计划。" action={<Button size="sm" variant="primary" onClick={() => generatePlan.mutate()} disabled={generatePlan.isPending}>{generatePlan.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}生成周计划</Button>} />{planMessage && <p className="mt-2 text-xs text-muted">{planMessage}</p>}<div className="grid gap-3 md:grid-cols-4"><Stat label="计划完成率" value={`${data.planStats?.completionRate || 0}%`} /><Stat label="已完成任务" value={`${data.planStats?.done || 0}`} /><Stat label="计划任务" value={`${data.planStats?.total || 0}`} /><Stat label="完成分钟" value={`${data.planStats?.completedMinutes || 0}`} /></div><div className="mt-4 flex flex-wrap gap-2"><Input className="min-w-[220px] flex-1" value={newTask.title} onChange={(event) => setNewTask({ ...newTask, title: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter" && newTask.title.trim()) addTask.mutate(); }} placeholder="添加一个学习计划" /><Input className="w-20" type="number" min="1" max="7" value={newTask.day} onChange={(event) => setNewTask({ ...newTask, day: event.target.value })} /><Input className="w-24" type="number" min="10" max="600" value={newTask.minutes} onChange={(event) => setNewTask({ ...newTask, minutes: event.target.value })} /><Button size="sm" onClick={() => addTask.mutate()} disabled={!newTask.title.trim() || addTask.isPending}><Plus className="h-3.5 w-3.5" />添加计划</Button></div><div className="mt-4 space-y-2">{(data.tasks || []).length === 0 ? <p className="text-sm text-muted">还没有计划，先让 AI 生成或手动添加一个。</p> : (data.tasks || []).map((task: any) => <PlanTaskRow key={task.id} task={task} onToggle={() => toggleTask.mutate(task.id)} onDelete={() => { if (window.confirm("删除这条学习计划？")) deleteTask.mutate(task.id); }} onSave={(payload) => updateTask.mutate({ id: task.id, payload })} />)}</div></Card>
       </>}
     </Card>
   );

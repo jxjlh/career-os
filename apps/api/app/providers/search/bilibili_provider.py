@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -43,14 +43,14 @@ class BilibiliProvider(SearchProvider):
                 # B站风控时返回 HTML 风控页 (非 JSON), 直接降级返回空
                 content_type = resp.headers.get("content-type", "")
                 if "json" not in content_type or not resp.text.strip().startswith("{"):
-                    return []
+                    return await self._fallback_search(query, limit, language)
                 data = resp.json()
         except Exception:
-            return []
+            return await self._fallback_search(query, limit, language)
 
         # B站 API 在风控时可能返回 code: -412 / -799 等, 此时降级返回空
         if data.get("code") != 0:
-            return []
+            return await self._fallback_search(query, limit, language)
 
         items = (data.get("data") or {}).get("result") or []
         results: list[dict[str, Any]] = []
@@ -107,7 +107,19 @@ class BilibiliProvider(SearchProvider):
                     },
                 }
             )
-        return results
+        return results or await self._fallback_search(query, limit, language)
+
+    async def _fallback_search(self, query: str, limit: int, language: str) -> list[dict[str, Any]]:
+        from app.providers.search.duckduckgo_provider import search_ddg_lite
+
+        return await search_ddg_lite(
+            query=query,
+            limit=limit,
+            language=language,
+            site="bilibili.com",
+            provider_name=self.name,
+            source_name_override="哔哩哔哩",
+        )
 
     async def healthcheck(self) -> bool:
         return True
@@ -154,6 +166,6 @@ def _ts_to_iso(ts: Any) -> str | None:
     if not ts:
         return None
     try:
-        return datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(int(ts), tz=UTC).isoformat()
     except (TypeError, ValueError):
         return None

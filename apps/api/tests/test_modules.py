@@ -2,9 +2,9 @@ import time
 import uuid
 from types import SimpleNamespace
 
-from app.domains.explorer.router import _select_search_providers
 from fastapi.testclient import TestClient
 
+from app.domains.explorer.router import _select_search_providers
 from app.main import app
 
 HEADERS = {"Authorization": "Bearer dev", "Content-Type": "application/json"}
@@ -49,6 +49,8 @@ def test_skills_matrix_and_progress() -> None:
         )
         assert resp.status_code == 200
         assert resp.json()["data"]["currentLevel"] == 4
+        assert resp.json()["data"]["masteryPercent"] == 40
+        assert resp.json()["data"]["targetProgressPercent"] == 57.1
 
 
 def test_skill_categories_detail_and_knowledge() -> None:
@@ -177,6 +179,22 @@ def test_skill_recommendations_endpoint() -> None:
         assert body["resources"]
         assert len(body["plan"]) == 7
         assert body["assessment"]
+
+
+def test_skill_plan_generation_persists_tasks_for_selected_skill() -> None:
+    with client() as c:
+        matrix = c.get("/api/v1/skills/matrix", headers=HEADERS)
+        skill_id = matrix.json()["data"]["items"][0]["skillId"]
+        response = c.post(
+            f"/api/v1/skills/{skill_id}/plan",
+            headers=HEADERS,
+            json={"weeklyMinutes": 420},
+        )
+        assert response.status_code == 200
+        body = response.json()["data"]
+        assert body["skillId"] == skill_id
+        assert len(body["tasks"]) == 7
+        assert all(task["skillId"] == skill_id for task in body["tasks"])
 
 
 def test_custom_skill_crud_and_career_assessment() -> None:
