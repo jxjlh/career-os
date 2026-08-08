@@ -73,6 +73,15 @@ def book_dict(book: WordBook, stats: dict[str, int] | None = None) -> dict:
     }
 
 
+def canonical_book_code(book: WordBook) -> str:
+    normalized = f"{book.code} {book.name} {book.level}".casefold().replace(" ", "")
+    if "专业四级" not in normalized and ("cet4" in normalized or "大学英语四级" in normalized):
+        return "cet4"
+    if "专业八级" not in normalized and ("cet8" in normalized or "大学英语八级" in normalized):
+        return "tem8"
+    return book.code
+
+
 def material_dict(m: ListeningMaterial, attempted: bool = False) -> dict:
     return {
         "id": m.id,
@@ -151,9 +160,16 @@ class EnglishService:
         all_stats = self.user_words.count_by_status_for_books(user_id, book_ids)
 
         result = []
+        seen_codes: set[str] = set()
         for book in books:
+            canonical_code = canonical_book_code(book)
+            if canonical_code in seen_codes:
+                continue
+            seen_codes.add(canonical_code)
             stats = all_stats.get(book.id, {})
-            result.append(book_dict(book, stats))
+            item = book_dict(book, stats)
+            item["code"] = canonical_code
+            result.append(item)
         return result
 
     def get_book(self, user_id: str, book_id: str) -> dict | None:

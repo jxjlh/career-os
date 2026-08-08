@@ -65,6 +65,58 @@ def test_english_books_use_complete_relation_data() -> None:
         assert all(word["spelling"] and word["meaning"] for word in page.json()["data"])
 
 
+def test_reading_book_progress_and_plan() -> None:
+    with client() as c:
+        created = c.post(
+            "/api/v1/library/reading/books",
+            headers=HEADERS,
+            json={
+                "title": f"测试阅读-{uuid.uuid4().hex[:8]}",
+                "author": "测试作者",
+                "totalPages": 300,
+                "targetDate": "2026-09-01",
+                "dailyMinutes": 30,
+                "planNote": "每天读一章",
+                "isComplete": True,
+            },
+        )
+        assert created.status_code == 201
+        book_id = created.json()["data"]["id"]
+        assert created.json()["data"]["status"] == "want"
+
+        updated = c.patch(
+            f"/api/v1/library/reading/books/{book_id}",
+            headers=HEADERS,
+            json={"currentPage": 75},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["data"]["status"] == "reading"
+        assert updated.json()["data"]["progressPercent"] == 25
+
+        listing = c.get("/api/v1/library/reading/books?status=reading", headers=HEADERS)
+        assert listing.status_code == 200
+        assert any(item["id"] == book_id for item in listing.json()["data"])
+
+        deleted = c.delete(f"/api/v1/library/reading/books/{book_id}", headers=HEADERS)
+        assert deleted.status_code == 204
+
+
+def test_skill_recommendations_endpoint() -> None:
+    with client() as c:
+        matrix = c.get("/api/v1/skills/matrix", headers=HEADERS)
+        skill_id = matrix.json()["data"]["items"][0]["skillId"]
+        response = c.post(
+            f"/api/v1/skills/{skill_id}/recommendations",
+            headers=HEADERS,
+            json={"currentSituation": "刚入门，希望完成一个实战项目", "weeklyMinutes": 420},
+        )
+        assert response.status_code == 200
+        body = response.json()["data"]
+        assert body["resources"]
+        assert len(body["plan"]) == 7
+        assert body["assessment"]
+
+
 def test_custom_skill_crud_and_career_assessment() -> None:
     skill_name = f"自定义技能-{uuid.uuid4().hex[:8]}"
     with client() as c:

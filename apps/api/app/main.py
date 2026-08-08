@@ -31,6 +31,7 @@ from app.domains.interviews.router import router as interviews_router
 from app.domains.jobs.router import router as jobs_router
 from app.domains.journal.router import router as journal_router
 from app.domains.library.router import router as library_router
+from app.domains.reading.router import router as reading_router
 from app.domains.life.router import router as life_router
 from app.domains.notifications.router import router as notifications_router
 from app.domains.planner.router import router as planner_router
@@ -123,6 +124,7 @@ app.include_router(planner_router, prefix=settings.api_prefix)
 app.include_router(career_router, prefix=settings.api_prefix)
 app.include_router(profile_router, prefix=settings.api_prefix)
 app.include_router(library_router, prefix=settings.api_prefix)
+app.include_router(reading_router, prefix=settings.api_prefix)
 app.include_router(life_router, prefix=settings.api_prefix)
 app.include_router(bucket_router, prefix=settings.api_prefix)
 app.include_router(notifications_router, prefix=settings.api_prefix)

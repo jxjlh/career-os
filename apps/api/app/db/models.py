@@ -582,6 +582,38 @@ class BookmarkTag(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
+class ReadingBook(Base):
+    """用户的阅读书单、进度和阅读计划."""
+
+    __tablename__ = "reading_books"
+    __table_args__ = (
+        UniqueConstraint("user_id", "title", "author", name="uq_reading_books_user_title_author"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    author: Mapped[str | None] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text)
+    cover_url: Mapped[str | None] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    isbn: Mapped[str | None] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), default="want", index=True)  # want/reading/finished/unread
+    current_page: Mapped[int] = mapped_column(Integer, default=0)
+    total_pages: Mapped[int | None] = mapped_column(Integer)
+    progress_percent: Mapped[float] = mapped_column(Float, default=0)
+    target_date: Mapped[date | None] = mapped_column(Date)
+    daily_minutes: Mapped[int | None] = mapped_column(Integer)
+    plan_note: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    is_complete: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_recommended: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 

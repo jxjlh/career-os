@@ -9,6 +9,8 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import PlanTask, Profile, Skill, UserSkill, WeeklyPlan
 from app.domains.skills.service import SkillService
+from app.providers.ai import registry as ai_registry
+from app.providers.ai.base import extract_json
 
 router = APIRouter(tags=["skills"])
 
@@ -32,6 +34,11 @@ class SkillUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     category: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=500)
+
+
+class SkillRecommendationRequest(BaseModel):
+    currentSituation: str | None = Field(default=None, max_length=2000)
+    weeklyMinutes: int = Field(default=420, ge=30, le=10080)
 
 
 @router.get("/skills")
@@ -142,6 +149,47 @@ def update_skill_progress(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Skill not found"}) from exc
     return {"data": result}
+
+
+@router.post("/skills/{skill_id}/recommendations")
+async def skill_recommendations(
+    skill_id: str,
+    payload: SkillRecommendationRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    skill = db.query(Skill).filter(Skill.id == skill_id).first()
+    if skill is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Skill not found"})
+    prompt = (
+        "你是学习教练。请针对一个技能给出可执行的学习资源、7天计划和考核重点。"
+        "资源必须是可以搜索的真实方向，不要编造网址。严格返回 JSON："
+        '{"resources":[{"title":"","type":"book/course/article/project","query":"","reason":""}],'
+        '"plan":[{"day":1,"title":"","minutes":30,"outcome":""}],'
+        '"assessment":["..."]}。'
+        f"技能: {skill.name}\n当前水平: {skill.description or '未填写'}\n每周学习分钟: {payload.weeklyMinutes}\n"
+        f"学习现状: {payload.currentSituation or '未填写'}"
+    )
+    provider = ai_registry.get_ai_provider()
+    try:
+        parsed = extract_json(await provider.complete([{"role": "user", "content": prompt}], temperature=0.4, max_tokens=1400))
+    except Exception:
+        parsed = None
+    provider_name = "ai" if isinstance(parsed, dict) and parsed.get("resources") else "fallback"
+    if not isinstance(parsed, dict) or not parsed.get("resources"):
+        parsed = {
+            "resources": [
+                {"title": f"{skill.name} 官方文档与入门教程", "type": "article", "query": f"{skill.name} official documentation beginner", "reason": "先建立准确的概念和工具基础。"},
+                {"title": f"{skill.name} 实战项目", "type": "project", "query": f"{skill.name} real world project tutorial", "reason": "用一个可展示的产出验证理解。"},
+                {"title": f"{skill.name} 常见面试题与练习", "type": "course", "query": f"{skill.name} practice exercises interview questions", "reason": "通过练习暴露知识盲区。"},
+            ],
+            "plan": [
+                {"day": day, "title": f"学习 {skill.name}：第 {day} 天练习", "minutes": max(30, payload.weeklyMinutes // 7), "outcome": "完成一段笔记或一个练习结果"}
+                for day in range(1, 8)
+            ],
+            "assessment": [f"能否解释 {skill.name} 的核心概念？", f"能否独立完成一个真实场景练习？", f"能否复盘并说明自己的取舍？"],
+        }
+    return {"data": {"skillId": skill.id, "skillName": skill.name, **parsed, "provider": provider_name}}
 
 
 @router.get("/skills/{skill_id}/weekly-tasks")
