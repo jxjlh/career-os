@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     xfyun_tts_default_voice: str = "xiaoyan"
 
     openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-3-5-haiku-latest"
