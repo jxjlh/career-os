@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { resolveMediaUrl } from "@/lib/chat";
 import type { Journal } from "@/lib/journal";
 import { journalApi, TIME_SLOTS, MOODS, getSlotMeta, getSubSlotMeta } from "@/lib/journal";
 import { useI18n } from "@/lib/i18n";
@@ -358,7 +359,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
                   className="relative aspect-square overflow-hidden rounded-xl bg-surface/40 ring-1 ring-white/5"
                 >
                   <img
-                    src={url}
+                    src={resolveMediaUrl(url)}
                     alt={`photo-${i}`}
                     className="h-full w-full object-cover"
                     onError={(e) => {

@@ -13,6 +13,7 @@ import {
   StreakCard,
   WeeklyPlanProgress,
 } from "@/components/dashboard";
+import { resolveMediaUrl } from "@/lib/chat";
 import { journalApi, TIME_SLOTS, MOODS, type Journal } from "@/lib/journal";
 
 type Envelope = { data: any };
@@ -231,7 +232,7 @@ function DailyJournal() {
                   className="relative aspect-square overflow-hidden rounded-lg bg-surface/40 ring-1 ring-white/5"
                 >
                   <img
-                    src={url}
+                    src={resolveMediaUrl(url)}
                     alt={`daily-photo-${i}`}
                     className="h-full w-full object-cover"
                     onError={(e) => {
@@ -309,7 +310,7 @@ function DailyJournal() {
                             className="relative aspect-square overflow-hidden rounded-md bg-surface/40"
                           >
                             <img
-                              src={p}
+                              src={resolveMediaUrl(p)}
                               alt={`entry-photo-${i}`}
                               className="h-full w-full object-cover"
                               onError={(e) => {
