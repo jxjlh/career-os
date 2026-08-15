@@ -1,106 +1,93 @@
-"""指定阅读来源的聚合搜索。只保存来源链接，不下载或镜像第三方文件。"""
+"""Canonical, metadata-backed book discovery with optional lawful download links."""
 
-import asyncio
-from dataclasses import dataclass
+import re
 from typing import Any
-from urllib.parse import urlparse
 
-from app.providers.search.duckduckgo_provider import search_ddg_lite
+import httpx
 
-
-@dataclass(frozen=True)
-class BookSourceSite:
-    key: str
-    name: str
-    domain: str
-    homepage: str
+GOOGLE_BOOKS_VOLUMES_URL = "https://www.googleapis.com/books/v1/volumes"
 
 
-BOOK_SOURCE_SITES = (
-    BookSourceSite("jiumodiary", "九摩电子书", "jiumodiary.com", "https://www.jiumodiary.com/"),
-    BookSourceSite("zlibrary", "Z-Library", "zlibrary-sg.se", "https://zlibrary-sg.se/"),
-    BookSourceSite("gutenberg", "Project Gutenberg", "gutenberg.org", "https://www.gutenberg.org/"),
-    BookSourceSite("libgen", "LibGen", "libgen.ee", "https://libgen.ee/"),
-    BookSourceSite("free_ebooks", "Free-Ebooks.net", "free-ebooks.net", "https://www.free-ebooks.net/"),
-)
+def _normalize(value: str | None) -> str:
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]", "", (value or "").lower())
 
 
-def _belongs_to_source(url: str, domain: str) -> bool:
-    try:
-        host = (urlparse(url).hostname or "").lower().removeprefix("www.")
-    except ValueError:
-        return False
-    return host == domain or host.endswith(f".{domain}")
+def _is_isbn(query: str) -> bool:
+    compact = re.sub(r"[^0-9Xx]", "", query)
+    return len(compact) in {10, 13}
 
 
-async def _search_one_source(
-    source: BookSourceSite,
-    query: str,
-    limit: int,
-    language: str,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    try:
-        raw_results = await search_ddg_lite(
-            query=f'"{query}" full book ebook',
-            limit=limit,
-            language=language,
-            site=source.domain,
-            provider_name=f"book_source:{source.key}",
-            source_name_override=source.name,
-        )
-        results = []
-        for item in raw_results:
-            url = item.get("url", "")
-            if not _belongs_to_source(url, source.domain):
-                continue
-            results.append(
-                {
-                    **item,
-                    "sourceKey": source.key,
-                    "sourceName": source.name,
-                    "sourceHomepage": source.homepage,
-                    "isBookSource": True,
-                    "isComplete": False,
-                }
-            )
-        return (
-            {
-                "key": source.key,
-                "name": source.name,
-                "domain": source.domain,
-                "homepage": source.homepage,
-                "status": "succeeded",
-                "resultCount": len(results),
-            },
-            results,
-        )
-    except Exception as exc:  # pragma: no cover - network/provider boundary
-        return (
-            {
-                "key": source.key,
-                "name": source.name,
-                "domain": source.domain,
-                "homepage": source.homepage,
-                "status": "failed",
-                "resultCount": 0,
-                "error": str(exc),
-            },
-            [],
-        )
+def _match_score(query: str, title: str, identifiers: list[dict[str, str]]) -> int:
+    normalized_query = _normalize(query)
+    normalized_title = _normalize(title)
+    if not normalized_query or not normalized_title:
+        return 0
+    if _is_isbn(query) and any(_normalize(item.get("identifier")) == normalized_query for item in identifiers):
+        return 100
+    if normalized_query == normalized_title:
+        return 100
+    if normalized_query in normalized_title or normalized_title in normalized_query:
+        return 85
+    return 0
+
+
+def _download_info(access: dict[str, Any]) -> tuple[str | None, str | None]:
+    for format_name, key in (("EPUB", "epub"), ("PDF", "pdf")):
+        data = access.get(key) or {}
+        if data.get("isAvailable") and data.get("downloadLink"):
+            return str(data["downloadLink"]), format_name
+    return None, None
 
 
 async def search_book_sources(query: str, limit: int = 10, language: str = "zh") -> dict[str, Any]:
-    responses = await asyncio.gather(
-        *(_search_one_source(source, query, limit, language) for source in BOOK_SOURCE_SITES)
-    )
-    sources = [source for source, _ in responses]
+    normalized_query = _normalize(query)
+    search_query = f"isbn:{query}" if _is_isbn(query) else f'intitle:"{query}"'
+    params = {"q": search_query, "maxResults": min(limit * 3, 40), "printType": "books"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(GOOGLE_BOOKS_VOLUMES_URL, params=params)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        return {
+            "items": [],
+            "sources": [{"key": "google_books", "name": "Google Books", "status": "failed", "resultCount": 0, "error": str(exc)}],
+        }
+
     items: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for _, source_items in responses:
-        for item in source_items:
-            url = item["url"].rstrip("/")
-            if url in seen:
-                continue
-            seen.add(url)
-            items.append(item)
-    return {"items": items, "sources": sources}
+    for raw in response.json().get("items") or []:
+        volume = raw.get("volumeInfo") or {}
+        title = str(volume.get("title") or "").strip()
+        identifiers = volume.get("industryIdentifiers") or []
+        score = _match_score(query, title, identifiers)
+        if score < 60:
+            continue
+        access = raw.get("accessInfo") or {}
+        download_url, download_format = _download_info(access)
+        image_links = volume.get("imageLinks") or {}
+        authors = [str(author) for author in volume.get("authors") or []]
+        items.append(
+            {
+                "id": raw.get("id"),
+                "title": title,
+                "author": ", ".join(authors) or None,
+                "description": volume.get("description"),
+                "isbn": next((item.get("identifier") for item in identifiers if item.get("type") in {"ISBN_13", "ISBN_10"}), None),
+                "coverUrl": image_links.get("thumbnail") or image_links.get("smallThumbnail"),
+                "url": volume.get("infoLink") or volume.get("previewLink"),
+                "downloadUrl": download_url,
+                "downloadFormat": download_format,
+                "canDownload": bool(download_url),
+                "matchScore": score,
+                "isExactMatch": score == 100,
+                "sourceKey": "google_books",
+                "sourceName": "Google Books",
+                "isBookSource": True,
+                "isComplete": bool(download_url),
+            }
+        )
+
+    items.sort(key=lambda item: (-item["matchScore"], item["title"]))
+    return {
+        "items": items[:limit],
+        "sources": [{"key": "google_books", "name": "Google Books", "status": "succeeded", "resultCount": len(items), "query": normalized_query}],
+    }

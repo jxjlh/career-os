@@ -144,6 +144,9 @@ def delete_skill(
     row = db.query(UserSkill).filter(UserSkill.user_id == current_user.id, UserSkill.skill_id == skill_id).first()
     if row is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "该技能不在你的学习列表中"})
+    db.query(PlanTask).filter(PlanTask.user_id == current_user.id, PlanTask.skill_id == skill_id).update(
+        {PlanTask.skill_id: None}, synchronize_session=False
+    )
     db.delete(row)
     if db.query(UserSkill).filter(UserSkill.skill_id == skill_id, UserSkill.user_id != current_user.id).count() == 0:
         skill = db.query(Skill).filter(Skill.id == skill_id, Skill.is_ai_generated.is_(False)).first()

@@ -1,58 +1,37 @@
+from types import SimpleNamespace
+
 import pytest
 
-from app.domains.reading.sources import BOOK_SOURCE_SITES, search_book_sources
-
-
-def test_reading_sources_include_requested_sites() -> None:
-    assert [source.key for source in BOOK_SOURCE_SITES] == [
-        "jiumodiary",
-        "zlibrary",
-        "gutenberg",
-        "libgen",
-        "free_ebooks",
-    ]
-    assert {source.domain for source in BOOK_SOURCE_SITES} == {
-        "jiumodiary.com",
-        "zlibrary-sg.se",
-        "gutenberg.org",
-        "libgen.ee",
-        "free-ebooks.net",
-    }
+import app.domains.reading.sources as sources
 
 
 @pytest.mark.asyncio
-async def test_search_book_sources_keeps_source_metadata_and_filters_domains(monkeypatch) -> None:
-    async def fake_search_ddg_lite(*, query, limit, language, site, provider_name, source_name_override):
-        return [
+async def test_search_book_sources_keeps_exact_metadata_match_and_download_url(monkeypatch) -> None:
+    payload = {
+        "items": [
             {
-                "title": f"{source_name_override} - {query}",
-                "url": f"https://{site}/ebooks/example",
-                "snippet": "完整书籍来源",
-                "source_name": source_name_override,
-                "provider": provider_name,
+                "id": "exact",
+                "volumeInfo": {
+                    "title": "Deep Work",
+                    "authors": ["Cal Newport"],
+                    "industryIdentifiers": [{"type": "ISBN_13", "identifier": "9781455586691"}],
+                    "infoLink": "https://books.example/deep-work",
+                },
+                "accessInfo": {"epub": {"isAvailable": True, "downloadLink": "https://books.example/deep-work.epub"}},
             },
-            {
-                "title": "外部误匹配",
-                "url": "https://example.com/not-a-book-source",
-                "snippet": "不应返回",
-                "source_name": source_name_override,
-                "provider": provider_name,
-            },
+            {"id": "wrong", "volumeInfo": {"title": "Unrelated Book"}, "accessInfo": {}},
         ]
-
-    monkeypatch.setattr("app.domains.reading.sources.search_ddg_lite", fake_search_ddg_lite)
-
-    result = await search_book_sources("The Hobbit", limit=3, language="en")
-
-    assert len(result["items"]) == 5
-    assert {item["sourceKey"] for item in result["items"]} == {
-        "jiumodiary",
-        "zlibrary",
-        "gutenberg",
-        "libgen",
-        "free_ebooks",
     }
-    assert all(item["isBookSource"] is True for item in result["items"])
-    assert all("example.com" not in item["url"] for item in result["items"])
-    assert len(result["sources"]) == 5
-    assert all(source["status"] == "succeeded" for source in result["sources"])
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def get(self, *args, **kwargs):
+            return SimpleNamespace(raise_for_status=lambda: None, json=lambda: payload)
+
+    monkeypatch.setattr(sources.httpx, "AsyncClient", lambda **kwargs: Client())
+    result = await sources.search_book_sources("Deep Work")
+
+    assert [item["title"] for item in result["items"]] == ["Deep Work"]
+    assert result["items"][0]["canDownload"] is True
+    assert result["items"][0]["downloadUrl"].endswith(".epub")

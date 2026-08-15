@@ -9,7 +9,16 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db.models import LifeGoal, PlanTask, Profile, RoadmapMilestone, Skill, WeeklyPlan
+from app.db.models import (
+    LifeGoal,
+    PlanTask,
+    Profile,
+    ReadingBook,
+    RoadmapMilestone,
+    Skill,
+    UserSkill,
+    WeeklyPlan,
+)
 from app.domains.planner.service import (
     PlannerService,
     delete_task,
@@ -180,13 +189,58 @@ async def generate_plan(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
     start = payload.weekStart or _week_start()
+    priority_skills = payload.prioritySkills or [
+        row.skill_id
+        for row in (
+            db.query(UserSkill)
+            .filter(UserSkill.user_id == current_user.id, UserSkill.learning_status == "learning")
+            .order_by((UserSkill.target_level - UserSkill.current_level).desc())
+            .limit(5)
+            .all()
+        )
+    ]
     plan = await PlannerService(db).generate(
         user_id=current_user.id,
         week_start=start,
         weekly_minutes=payload.weeklyStudyMinutes,
-        priority_skills=payload.prioritySkills,
+        priority_skills=priority_skills,
         goal_ids=payload.goalIds,
     )
+    books = (
+        db.query(ReadingBook)
+        .filter(ReadingBook.user_id == current_user.id, ReadingBook.status.in_(["want", "reading", "unread"]))
+        .order_by(ReadingBook.status == "reading", ReadingBook.updated_at.desc())
+        .limit(2)
+        .all()
+    )
+    task_count = db.query(PlanTask).filter(PlanTask.plan_id == plan.id).count()
+    for index, book in enumerate(books, start=1):
+        remaining_pages = max((book.total_pages or 0) - book.current_page, 0)
+        minutes = book.daily_minutes or max(20, min(45, payload.weeklyStudyMinutes // 14))
+        db.add(
+            PlanTask(
+                plan_id=plan.id,
+                user_id=current_user.id,
+                title=f"阅读《{book.title}》",
+                description=(f"本周推进约 {max(remaining_pages // 4, 10)} 页，记录一个可实践的观点。"),
+                day=6 if index == 1 else 7,
+                estimated_minutes=minutes,
+                status="todo",
+                sort_order=task_count + index,
+                task_type="reading",
+                difficulty="easy",
+                priority="medium",
+                ai_generated=True,
+                resource_url=book.source_url,
+                estimated_outcome="完成阅读记录并更新阅读进度",
+            )
+        )
+    if books:
+        plan.rationale = f"{plan.rationale or '已按想学技能生成学习任务。'} 同时加入 {len(books)} 本在读/想读书籍的阅读任务。"
+    from app.domains.planner.service import _recompute_plan_stats
+
+    _recompute_plan_stats(db, plan)
+    db.commit()
     return {"data": _plan_dict(db, plan)}
 
 

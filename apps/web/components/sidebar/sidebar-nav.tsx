@@ -12,7 +12,6 @@ import {
   NotebookPen,
   Search,
   Settings,
-  Sparkles,
   Target,
   Users,
 } from "lucide-react";
@@ -46,7 +45,6 @@ const NAV: NavItem[] = [
   // GROW —— 成长
   { key: "skills", href: "/skills", icon: Target, group: "grow" },
   { key: "planner", href: "/planner", icon: CalendarDays, group: "grow" },
-  { key: "coach", href: "/coach", icon: Sparkles, group: "grow" },
   { key: "explore", href: "/explore", icon: Search, group: "grow" },
   { key: "library", href: "/library", icon: Library, group: "grow" },
   { key: "projects", href: "/projects", icon: FolderKanban, group: "grow" },

@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -12,6 +12,31 @@ from app.providers.ai import registry as ai_registry
 from app.providers.ai.base import extract_json
 
 router = APIRouter(tags=["jobs"])
+
+
+ROLE_LIBRARY = {
+    "数据分析师": {"interests": {"数据", "商业", "研究"}, "skills": [("SQL", 7), ("Python", 6), ("Power BI", 6)], "jd": "负责业务数据分析、指标体系建设、可视化和增长建议；要求熟练 SQL，具备 Python 或 BI 工具能力。"},
+    "产品经理": {"interests": {"产品", "用户", "商业"}, "skills": [("需求分析", 7), ("产品设计", 7), ("数据分析", 5)], "jd": "负责用户研究、需求拆解、产品方案和跨团队推进；要求具备产品设计、沟通和数据分析能力。"},
+    "增长运营": {"interests": {"增长", "用户", "内容"}, "skills": [("用户运营", 7), ("数据分析", 6), ("A/B 测试", 5)], "jd": "负责拉新、留存、转化实验与增长复盘；要求熟悉用户运营、数据分析和实验设计。"},
+    "后端工程师": {"interests": {"技术", "系统", "编程"}, "skills": [("Python", 7), ("SQL", 6), ("系统设计", 6)], "jd": "负责服务端接口、数据模型、性能与稳定性；要求掌握 Python、数据库和系统设计基础。"},
+}
+
+
+class TargetRoleSurvey(BaseModel):
+    interests: list[str] = Field(default_factory=list, max_length=8)
+
+
+class TargetRoleUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
+class TargetRoleSkillsRequest(BaseModel):
+    skills: list[str] = Field(min_length=1, max_length=20)
+
+
+def role_dict(title: str) -> dict:
+    role = ROLE_LIBRARY[title]
+    return {"title": title, "requirements": [{"name": name, "level": level} for name, level in role["skills"]], "jd": role["jd"]}
 
 
 class JobCreate(BaseModel):
@@ -152,6 +177,64 @@ def list_jobs(
 ) -> dict:
     jobs = db.query(Job).filter(Job.user_id == current_user.id).order_by(Job.created_at.desc()).all()
     return {"data": [job_dict(j) for j in jobs]}
+
+
+@router.post("/jobs/target-role/recommend")
+def recommend_target_role(payload: TargetRoleSurvey) -> dict:
+    selected = {item.strip() for item in payload.interests if item.strip()}
+    ranked = sorted(
+        ROLE_LIBRARY,
+        key=lambda title: (len(selected.intersection(ROLE_LIBRARY[title]["interests"])), title),
+        reverse=True,
+    )
+    return {"data": {"roles": [role_dict(title) for title in ranked[:3]]}}
+
+
+@router.get("/jobs/target-role")
+def get_target_role(current_user: Annotated[Profile, Depends(get_current_user)]) -> dict:
+    title = current_user.target_title
+    return {"data": {"title": title, "role": role_dict(title) if title in ROLE_LIBRARY else None}}
+
+
+@router.put("/jobs/target-role")
+def save_target_role(
+    payload: TargetRoleUpdate,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    if payload.title not in ROLE_LIBRARY:
+        raise HTTPException(status_code=422, detail={"code": "UNKNOWN_ROLE", "message": "请选择推荐岗位"})
+    current_user.target_title = payload.title
+    db.commit()
+    return {"data": {"title": payload.title, "role": role_dict(payload.title)}}
+
+
+@router.get("/jobs/target-role/jd")
+def target_role_jd(title: str) -> dict:
+    if title not in ROLE_LIBRARY:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "岗位 JD 不存在"})
+    return {"data": role_dict(title)}
+
+
+@router.post("/jobs/target-role/skills")
+def add_target_role_skills(
+    payload: TargetRoleSkillsRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    added: list[str] = []
+    for name in dict.fromkeys(skill.strip() for skill in payload.skills if skill.strip()):
+        skill = db.query(Skill).filter(Skill.name == name).first()
+        if skill is None:
+            skill = Skill(name=name, category="目标岗位", description="由目标岗位 JD 要求生成", is_ai_generated=True)
+            db.add(skill)
+            db.flush()
+        user_skill = db.query(UserSkill).filter(UserSkill.user_id == current_user.id, UserSkill.skill_id == skill.id).first()
+        if user_skill is None:
+            db.add(UserSkill(user_id=current_user.id, skill_id=skill.id, current_level=1, target_level=6, learning_status="learning"))
+            added.append(name)
+    db.commit()
+    return {"data": {"added": added}}
 
 
 @router.post("/jobs", status_code=201)

@@ -16,6 +16,7 @@ export function LifeRecordImage({ path }: { path: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const MAX_RETRIES = 2;
 
   useEffect(() => {
@@ -74,12 +75,22 @@ export function LifeRecordImage({ path }: { path: string }) {
   if (!url) return <div className="mb-2 aspect-[4/3] w-full animate-pulse rounded-[10px] bg-surface-muted" />;
 
   return (
-    <img
-      src={url}
-      alt="人生记录"
-      onError={() => setFailed(true)}
-      className="mb-2 max-h-56 w-full rounded-[10px] object-cover"
-      loading="lazy"
-    />
+    <>
+      <button type="button" className="mb-2 block w-full" onClick={() => setPreviewOpen(true)} aria-label="放大查看人生记录图片">
+        <img
+          src={url}
+          alt="人生记录"
+          onError={() => setFailed(true)}
+          className="max-h-56 w-full rounded-[10px] object-cover transition-opacity hover:opacity-90"
+          loading="lazy"
+        />
+      </button>
+      {previewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-label="人生记录图片预览" onClick={() => setPreviewOpen(false)}>
+          <img src={url} alt="人生记录大图" className="max-h-full max-w-full rounded-lg object-contain" onClick={(event) => event.stopPropagation()} />
+          <button type="button" className="absolute right-5 top-5 rounded bg-black/60 px-3 py-2 text-sm text-white" onClick={() => setPreviewOpen(false)}>关闭</button>
+        </div>
+      )}
+    </>
   );
 }

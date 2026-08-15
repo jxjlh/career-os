@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     supabase_jwks_url: str = ""
     supabase_service_role_key: str = ""
-    supabase_url: str = ""
+    supabase_storage_bucket: str = "life-records"
 
     tavily_api_key: str = ""
     exa_api_key: str = ""

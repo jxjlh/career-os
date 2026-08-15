@@ -161,6 +161,15 @@ def test_reading_book_progress_and_plan() -> None:
         assert listing.status_code == 200
         assert any(item["id"] == book_id for item in listing.json()["data"])
 
+        generated = c.post(
+            "/api/v1/planner/generate",
+            headers=HEADERS,
+            json={"weeklyStudyMinutes": 420, "prioritySkills": []},
+        )
+        assert generated.status_code == 200
+        reading_tasks = [task for task in generated.json()["data"]["tasks"] if task["taskType"] == "reading"]
+        assert any(task["title"] == f"阅读《{created.json()['data']['title']}》" for task in reading_tasks)
+
         deleted = c.delete(f"/api/v1/library/reading/books/{book_id}", headers=HEADERS)
         assert deleted.status_code == 204
 
@@ -323,6 +332,20 @@ def test_job_analysis() -> None:
         assert body["matchScore"] is not None
 
 
+def test_target_role_recommendation_and_skills_are_idempotent() -> None:
+    with client() as c:
+        recommended = c.post("/api/v1/jobs/target-role/recommend", headers=HEADERS, json={"interests": ["数据", "商业"]})
+        assert recommended.status_code == 200
+        role = recommended.json()["data"]["roles"][0]
+        saved = c.put("/api/v1/jobs/target-role", headers=HEADERS, json={"title": role["title"]})
+        assert saved.status_code == 200
+        requirements = [item["name"] for item in role["requirements"]]
+        assert c.post("/api/v1/jobs/target-role/skills", headers=HEADERS, json={"skills": requirements}).status_code == 200
+        repeat = c.post("/api/v1/jobs/target-role/skills", headers=HEADERS, json={"skills": requirements})
+        assert repeat.status_code == 200
+        assert repeat.json()["data"]["added"] == []
+
+
 def test_interview_flow() -> None:
     with client() as c:
         created = c.post(
@@ -370,21 +393,6 @@ def test_resume_flow() -> None:
         assert exported.status_code == 202
         downloads = c.get("/api/v1/downloads", headers=HEADERS)
         assert downloads.status_code == 200
-
-
-def test_coach_flow() -> None:
-    with client() as c:
-        chat = c.post("/api/v1/coach/chats", headers=HEADERS, json={"title": "Coach Test"})
-        chat_id = chat.json()["data"]["id"]
-        message = c.post(
-            f"/api/v1/coach/chats/{chat_id}/messages",
-            headers=HEADERS,
-            json={"content": "下一步学什么？"},
-        )
-        assert message.status_code == 201
-        assert message.json()["data"]["assistantMessage"]["content"]
-        messages = c.get(f"/api/v1/coach/chats/{chat_id}/messages", headers=HEADERS)
-        assert len(messages.json()["data"]) == 2
 
 
 def test_explorer_search_job() -> None:

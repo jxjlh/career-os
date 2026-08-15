@@ -21,8 +21,6 @@ from app.domains.bucket.seed import seed_bucket_data
 from app.domains.english.router import router as english_router
 from app.domains.english.seed import seed_word_books
 from app.domains.career.router import router as career_router
-from app.domains.coach.life_router import router as life_coach_router
-from app.domains.coach.router import router as coach_router
 from app.domains.dashboard.router import router as dashboard_router
 from app.domains.explorer.router import router as explorer_router
 from app.domains.goals.router import router as goals_router
@@ -129,8 +127,6 @@ app.include_router(life_router, prefix=settings.api_prefix)
 app.include_router(bucket_router, prefix=settings.api_prefix)
 app.include_router(notifications_router, prefix=settings.api_prefix)
 app.include_router(roadmap_router, prefix=settings.api_prefix)
-app.include_router(coach_router, prefix=settings.api_prefix)
-app.include_router(life_coach_router, prefix=settings.api_prefix)
 app.include_router(analytics_router, prefix=settings.api_prefix)
 app.include_router(ai_router, prefix=settings.api_prefix)
 app.include_router(projects_router, prefix=settings.api_prefix)

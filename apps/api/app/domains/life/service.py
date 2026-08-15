@@ -2,6 +2,8 @@ import json
 from datetime import date, timedelta
 from itertools import pairwise
 from math import floor, sqrt
+from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -604,7 +606,9 @@ async def upload_record_file(
     content_type: str,
     subdir: str = "watermark",
 ) -> str:
-    path = f"{user_id}/{goal_id}/{subdir}/{filename}"
+    suffix = Path(filename).suffix.lower()
+    object_name = f"{uuid4().hex}{suffix}"
+    path = f"{user_id}/{goal_id}/{subdir}/{object_name}"
     return await upload_object(path, content, content_type)
 
 
