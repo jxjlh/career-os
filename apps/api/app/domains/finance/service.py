@@ -1,16 +1,19 @@
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from inspect import isawaitable
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.storage import delete_object
 from app.db.models import (
     FinanceAccount,
     FinanceAnalysisRun,
     FinanceCandidate,
+    FinanceImport,
     FinancePosition,
     FinanceProfile,
     FinanceRecommendation,
@@ -37,6 +40,8 @@ from app.domains.finance.schemas import (
     FinanceAccountPatch,
     FinanceCandidateCreate,
     FinanceCandidatePatch,
+    FinanceImportPatch,
+    FinanceImportRow,
     FinanceProfilePatch,
     FinanceTransactionCreate,
     FinanceTransactionPatch,
@@ -76,6 +81,173 @@ class FinanceService:
         self.db.commit()
         self.db.refresh(profile)
         return profile
+
+    def create_import(
+        self,
+        user_id: str,
+        temporary_object_path: str,
+        source_metadata: dict[str, Any],
+    ) -> FinanceImport:
+        finance_import = FinanceImport(
+            user_id=user_id,
+            status="processing",
+            temporary_object_path=temporary_object_path,
+            source_metadata=source_metadata,
+            expires_at=datetime.now(UTC) + timedelta(hours=24),
+        )
+        self.db.add(finance_import)
+        self.db.commit()
+        self.db.refresh(finance_import)
+        return finance_import
+
+    def set_import_rows(self, user_id: str, import_id: str, rows: list[FinanceImportRow], raw_ocr_text: str) -> FinanceImport:
+        finance_import = self.require_import(user_id, import_id)
+        if finance_import.status != "processing":
+            raise _conflict("Finance import is no longer processing")
+        finance_import.extracted_rows = [_serialize_import_row_for_storage(row) for row in rows]
+        finance_import.raw_ocr_text = raw_ocr_text[:50000] or None
+        finance_import.status = "review"
+        finance_import.error_code = None
+        self.db.commit()
+        self.db.refresh(finance_import)
+        return finance_import
+
+    async def fail_import(self, user_id: str, import_id: str, error_code: str) -> FinanceImport:
+        finance_import = self.require_import(user_id, import_id)
+        await self._delete_temporary_object(finance_import)
+        finance_import.status = "failed"
+        finance_import.error_code = error_code
+        finance_import.processed_at = datetime.now(UTC)
+        self.db.commit()
+        self.db.refresh(finance_import)
+        return finance_import
+
+    async def get_import(self, user_id: str, import_id: str) -> FinanceImport:
+        finance_import = self.require_import(user_id, import_id)
+        await self.expire_imports()
+        self.db.refresh(finance_import)
+        return finance_import
+
+    async def update_import(self, user_id: str, import_id: str, payload: FinanceImportPatch) -> FinanceImport:
+        finance_import = await self.get_import(user_id, import_id)
+        if finance_import.status != "review":
+            raise _conflict("Only imports awaiting review can be updated")
+        existing_ids = {row.get("rowId") for row in finance_import.extracted_rows if isinstance(row, dict)}
+        submitted_ids = {row.row_id for row in payload.rows}
+        if not submitted_ids or not submitted_ids.issubset(existing_ids):
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "VALIDATION_ERROR", "message": "Import rows must use recognized row IDs"},
+            )
+        finance_import.extracted_rows = [_serialize_import_row_for_storage(row) for row in payload.rows]
+        self.db.commit()
+        self.db.refresh(finance_import)
+        return finance_import
+
+    async def confirm_import(self, user_id: str, import_id: str, rows: list[FinanceImportRow]) -> FinanceImport:
+        finance_import = await self.get_import(user_id, import_id)
+        if finance_import.status == "confirmed":
+            return finance_import
+        if finance_import.status != "review":
+            raise _conflict("Only imports awaiting review can be confirmed")
+        self._validate_import_rows(finance_import, rows)
+        for row in rows:
+            assert row.account_id and row.name and row.symbol and row.market and row.asset_class and row.currency
+            assert row.quantity is not None and row.unit_price is not None and row.occurred_on is not None
+            self.apply_transaction(
+                user_id,
+                FinanceTransactionCreate(
+                    account_id=row.account_id,
+                    instrument=FinancialInstrumentInput(
+                        market=row.market,
+                        symbol=row.symbol,
+                        name=row.name,
+                        asset_class=row.asset_class,
+                        currency=row.currency,
+                    ),
+                    transaction_type="buy",
+                    quantity=row.quantity,
+                    unit_price=row.unit_price,
+                    fee=row.fee,
+                    client_reference=f"finance-import:{finance_import.id}:{row.row_id}",
+                    currency=row.currency,
+                    occurred_on=row.occurred_on,
+                    notes=row.notes,
+                ),
+                source="screenshot_import",
+            )
+        await self._delete_temporary_object(finance_import)
+        finance_import.status = "confirmed"
+        finance_import.error_code = None
+        finance_import.processed_at = datetime.now(UTC)
+        self.db.commit()
+        self.db.refresh(finance_import)
+        return finance_import
+
+    async def discard_import(self, user_id: str, import_id: str) -> FinanceImport:
+        finance_import = await self.get_import(user_id, import_id)
+        if finance_import.status == "discarded":
+            return finance_import
+        if finance_import.status != "review":
+            raise _conflict("Only imports awaiting review can be discarded")
+        await self._delete_temporary_object(finance_import)
+        finance_import.status = "discarded"
+        finance_import.processed_at = datetime.now(UTC)
+        self.db.commit()
+        self.db.refresh(finance_import)
+        return finance_import
+
+    async def expire_imports(self) -> list[FinanceImport]:
+        expired = self.repository.list_expired_open_imports(datetime.now(UTC))
+        for finance_import in expired:
+            await self._delete_temporary_object(finance_import)
+            finance_import.status = "expired"
+            finance_import.error_code = "IMPORT_EXPIRED"
+            finance_import.processed_at = datetime.now(UTC)
+        if expired:
+            self.db.commit()
+        return expired
+
+    def require_import(self, user_id: str, import_id: str) -> FinanceImport:
+        finance_import = self.repository.get_owned_import(user_id, import_id)
+        if finance_import is None:
+            raise _not_found("Finance import not found")
+        return finance_import
+
+    async def _delete_temporary_object(self, finance_import: FinanceImport) -> None:
+        if finance_import.temporary_object_path:
+            result = delete_object(finance_import.temporary_object_path)
+            if isawaitable(result):
+                await result
+        finance_import.temporary_object_path = None
+        finance_import.raw_ocr_text = None
+
+    def _validate_import_rows(self, finance_import: FinanceImport, rows: list[FinanceImportRow]) -> None:
+        stored_ids = {row.get("rowId") for row in finance_import.extracted_rows if isinstance(row, dict)}
+        submitted_ids = {row.row_id for row in rows}
+        if not rows or stored_ids != submitted_ids:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "VALIDATION_ERROR", "message": "Confirm all recognized import rows exactly once"},
+            )
+        for row in rows:
+            if not all(
+                (
+                    row.account_id,
+                    row.name,
+                    row.symbol,
+                    row.market,
+                    row.asset_class,
+                    row.currency,
+                    row.quantity is not None,
+                    row.unit_price is not None,
+                    row.occurred_on,
+                )
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "IMPORT_ROW_INCOMPLETE", "message": "Please complete every import row before confirmation"},
+                )
 
     def create_account(self, user_id: str, payload: FinanceAccountCreate) -> FinanceAccount:
         account = FinanceAccount(user_id=user_id, **payload.model_dump())
@@ -172,6 +344,7 @@ class FinanceService:
         payload: FinanceTransactionCreate,
         *,
         _position_retry: bool = True,
+        source: str = "manual",
     ) -> FinanceTransaction:
         existing = self.get_equivalent_transaction_by_client_reference(user_id, payload)
         if existing is not None:
@@ -191,7 +364,7 @@ class FinanceService:
             client_reference=payload.client_reference,
             currency=currency,
             occurred_on=payload.occurred_on,
-            source="manual",
+            source=source,
             notes=payload.notes,
         )
         try:
@@ -708,6 +881,40 @@ def serialize_candidate(candidate: FinanceCandidate) -> dict:
         "alertEligible": candidate.alert_eligible,
         "createdAt": iso_string(candidate.created_at),
         "updatedAt": iso_string(candidate.updated_at),
+    }
+
+
+def _serialize_import_row_for_storage(row: FinanceImportRow) -> dict[str, Any]:
+    return row.model_dump(mode="json", by_alias=True)
+
+
+def _serialize_import_row(row: dict[str, Any]) -> dict[str, Any]:
+    return FinanceImportRow.model_validate(row).model_dump(mode="json", by_alias=True)
+
+
+def serialize_import(finance_import: FinanceImport) -> dict[str, Any]:
+    rows = [
+        _serialize_import_row(row)
+        for row in finance_import.extracted_rows
+        if isinstance(row, dict)
+    ]
+    needs_review = any(
+        Decimal(str(row["confidence"])) < Decimal("0.60")
+        or not row["accountId"]
+        or not row["occurredOn"]
+        for row in rows
+    )
+    return {
+        "id": finance_import.id,
+        "status": finance_import.status,
+        "rows": rows,
+        "needsReview": needs_review,
+        "temporaryObjectPath": finance_import.temporary_object_path,
+        "errorCode": finance_import.error_code,
+        "expiresAt": _iso_string(finance_import.expires_at),
+        "processedAt": _iso_string(finance_import.processed_at),
+        "createdAt": _iso_string(finance_import.created_at),
+        "updatedAt": _iso_string(finance_import.updated_at),
     }
 
 

@@ -1,17 +1,26 @@
+import asyncio
+from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.errors import AppError
 from app.core.security import get_current_user
+from app.core.storage import delete_object, upload_object
 from app.db.models import Profile
+from app.domains.finance import ocr
 from app.domains.finance.repository import FinanceRepository
 from app.domains.finance.schemas import (
     FinanceAccountCreate,
     FinanceAccountPatch,
     FinanceCandidateCreate,
     FinanceCandidatePatch,
+    FinanceImportConfirm,
+    FinanceImportPatch,
+    FinanceImportRow,
     FinanceProfilePatch,
     FinanceTransactionCreate,
     FinanceTransactionPatch,
@@ -21,6 +30,7 @@ from app.domains.finance.service import (
     serialize_account,
     serialize_analysis_run,
     serialize_candidate,
+    serialize_import,
     serialize_instrument,
     serialize_profile,
     serialize_recommendation,
@@ -31,6 +41,10 @@ router = APIRouter(tags=["finance"])
 
 CurrentUser = Annotated[Profile, Depends(get_current_user)]
 DbSession = Annotated[Session, Depends(get_db)]
+
+_SUPPORTED_IMPORT_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp"}
+_IMPORT_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024
+_IMPORT_SUFFIX_BY_CONTENT_TYPE = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 
 
 @router.get("/finance/profile")
@@ -103,6 +117,112 @@ def update_transaction(
 @router.delete("/finance/transactions/{transaction_id}", status_code=204)
 def delete_transaction(transaction_id: str, current_user: CurrentUser, db: DbSession) -> None:
     FinanceService(db).delete_transaction(current_user.id, transaction_id)
+
+
+@router.post("/finance/imports/screenshot", status_code=201)
+async def import_holdings_screenshot(
+    current_user: CurrentUser,
+    db: DbSession,
+    file: Annotated[UploadFile, File(...)],
+) -> dict:
+    if file.content_type not in _SUPPORTED_IMPORT_CONTENT_TYPES:
+        raise AppError(
+            code="INVALID_IMPORT_IMAGE",
+            message="仅支持 PNG、JPEG 或 WebP 格式的持仓截图",
+            status=422,
+        )
+    provider = ocr.get_holding_ocr_provider()
+    image = await file.read(_IMPORT_UPLOAD_LIMIT_BYTES + 1)
+    if not image:
+        raise AppError(code="INVALID_IMPORT_IMAGE", message="持仓截图不能为空", status=422)
+    if len(image) > _IMPORT_UPLOAD_LIMIT_BYTES:
+        raise AppError(
+            code="IMPORT_IMAGE_TOO_LARGE",
+            message="持仓截图不能超过 10 MB",
+            status=413,
+        )
+
+    suffix = _IMPORT_SUFFIX_BY_CONTENT_TYPE[file.content_type]
+    path = f"finance-imports/{current_user.id}/{uuid4().hex}{suffix}"
+    stored_path = await upload_object(path, image, file.content_type)
+    service = FinanceService(db)
+    try:
+        finance_import = service.create_import(
+            current_user.id,
+            stored_path,
+            {
+                "filename": Path(file.filename or "holding-image").name,
+                "contentType": file.content_type,
+                "sizeBytes": len(image),
+            },
+        )
+    except Exception:
+        await delete_object(stored_path)
+        raise
+    try:
+        extracted = await asyncio.to_thread(provider.extract, image, file.content_type)
+        if not extracted:
+            raise AppError(
+                code="OCR_NO_HOLDINGS_FOUND",
+                message="未识别到可确认的持仓，请使用更清晰截图或手动维护",
+                status=422,
+            )
+        rows = [
+            FinanceImportRow(
+                name=row.name,
+                symbol=row.symbol,
+                market=row.market,
+                asset_class=row.asset_class,
+                currency=row.currency,
+                quantity=row.quantity,
+                unit_price=row.unit_price,
+                confidence=row.confidence,
+            )
+            for row in extracted
+        ]
+        raw_ocr_text = "\n".join(row.raw_text or "" for row in extracted)
+        finance_import = service.set_import_rows(current_user.id, finance_import.id, rows, raw_ocr_text)
+    except AppError as exc:
+        await service.fail_import(current_user.id, finance_import.id, exc.code)
+        raise
+    except Exception as exc:
+        await service.fail_import(current_user.id, finance_import.id, "OCR_EXTRACTION_FAILED")
+        raise AppError(
+            code="OCR_EXTRACTION_FAILED",
+            message="持仓截图识别失败，请稍后重试或改用手动维护",
+            status=503,
+        ) from exc
+    return {"data": serialize_import(finance_import)}
+
+
+@router.get("/finance/imports/{import_id}")
+async def get_import(import_id: str, current_user: CurrentUser, db: DbSession) -> dict:
+    return {"data": serialize_import(await FinanceService(db).get_import(current_user.id, import_id))}
+
+
+@router.patch("/finance/imports/{import_id}")
+async def update_import(
+    import_id: str,
+    payload: FinanceImportPatch,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> dict:
+    return {"data": serialize_import(await FinanceService(db).update_import(current_user.id, import_id, payload))}
+
+
+@router.post("/finance/imports/{import_id}/confirm")
+async def confirm_import(
+    import_id: str,
+    payload: FinanceImportConfirm,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> dict:
+    return {"data": serialize_import(await FinanceService(db).confirm_import(current_user.id, import_id, payload.rows))}
+
+
+@router.post("/finance/imports/{import_id}/discard")
+async def discard_import(import_id: str, current_user: CurrentUser, db: DbSession) -> dict:
+    return {"data": serialize_import(await FinanceService(db).discard_import(current_user.id, import_id))}
 
 
 @router.get("/finance/candidates")

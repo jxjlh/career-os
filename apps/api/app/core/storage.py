@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import httpx
 
@@ -76,6 +76,51 @@ async def upload_object(path: str, content: bytes, content_type: str) -> str:
             status=503,
         )
     return path
+
+
+def _normalize_object_path(path: str) -> tuple[str, bool]:
+    """Return a validated object path and whether it points at local media."""
+    is_local_media = path.startswith("/media/")
+    normalized = path.removeprefix("/media/") if is_local_media else path
+    candidate = PurePosixPath(normalized)
+    if not normalized or candidate.is_absolute() or ".." in candidate.parts:
+        raise AppError(code="MEDIA_DELETE_FAILED", message="图片临时文件路径无效", status=500)
+    return str(candidate), is_local_media
+
+
+async def delete_object(path: str) -> None:
+    """Delete a private object. Missing objects are considered already cleaned up."""
+    normalized_path, is_local_media = _normalize_object_path(path)
+    settings = get_settings()
+    cloud_configured = _cloud_storage_is_configured(settings.supabase_url, settings.supabase_service_role_key)
+
+    if is_local_media or not cloud_configured:
+        if _cloud_storage_required(settings.app_env) and not cloud_configured:
+            raise AppError(
+                code="MEDIA_STORAGE_NOT_CONFIGURED",
+                message="图片存储尚未配置，无法安全清理临时文件",
+                status=503,
+            )
+        root = Path(settings.media_dir).resolve()
+        target = (root / normalized_path).resolve()
+        if root != target and root not in target.parents:
+            raise AppError(code="MEDIA_DELETE_FAILED", message="图片临时文件路径无效", status=500)
+        target.unlink(missing_ok=True)
+        return
+
+    bucket = settings.supabase_storage_bucket
+    object_url = f"{settings.supabase_url.rstrip('/')}/storage/v1/object/{bucket}/{normalized_path}"
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.delete(object_url, headers=_storage_headers(settings.supabase_service_role_key))
+    except httpx.HTTPError as exc:
+        raise AppError(
+            code="MEDIA_DELETE_FAILED",
+            message="临时图片删除失败，请稍后重试",
+            status=503,
+        ) from exc
+    if response.status_code not in {200, 204, 404}:
+        raise AppError(code="MEDIA_DELETE_FAILED", message="临时图片删除失败，请稍后重试", status=503)
 
 
 async def _upload_local(path: str, content: bytes, content_type: str) -> str:
