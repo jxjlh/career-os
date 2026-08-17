@@ -18,6 +18,8 @@ services:
         value: production
       - key: API_PREFIX
         value: /api/v1
+      - key: FRONTEND_URL
+        value: https://ai-life-os-web.onrender.com
       # 生产必填的敏感变量（需在 Render 控制台 Environment 里填写，绝不入库）。
       # DATABASE_URL: 从 Supabase → Project Settings → Database → Connection string
       # 选 "Pooler connection string"（端口 6543，含 ?pgbouncer=true）

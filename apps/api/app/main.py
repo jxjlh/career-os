@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
@@ -163,6 +163,11 @@ if frontend_dir.exists():
         api_prefix = settings.api_prefix.strip("/")
         if full_path == api_prefix or full_path.startswith(f"{api_prefix}/"):
             raise HTTPException(status_code=404, detail="API route not found")
+        if settings.app_env == "production" and settings.frontend_url:
+            target = f"{settings.frontend_url.rstrip('/')}/{full_path.lstrip('/')}"
+            if request.url.query:
+                target = f"{target}?{request.url.query}"
+            return RedirectResponse(target, status_code=307)
         candidate = frontend_dir / full_path
         if candidate.is_file():
             return FileResponse(candidate)

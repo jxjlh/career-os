@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     cors_origins: str = "http://localhost:3000"
     media_dir: str = "media"
+    frontend_url: str = "https://ai-life-os-web.onrender.com"
 
     xfyun_api_key: str = ""
     xfyun_api_secret: str = ""
