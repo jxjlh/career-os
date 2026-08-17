@@ -148,8 +148,14 @@ class FinanceService:
             )
         return account, instrument, currency
 
-    def apply_transaction(self, user_id: str, payload: FinanceTransactionCreate) -> FinanceTransaction:
-        existing = self.repository.get_transaction_by_client_reference(user_id, payload.client_reference)
+    def apply_transaction(
+        self,
+        user_id: str,
+        payload: FinanceTransactionCreate,
+        *,
+        _position_retry: bool = True,
+    ) -> FinanceTransaction:
+        existing = self.get_equivalent_transaction_by_client_reference(user_id, payload)
         if existing is not None:
             return existing
 
@@ -173,13 +179,15 @@ class FinanceService:
         try:
             self.db.add(transaction)
             self.db.flush()
-            self.replay_position(user_id, account.id, instrument.id)
+            self.replay_positions(user_id, {(account.id, instrument.id)})
             self.db.commit()
         except IntegrityError as exc:
             self.db.rollback()
-            existing = self.repository.get_transaction_by_client_reference(user_id, payload.client_reference)
+            existing = self.get_equivalent_transaction_by_client_reference(user_id, payload)
             if existing is not None:
                 return existing
+            if _position_retry:
+                return self.apply_transaction(user_id, payload, _position_retry=False)
             raise _conflict("Unable to create finance transaction") from exc
         except HTTPException:
             self.db.rollback()
@@ -193,7 +201,7 @@ class FinanceService:
         transaction_id: str,
         payload: FinanceTransactionPatch,
     ) -> FinanceTransaction:
-        transaction = self.require_transaction(user_id, transaction_id)
+        transaction = self.require_transaction(user_id, transaction_id, for_update=True)
         original_key = (transaction.account_id, transaction.instrument_id)
         updates = payload.model_dump(exclude_unset=True)
         account_id = updates.get("account_id", transaction.account_id)
@@ -209,9 +217,7 @@ class FinanceService:
             setattr(transaction, field, value)
         try:
             self.db.flush()
-            self.replay_position(user_id, *original_key)
-            if (transaction.account_id, transaction.instrument_id) != original_key:
-                self.replay_position(user_id, transaction.account_id, transaction.instrument_id)
+            self.replay_positions(user_id, {original_key, (transaction.account_id, transaction.instrument_id)})
             self.db.commit()
         except HTTPException:
             self.db.rollback()
@@ -220,26 +226,68 @@ class FinanceService:
         return transaction
 
     def delete_transaction(self, user_id: str, transaction_id: str) -> None:
-        transaction = self.require_transaction(user_id, transaction_id)
+        transaction = self.require_transaction(user_id, transaction_id, for_update=True)
         position_key = (transaction.account_id, transaction.instrument_id)
         try:
             self.db.delete(transaction)
             self.db.flush()
-            self.replay_position(user_id, *position_key)
+            self.replay_positions(user_id, {position_key})
             self.db.commit()
         except HTTPException:
             self.db.rollback()
             raise
 
-    def require_transaction(self, user_id: str, transaction_id: str) -> FinanceTransaction:
-        transaction = self.repository.get_owned_transaction(user_id, transaction_id)
+    def require_transaction(self, user_id: str, transaction_id: str, *, for_update: bool = False) -> FinanceTransaction:
+        transaction = self.repository.get_owned_transaction(user_id, transaction_id, for_update=for_update)
         if transaction is None:
             raise _not_found("Finance transaction not found")
         return transaction
 
+    def get_equivalent_transaction_by_client_reference(
+        self,
+        user_id: str,
+        payload: FinanceTransactionCreate,
+    ) -> FinanceTransaction | None:
+        existing = self.repository.get_transaction_by_client_reference(user_id, payload.client_reference)
+        if existing is None:
+            return None
+
+        account = self.require_account(user_id, payload.account_id)
+        instrument = self.resolve_existing_instrument(payload)
+        _, _, currency = self.validate_transaction_context(user_id, account.id, instrument.id, payload.currency)
+        if (
+            existing.account_id != account.id
+            or existing.instrument_id != instrument.id
+            or existing.transaction_type != payload.transaction_type
+            or existing.quantity != payload.quantity
+            or existing.unit_price != payload.unit_price
+            or existing.fee != payload.fee
+            or existing.currency != currency
+            or existing.occurred_on != payload.occurred_on
+            or existing.notes != payload.notes
+        ):
+            raise _conflict("clientReference is already used by a different transaction")
+        return existing
+
+    def resolve_existing_instrument(self, payload: FinanceTransactionCreate) -> FinancialInstrument:
+        if payload.instrument_id:
+            return self.require_instrument(payload.instrument_id)
+        assert payload.instrument is not None
+        instrument = self.repository.get_instrument_by_market_symbol(payload.instrument.market, payload.instrument.symbol)
+        if instrument is None:
+            raise _conflict("clientReference is already used by a different transaction")
+        if instrument.currency != payload.instrument.currency or instrument.asset_class != payload.instrument.asset_class:
+            raise _conflict("clientReference is already used by a different transaction")
+        return instrument
+
+    def replay_positions(self, user_id: str, position_keys: set[tuple[str, str]]) -> None:
+        for account_id, instrument_id in sorted(position_keys):
+            self.replay_position(user_id, account_id, instrument_id)
+
     def replay_position(self, user_id: str, account_id: str, instrument_id: str) -> None:
-        transactions = self.repository.list_transactions_for_position(user_id, account_id, instrument_id)
-        position = self.repository.get_owned_position(user_id, account_id, instrument_id)
+        self.repository.lock_position_key(user_id, account_id, instrument_id)
+        transactions = self.repository.list_transactions_for_position(user_id, account_id, instrument_id, for_update=True)
+        position = self.repository.get_owned_position(user_id, account_id, instrument_id, for_update=True)
         if position is None and not transactions:
             return
         if position is None:

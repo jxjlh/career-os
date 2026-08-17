@@ -208,6 +208,19 @@ def test_duplicate_client_reference_returns_existing_transaction_without_double_
         )
         assert position["quantity"] == "100"
 
+        conflicting_duplicate = client.post(
+            "/api/v1/finance/transactions",
+            headers=_headers(),
+            json={**payload, "quantity": "101"},
+        )
+        assert conflicting_duplicate.status_code == 409
+        assert conflicting_duplicate.json()["detail"]["code"] == "CONFLICT"
+        assert next(
+            item
+            for item in client.get("/api/v1/finance/dashboard", headers=_headers()).json()["data"]["positions"]
+            if item["instrumentId"] == first.json()["data"]["instrumentId"]
+        )["quantity"] == "100"
+
 
 def test_transaction_mutations_replay_history_and_reject_negative_balances() -> None:
     suffix = uuid4().hex[:8]

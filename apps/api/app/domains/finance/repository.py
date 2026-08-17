@@ -1,4 +1,7 @@
-from sqlalchemy.orm import Session
+from hashlib import blake2b
+
+from sqlalchemy import text
+from sqlalchemy.orm import Query, Session
 
 from app.db.models import (
     FinanceAccount,
@@ -48,12 +51,14 @@ class FinanceRepository:
             is not None
         )
 
-    def get_owned_transaction(self, user_id: str, transaction_id: str) -> FinanceTransaction | None:
-        return (
+    def get_owned_transaction(self, user_id: str, transaction_id: str, *, for_update: bool = False) -> FinanceTransaction | None:
+        query: Query[FinanceTransaction] = (
             self.db.query(FinanceTransaction)
             .filter(FinanceTransaction.id == transaction_id, FinanceTransaction.user_id == user_id)
-            .first()
         )
+        if for_update:
+            query = query.with_for_update()
+        return query.first()
 
     def get_transaction_by_client_reference(self, user_id: str, client_reference: str) -> FinanceTransaction | None:
         return (
@@ -65,8 +70,15 @@ class FinanceRepository:
             .first()
         )
 
-    def list_transactions_for_position(self, user_id: str, account_id: str, instrument_id: str) -> list[FinanceTransaction]:
-        return (
+    def list_transactions_for_position(
+        self,
+        user_id: str,
+        account_id: str,
+        instrument_id: str,
+        *,
+        for_update: bool = False,
+    ) -> list[FinanceTransaction]:
+        query: Query[FinanceTransaction] = (
             self.db.query(FinanceTransaction)
             .filter(
                 FinanceTransaction.user_id == user_id,
@@ -74,8 +86,10 @@ class FinanceRepository:
                 FinanceTransaction.instrument_id == instrument_id,
             )
             .order_by(FinanceTransaction.occurred_on.asc(), FinanceTransaction.created_at.asc(), FinanceTransaction.id.asc())
-            .all()
         )
+        if for_update:
+            query = query.with_for_update()
+        return query.all()
 
     def get_instrument(self, instrument_id: str) -> FinancialInstrument | None:
         return self.db.query(FinancialInstrument).filter(FinancialInstrument.id == instrument_id).first()
@@ -113,16 +127,38 @@ class FinanceRepository:
             .all()
         )
 
-    def get_owned_position(self, user_id: str, account_id: str, instrument_id: str) -> FinancePosition | None:
-        return (
+    def get_owned_position(
+        self,
+        user_id: str,
+        account_id: str,
+        instrument_id: str,
+        *,
+        for_update: bool = False,
+    ) -> FinancePosition | None:
+        query: Query[FinancePosition] = (
             self.db.query(FinancePosition)
             .filter(
                 FinancePosition.user_id == user_id,
                 FinancePosition.account_id == account_id,
                 FinancePosition.instrument_id == instrument_id,
             )
-            .first()
         )
+        if for_update:
+            query = query.with_for_update()
+        return query.first()
+
+    def lock_position_key(self, user_id: str, account_id: str, instrument_id: str) -> None:
+        """Serialize one materialized position key for the current transaction.
+
+        PostgreSQL advisory locks cover the no-position-yet case. SQLite ignores
+        ``FOR UPDATE`` but keeps the same code path usable in unit tests.
+        """
+        if self.db.bind is not None and self.db.bind.dialect.name == "postgresql":
+            lock_source = f"{user_id}:{account_id}:{instrument_id}".encode()
+            lock_key = int.from_bytes(blake2b(lock_source, digest_size=8).digest(), byteorder="big", signed=True)
+            self.db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+        else:
+            self.get_owned_position(user_id, account_id, instrument_id, for_update=True)
 
     def list_positions(self, user_id: str) -> list[FinancePosition]:
         return (
