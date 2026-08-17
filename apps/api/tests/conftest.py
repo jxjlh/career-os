@@ -5,52 +5,34 @@ WebSocket 与真实搜索 API, 保证测试快、稳、离线可跑.
 """
 
 import os
+from pathlib import Path
+from tempfile import gettempdir
+from uuid import uuid4
 
 # 必须在 import app.* 之前设置: app.main 在模块加载时调用 get_settings() 并按
 # app_env 决定是否挂载限流中间件, 是否自动建表. 设为 test 关闭限流, 避免单测
 # 共享 app 实例时跨用例累计触发 429.
 os.environ.setdefault("APP_ENV", "test")
+TEST_DATABASE_PATH = Path(gettempdir()) / f"career_os_pytest_{uuid4().hex}.db"
+os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DATABASE_PATH}"
 
-import pytest
-from sqlalchemy import inspect, text
+import pytest  # noqa: E402
 
-from app.core.database import engine, ensure_columns
-from app.db.base import Base
-from app.providers.ai.mock_provider import MockAIProvider
-from app.providers.search.mock_provider import MockSearchProvider
+from app.core.database import engine, ensure_columns  # noqa: E402
+from app.db.base import Base  # noqa: E402
+from app.providers.ai.mock_provider import MockAIProvider  # noqa: E402
+from app.providers.search.mock_provider import MockSearchProvider  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_tables():
-    """session 级建表: 所有测试共用同一 SQLite 文件, 首次运行时建表."""
+    """Create a fresh ORM-complete SQLite schema for each test session."""
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     ensure_columns()
-    _ensure_finance_transaction_ledger_for_tests()
-
-
-def _ensure_finance_transaction_ledger_for_tests() -> None:
-    """Keep the long-lived SQLite test database compatible with the finance ledger."""
-    if engine.dialect.name != "sqlite":
-        return
-    with engine.begin() as connection:
-        if "finance_transactions" not in inspect(connection).get_table_names():
-            return
-        columns = {column["name"] for column in inspect(connection).get_columns("finance_transactions")}
-        if "client_reference" not in columns:
-            connection.execute(text("ALTER TABLE finance_transactions ADD COLUMN client_reference VARCHAR(128)"))
-        connection.execute(
-            text(
-                "UPDATE finance_transactions "
-                "SET client_reference = 'legacy-' || id "
-                "WHERE client_reference IS NULL"
-            )
-        )
-        connection.execute(
-            text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS ux_finance_transactions_user_client_reference_test "
-                "ON finance_transactions (user_id, client_reference)"
-            )
-        )
+    yield
+    engine.dispose()
+    TEST_DATABASE_PATH.unlink(missing_ok=True)
 
 
 @pytest.fixture(autouse=True)
