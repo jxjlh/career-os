@@ -5,9 +5,12 @@ from sqlalchemy.orm import Query, Session
 
 from app.db.models import (
     FinanceAccount,
+    FinanceAnalysisRun,
     FinanceCandidate,
     FinancePosition,
     FinanceProfile,
+    FinanceRecommendation,
+    FinanceSnapshot,
     FinanceTransaction,
     FinancialInstrument,
 )
@@ -94,6 +97,11 @@ class FinanceRepository:
     def get_instrument(self, instrument_id: str) -> FinancialInstrument | None:
         return self.db.query(FinancialInstrument).filter(FinancialInstrument.id == instrument_id).first()
 
+    def list_instruments(self, instrument_ids: set[str]) -> list[FinancialInstrument]:
+        if not instrument_ids:
+            return []
+        return self.db.query(FinancialInstrument).filter(FinancialInstrument.id.in_(instrument_ids)).all()
+
     def get_instrument_by_market_symbol(self, market: str, symbol: str) -> FinancialInstrument | None:
         return (
             self.db.query(FinancialInstrument)
@@ -166,5 +174,49 @@ class FinanceRepository:
             .join(FinanceAccount, FinanceAccount.id == FinancePosition.account_id)
             .filter(FinancePosition.user_id == user_id, FinanceAccount.user_id == user_id)
             .order_by(FinancePosition.created_at.desc())
+            .all()
+        )
+
+    def get_analysis_for_day(self, user_id: str, run_on) -> FinanceAnalysisRun | None:
+        return (
+            self.db.query(FinanceAnalysisRun)
+            .filter(FinanceAnalysisRun.user_id == user_id, FinanceAnalysisRun.run_on == run_on)
+            .first()
+        )
+
+    def get_latest_analysis(self, user_id: str) -> FinanceAnalysisRun | None:
+        return (
+            self.db.query(FinanceAnalysisRun)
+            .filter(FinanceAnalysisRun.user_id == user_id)
+            .order_by(FinanceAnalysisRun.run_on.desc(), FinanceAnalysisRun.created_at.desc())
+            .first()
+        )
+
+    def get_owned_analysis(self, user_id: str, analysis_id: str) -> FinanceAnalysisRun | None:
+        return (
+            self.db.query(FinanceAnalysisRun)
+            .filter(FinanceAnalysisRun.user_id == user_id, FinanceAnalysisRun.id == analysis_id)
+            .first()
+        )
+
+    def list_pending_recommendations(self, user_id: str) -> list[FinanceRecommendation]:
+        return (
+            self.db.query(FinanceRecommendation)
+            .filter(FinanceRecommendation.user_id == user_id, FinanceRecommendation.disposition == "pending")
+            .order_by(FinanceRecommendation.created_at.desc())
+            .all()
+        )
+
+    def get_owned_recommendation(self, user_id: str, recommendation_id: str) -> FinanceRecommendation | None:
+        return (
+            self.db.query(FinanceRecommendation)
+            .filter(FinanceRecommendation.user_id == user_id, FinanceRecommendation.id == recommendation_id)
+            .first()
+        )
+
+    def list_snapshots_for_analysis_day(self, user_id: str, snapshot_on) -> list[FinanceSnapshot]:
+        return (
+            self.db.query(FinanceSnapshot)
+            .filter(FinanceSnapshot.user_id == user_id, FinanceSnapshot.snapshot_on == snapshot_on)
             .all()
         )

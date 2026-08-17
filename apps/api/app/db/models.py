@@ -1527,6 +1527,9 @@ class FinanceImport(Base):
 
 class FinanceSnapshot(Base):
     __tablename__ = "finance_snapshots"
+    __table_args__ = (
+        UniqueConstraint("user_id", "snapshot_on", "account_id", "instrument_id", name="uq_finance_snapshot_daily_position"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
@@ -1549,6 +1552,7 @@ class FinanceSnapshot(Base):
 
 class FinanceAnalysisRun(Base):
     __tablename__ = "finance_analysis_runs"
+    __table_args__ = (UniqueConstraint("user_id", "run_on", name="uq_finance_analysis_run_user_day"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
@@ -1565,6 +1569,14 @@ class FinanceAnalysisRun(Base):
 
 class FinanceRecommendation(Base):
     __tablename__ = "finance_recommendations"
+    __table_args__ = (
+        UniqueConstraint(
+            "analysis_run_id",
+            "instrument_id",
+            "action",
+            name="uq_finance_recommendation_rule_draft",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)

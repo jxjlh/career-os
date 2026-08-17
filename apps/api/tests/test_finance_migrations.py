@@ -2,9 +2,11 @@ import os
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
 from app.core.database import engine as test_engine
@@ -26,10 +28,10 @@ def test_finance_tests_use_an_isolated_sqlite_database() -> None:
     assert "career_os_pytest_" in (test_engine.url.database or "")
 
 
-def test_finance_ledger_migration_links_and_round_trips_without_full_history(tmp_path, monkeypatch) -> None:
+def test_finance_ledger_and_analysis_migrations_round_trip_without_full_history(tmp_path, monkeypatch) -> None:
     # Do not run a full SQLite ``alembic upgrade head`` here: the pre-existing
     # c7d8e9f0a1b2 migration uses an unsupported SQLite constraint alteration.
-    # This test validates only the ledger revision from its direct predecessor.
+    # This test validates only the finance migration chain from its direct predecessor.
     migration = _load_ledger_migration()
     assert migration.revision == "20260817_finance_ledger"
     assert migration.down_revision == "20260817_finance"
@@ -50,11 +52,32 @@ def test_finance_ledger_migration_links_and_round_trips_without_full_history(tmp
     get_settings.cache_clear()
     config = Config(str(API_ROOT / "alembic.ini"))
     try:
-        command.upgrade(config, "head")
+        command.upgrade(config, "20260817_finance_ledger")
         with database.connect() as connection:
             assert connection.execute(text("SELECT client_reference FROM finance_transactions")).scalar_one() == "legacy-legacy-row"
             assert any(row[2] for row in connection.exec_driver_sql("PRAGMA index_list('finance_transactions')"))
 
+        with database.begin() as connection:
+            connection.execute(
+                text("CREATE TABLE finance_analysis_runs (id VARCHAR(36) PRIMARY KEY, user_id VARCHAR(36) NOT NULL, run_on DATE NOT NULL)")
+            )
+            connection.execute(
+                text("CREATE TABLE finance_snapshots (id VARCHAR(36) PRIMARY KEY, user_id VARCHAR(36) NOT NULL, snapshot_on DATE NOT NULL, account_id VARCHAR(36) NOT NULL, instrument_id VARCHAR(36) NOT NULL)")
+            )
+            connection.execute(
+                text("CREATE TABLE finance_recommendations (id VARCHAR(36) PRIMARY KEY, analysis_run_id VARCHAR(36) NOT NULL, instrument_id VARCHAR(36) NOT NULL, candidate_id VARCHAR(36), action VARCHAR(24) NOT NULL)")
+            )
+
+        command.upgrade(config, "head")
+        with database.begin() as connection:
+            connection.execute(text("INSERT INTO finance_analysis_runs VALUES ('run-1', 'user-1', '2026-08-17')"))
+            with pytest.raises(IntegrityError):
+                connection.execute(text("INSERT INTO finance_analysis_runs VALUES ('run-2', 'user-1', '2026-08-17')"))
+            connection.execute(text("INSERT INTO finance_recommendations VALUES ('rec-1', 'run-1', 'instrument-1', NULL, 'reduce_risk')"))
+            with pytest.raises(IntegrityError):
+                connection.execute(text("INSERT INTO finance_recommendations VALUES ('rec-2', 'run-1', 'instrument-1', NULL, 'reduce_risk')"))
+
+        command.downgrade(config, "20260817_finance_ledger")
         command.downgrade(config, "20260817_finance")
         with database.connect() as connection:
             assert "client_reference" not in {column["name"] for column in inspect(connection).get_columns("finance_transactions")}

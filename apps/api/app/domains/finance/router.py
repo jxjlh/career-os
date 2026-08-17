@@ -19,9 +19,11 @@ from app.domains.finance.schemas import (
 from app.domains.finance.service import (
     FinanceService,
     serialize_account,
+    serialize_analysis_run,
     serialize_candidate,
     serialize_instrument,
     serialize_profile,
+    serialize_recommendation,
     serialize_transaction,
 )
 
@@ -142,3 +144,29 @@ def search_instruments(
 @router.get("/finance/dashboard")
 def get_dashboard(current_user: CurrentUser, db: DbSession) -> dict:
     return {"data": FinanceService(db).build_dashboard(current_user.id)}
+
+
+@router.post("/finance/analysis/run")
+async def run_analysis(current_user: CurrentUser, db: DbSession) -> dict:
+    service = FinanceService(db)
+    run = service.run_analysis(current_user.id)
+    run = await service.enrich_analysis_explanation(current_user.id, run.id)
+    return {"data": serialize_analysis_run(run)}
+
+
+@router.get("/finance/analysis/latest")
+def get_latest_analysis(current_user: CurrentUser, db: DbSession) -> dict:
+    run = FinanceService(db).get_latest_analysis(current_user.id)
+    return {"data": serialize_analysis_run(run) if run is not None else None}
+
+
+@router.get("/finance/recommendations")
+def list_recommendations(current_user: CurrentUser, db: DbSession) -> dict:
+    service = FinanceService(db)
+    return {"data": [serialize_recommendation(item) for item in service.list_recommendations(current_user.id)]}
+
+
+@router.post("/finance/recommendations/{recommendation_id}/dismiss")
+def dismiss_recommendation(recommendation_id: str, current_user: CurrentUser, db: DbSession) -> dict:
+    recommendation = FinanceService(db).dismiss_recommendation(current_user.id, recommendation_id)
+    return {"data": serialize_recommendation(recommendation)}

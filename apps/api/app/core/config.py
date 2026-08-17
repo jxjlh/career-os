@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     github_token: str = ""
     youtube_api_key: str = ""
 
+    finance_market_data_base_url: str = ""
+    finance_market_data_api_key: str = ""
+    finance_ocr_api_url: str = ""
+    finance_ocr_api_key: str = ""
+    finance_scheduler_token: str = ""
+
 
 def normalize_db_url(url: str) -> str:
     """统一数据库 URL：改用 psycopg3 驱动 + 正确处理密码中的特殊字符。
