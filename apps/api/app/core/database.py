@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import create_engine, inspect, make_url, text
+from sqlalchemy import create_engine, event, inspect, make_url, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
@@ -34,6 +34,14 @@ if _db_url is None:
 
 connect_args = {"check_same_thread": False} if (_db_url.drivername or "").startswith("sqlite") else {}
 engine = create_engine(_db_url, connect_args=connect_args, pool_pre_ping=True)
+
+if engine.dialect.name == "sqlite":
+
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
