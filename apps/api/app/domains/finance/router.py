@@ -14,6 +14,7 @@ from app.domains.finance.schemas import (
     FinanceCandidatePatch,
     FinanceProfilePatch,
     FinanceTransactionCreate,
+    FinanceTransactionPatch,
 )
 from app.domains.finance.service import (
     FinanceService,
@@ -84,6 +85,22 @@ def get_transaction(transaction_id: str, current_user: CurrentUser, db: DbSessio
 def create_transaction(payload: FinanceTransactionCreate, current_user: CurrentUser, db: DbSession) -> dict:
     transaction = FinanceService(db).apply_transaction(current_user.id, payload)
     return {"data": serialize_transaction(transaction)}
+
+
+@router.patch("/finance/transactions/{transaction_id}")
+def update_transaction(
+    transaction_id: str,
+    payload: FinanceTransactionPatch,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> dict:
+    transaction = FinanceService(db).update_transaction(current_user.id, transaction_id, payload)
+    return {"data": serialize_transaction(transaction)}
+
+
+@router.delete("/finance/transactions/{transaction_id}", status_code=204)
+def delete_transaction(transaction_id: str, current_user: CurrentUser, db: DbSession) -> None:
+    FinanceService(db).delete_transaction(current_user.id, transaction_id)
 
 
 @router.get("/finance/candidates")

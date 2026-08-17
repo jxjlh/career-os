@@ -30,13 +30,14 @@ def test_dashboard_aggregates_materialized_positions_without_mutating_history() 
             "quantity": "100",
             "unitPrice": "3.5",
             "fee": "1",
+            "clientReference": f"dashboard-first-{suffix}",
             "occurredOn": "2026-08-17",
         }
         first = client.post("/api/v1/finance/transactions", headers=HEADERS, json=payload)
         second = client.post(
             "/api/v1/finance/transactions",
             headers=HEADERS,
-            json={**payload, "quantity": "50", "unitPrice": "4.0"},
+            json={**payload, "quantity": "50", "unitPrice": "4.0", "clientReference": f"dashboard-second-{suffix}"},
         )
         assert first.status_code == 201
         assert second.status_code == 201

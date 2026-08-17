@@ -61,6 +61,7 @@ def test_finance_profile_account_and_transaction_flow() -> None:
                 "quantity": "100",
                 "unitPrice": "1.2",
                 "fee": "0",
+                "clientReference": f"initial-buy-{suffix}",
                 "occurredOn": date(2026, 8, 17).isoformat(),
             },
         )
@@ -130,6 +131,7 @@ def test_finance_resources_are_isolated_by_user() -> None:
                 "quantity": "10",
                 "unitPrice": "1.2",
                 "fee": "0",
+                "clientReference": f"cross-user-{suffix}",
                 "occurredOn": "2026-08-17",
             },
         )
@@ -145,6 +147,7 @@ def test_finance_resources_are_isolated_by_user() -> None:
                 "quantity": "10",
                 "unitPrice": "1.2",
                 "fee": "0",
+                "clientReference": f"user-b-buy-{suffix}",
                 "occurredOn": "2026-08-17",
             },
         ).json()["data"]["instrumentId"]
@@ -156,5 +159,156 @@ def test_finance_resources_are_isolated_by_user() -> None:
         candidate_id = candidate.json()["data"]["id"]
 
         assert client.patch(f"/api/v1/finance/accounts/{account_id}", headers=_headers(), json={"name": "越权"}).status_code == 404
+        user_b_transaction = client.get("/api/v1/finance/transactions", headers=_headers(user_b)).json()["data"][0]
+        assert client.patch(
+            f"/api/v1/finance/transactions/{user_b_transaction['id']}",
+            headers=_headers(),
+            json={"quantity": "9"},
+        ).status_code == 404
+        assert client.delete(f"/api/v1/finance/transactions/{user_b_transaction['id']}", headers=_headers()).status_code == 404
         assert client.get(f"/api/v1/finance/candidates/{candidate_id}", headers=_headers()).status_code == 404
         assert client.delete(f"/api/v1/finance/candidates/{candidate_id}", headers=_headers()).status_code == 404
+
+
+def test_duplicate_client_reference_returns_existing_transaction_without_double_counting() -> None:
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        account = client.post(
+            "/api/v1/finance/accounts",
+            headers=_headers(),
+            json={"name": f"幂等账户-{suffix}", "market": "CN", "currency": "CNY", "accountType": "fund"},
+        )
+        payload = {
+            "accountId": account.json()["data"]["id"],
+            "instrument": _instrument(f"510500-{suffix}"),
+            "transactionType": "buy",
+            "quantity": "100",
+            "unitPrice": "2.5",
+            "fee": "0",
+            "clientReference": f"fund-import-row-{suffix}",
+            "occurredOn": "2026-08-17",
+        }
+        first = client.post("/api/v1/finance/transactions", headers=_headers(), json=payload)
+        duplicate = client.post("/api/v1/finance/transactions", headers=_headers(), json=payload)
+
+        assert first.status_code == 201
+        assert duplicate.status_code == 201
+        assert duplicate.json()["data"]["id"] == first.json()["data"]["id"]
+        assert duplicate.json()["data"]["clientReference"] == payload["clientReference"]
+        matching = [
+            item
+            for item in client.get("/api/v1/finance/transactions", headers=_headers()).json()["data"]
+            if item["clientReference"] == payload["clientReference"]
+        ]
+        assert len(matching) == 1
+        position = next(
+            item
+            for item in client.get("/api/v1/finance/dashboard", headers=_headers()).json()["data"]["positions"]
+            if item["instrumentId"] == first.json()["data"]["instrumentId"]
+        )
+        assert position["quantity"] == "100"
+
+
+def test_transaction_mutations_replay_history_and_reject_negative_balances() -> None:
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        account = client.post(
+            "/api/v1/finance/accounts",
+            headers=_headers(),
+            json={"name": f"重放账户-{suffix}", "market": "CN", "currency": "CNY", "accountType": "fund"},
+        )
+        account_id = account.json()["data"]["id"]
+        buy = client.post(
+            "/api/v1/finance/transactions",
+            headers=_headers(),
+            json={
+                "accountId": account_id,
+                "instrument": _instrument(f"160000-{suffix}"),
+                "transactionType": "buy",
+                "quantity": "100",
+                "unitPrice": "1",
+                "fee": "0",
+                "clientReference": f"buy-{suffix}",
+                "occurredOn": "2026-08-15",
+            },
+        )
+        sell = client.post(
+            "/api/v1/finance/transactions",
+            headers=_headers(),
+            json={
+                "accountId": account_id,
+                "instrumentId": buy.json()["data"]["instrumentId"],
+                "transactionType": "sell",
+                "quantity": "50",
+                "unitPrice": "1.1",
+                "fee": "0",
+                "clientReference": f"sell-{suffix}",
+                "occurredOn": "2026-08-16",
+            },
+        )
+        assert buy.status_code == sell.status_code == 201
+
+        invalid_reorder = client.patch(
+            f"/api/v1/finance/transactions/{buy.json()['data']['id']}",
+            headers=_headers(),
+            json={"occurredOn": "2026-08-17"},
+        )
+        assert invalid_reorder.status_code == 422
+        assert client.get(f"/api/v1/finance/transactions/{buy.json()['data']['id']}", headers=_headers()).json()["data"]["occurredOn"] == "2026-08-15"
+
+        edited_buy = client.patch(
+            f"/api/v1/finance/transactions/{buy.json()['data']['id']}",
+            headers=_headers(),
+            json={"quantity": "80"},
+        )
+        assert edited_buy.status_code == 200
+        position = next(
+            item
+            for item in client.get("/api/v1/finance/dashboard", headers=_headers()).json()["data"]["positions"]
+            if item["instrumentId"] == buy.json()["data"]["instrumentId"]
+        )
+        assert position["quantity"] == "30"
+
+        assert client.delete(f"/api/v1/finance/transactions/{sell.json()['data']['id']}", headers=_headers()).status_code == 204
+        position_after_sell_delete = next(
+            item
+            for item in client.get("/api/v1/finance/dashboard", headers=_headers()).json()["data"]["positions"]
+            if item["instrumentId"] == buy.json()["data"]["instrumentId"]
+        )
+        assert position_after_sell_delete["quantity"] == "80"
+
+        assert client.delete(f"/api/v1/finance/transactions/{buy.json()['data']['id']}", headers=_headers()).status_code == 204
+        assert all(
+            item["instrumentId"] != buy.json()["data"]["instrumentId"]
+            for item in client.get("/api/v1/finance/dashboard", headers=_headers()).json()["data"]["positions"]
+        )
+
+
+def test_finance_rejects_money_and_ratio_values_beyond_schema_precision() -> None:
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        account = client.post(
+            "/api/v1/finance/accounts",
+            headers=_headers(),
+            json={"name": f"精度账户-{suffix}", "market": "CN", "currency": "CNY", "accountType": "fund"},
+        )
+        too_precise_money = client.post(
+            "/api/v1/finance/transactions",
+            headers=_headers(),
+            json={
+                "accountId": account.json()["data"]["id"],
+                "instrument": _instrument(f"161000-{suffix}"),
+                "transactionType": "buy",
+                "quantity": "1.000000001",
+                "unitPrice": "1",
+                "fee": "0",
+                "clientReference": f"precision-{suffix}",
+                "occurredOn": "2026-08-17",
+            },
+        )
+        assert too_precise_money.status_code == 422
+        assert client.patch(
+            "/api/v1/finance/profile",
+            headers=_headers(),
+            json={"reserveCashRatio": "0.12345"},
+        ).status_code == 422

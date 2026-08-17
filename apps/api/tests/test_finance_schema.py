@@ -1,12 +1,18 @@
+import uuid
 from datetime import date
 from decimal import Decimal
-import uuid
 
 import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import SessionLocal
-from app.db.models import FinanceAccount, FinanceProfile, FinanceTransaction, FinancialInstrument, Profile
+from app.db.models import (
+    FinanceAccount,
+    FinanceProfile,
+    FinanceTransaction,
+    FinancialInstrument,
+    Profile,
+)
 
 
 def _create_profile() -> Profile:
@@ -57,6 +63,7 @@ def test_transaction_links_user_account_and_instrument() -> None:
             quantity=Decimal("10"),
             unit_price=Decimal("1.2"),
             fee=Decimal("0"),
+            client_reference=f"transaction-{user.id}",
             currency="CNY",
             occurred_on=date(2026, 8, 17),
             source="manual",
@@ -95,12 +102,54 @@ def test_transaction_rejects_missing_account_foreign_key() -> None:
                 quantity=Decimal("10"),
                 unit_price=Decimal("1.2"),
                 fee=Decimal("0"),
+                client_reference=f"missing-account-{user.id}",
                 currency="CNY",
                 occurred_on=date(2026, 8, 17),
                 source="manual",
             )
         )
 
+        with pytest.raises(IntegrityError):
+            db.commit()
+    finally:
+        db.rollback()
+        db.close()
+
+
+def test_transaction_client_reference_is_unique_per_user() -> None:
+    db = SessionLocal()
+    try:
+        user = _create_profile()
+        account = FinanceAccount(user_id=user.id, name=f"账户-{user.id}", market="CN", currency="CNY")
+        instrument = FinancialInstrument(
+            market="CN",
+            symbol=f"fund-idempotent-{user.id}",
+            name="示例基金",
+            asset_class="fund",
+            currency="CNY",
+        )
+        db.add(user)
+        db.commit()
+        db.add_all([account, instrument])
+        db.commit()
+        for quantity in (Decimal("1"), Decimal("2")):
+            db.add(
+                FinanceTransaction(
+                    user_id=user.id,
+                    account_id=account.id,
+                    instrument_id=instrument.id,
+                    transaction_type="buy",
+                    quantity=quantity,
+                    unit_price=Decimal("1"),
+                    fee=Decimal("0"),
+                    client_reference="duplicate-import-row",
+                    currency="CNY",
+                    occurred_on=date(2026, 8, 17),
+                    source="manual",
+                )
+            )
+            if quantity == Decimal("1"):
+                db.commit()
         with pytest.raises(IntegrityError):
             db.commit()
     finally:

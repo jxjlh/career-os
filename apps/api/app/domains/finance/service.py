@@ -21,6 +21,7 @@ from app.domains.finance.schemas import (
     FinanceCandidatePatch,
     FinanceProfilePatch,
     FinanceTransactionCreate,
+    FinanceTransactionPatch,
     FinancialInstrumentInput,
 )
 
@@ -124,19 +125,37 @@ class FinanceService:
         self.db.flush()
         return instrument
 
+    def require_instrument(self, instrument_id: str) -> FinancialInstrument:
+        instrument = self.repository.get_instrument(instrument_id)
+        if instrument is None:
+            raise _not_found("Financial instrument not found")
+        return instrument
+
+    def validate_transaction_context(
+        self,
+        user_id: str,
+        account_id: str,
+        instrument_id: str,
+        requested_currency: str | None,
+    ) -> tuple[FinanceAccount, FinancialInstrument, str]:
+        account = self.require_account(user_id, account_id)
+        instrument = self.require_instrument(instrument_id)
+        currency = requested_currency or instrument.currency
+        if account.currency != currency or instrument.currency != currency:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "VALIDATION_ERROR", "message": "transaction currency must match account and instrument"},
+            )
+        return account, instrument, currency
+
     def apply_transaction(self, user_id: str, payload: FinanceTransactionCreate) -> FinanceTransaction:
+        existing = self.repository.get_transaction_by_client_reference(user_id, payload.client_reference)
+        if existing is not None:
+            return existing
+
         account = self.require_account(user_id, payload.account_id)
         instrument = self.resolve_instrument(payload)
-        currency = payload.currency or instrument.currency
-        if account.currency != currency or instrument.currency != currency:
-            self.db.rollback()
-            raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": "transaction currency must match account and instrument"})
-
-        position = self.repository.get_owned_position(user_id, account.id, instrument.id)
-        if payload.transaction_type == "sell" and (position is None or position.quantity < payload.quantity):
-            self.db.rollback()
-            raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": "sell quantity exceeds current position"})
-
+        _, _, currency = self.validate_transaction_context(user_id, account.id, instrument.id, payload.currency)
         transaction = FinanceTransaction(
             user_id=user_id,
             account_id=account.id,
@@ -145,36 +164,116 @@ class FinanceService:
             quantity=payload.quantity,
             unit_price=payload.unit_price,
             fee=payload.fee,
+            client_reference=payload.client_reference,
             currency=currency,
             occurred_on=payload.occurred_on,
             source="manual",
             notes=payload.notes,
         )
-        self.db.add(transaction)
-
-        if payload.transaction_type in {"buy", "sell"}:
-            if position is None:
-                position = FinancePosition(
-                    user_id=user_id,
-                    account_id=account.id,
-                    instrument_id=instrument.id,
-                    quantity=Decimal("0"),
-                    average_cost=Decimal("0"),
-                )
-                self.db.add(position)
-            if payload.transaction_type == "buy":
-                prior_cost = position.quantity * position.average_cost
-                new_quantity = position.quantity + payload.quantity
-                position.average_cost = (prior_cost + payload.quantity * payload.unit_price + payload.fee) / new_quantity
-                position.quantity = new_quantity
-            else:
-                position.quantity -= payload.quantity
-                if position.quantity == 0:
-                    position.average_cost = Decimal("0")
-
-        self.db.commit()
+        try:
+            self.db.add(transaction)
+            self.db.flush()
+            self.replay_position(user_id, account.id, instrument.id)
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            existing = self.repository.get_transaction_by_client_reference(user_id, payload.client_reference)
+            if existing is not None:
+                return existing
+            raise _conflict("Unable to create finance transaction") from exc
+        except HTTPException:
+            self.db.rollback()
+            raise
         self.db.refresh(transaction)
         return transaction
+
+    def update_transaction(
+        self,
+        user_id: str,
+        transaction_id: str,
+        payload: FinanceTransactionPatch,
+    ) -> FinanceTransaction:
+        transaction = self.require_transaction(user_id, transaction_id)
+        original_key = (transaction.account_id, transaction.instrument_id)
+        updates = payload.model_dump(exclude_unset=True)
+        account_id = updates.get("account_id", transaction.account_id)
+        instrument_id = updates.get("instrument_id", transaction.instrument_id)
+        _, _, currency = self.validate_transaction_context(
+            user_id,
+            account_id,
+            instrument_id,
+            updates.get("currency", transaction.currency),
+        )
+        updates["currency"] = currency
+        for field, value in updates.items():
+            setattr(transaction, field, value)
+        try:
+            self.db.flush()
+            self.replay_position(user_id, *original_key)
+            if (transaction.account_id, transaction.instrument_id) != original_key:
+                self.replay_position(user_id, transaction.account_id, transaction.instrument_id)
+            self.db.commit()
+        except HTTPException:
+            self.db.rollback()
+            raise
+        self.db.refresh(transaction)
+        return transaction
+
+    def delete_transaction(self, user_id: str, transaction_id: str) -> None:
+        transaction = self.require_transaction(user_id, transaction_id)
+        position_key = (transaction.account_id, transaction.instrument_id)
+        try:
+            self.db.delete(transaction)
+            self.db.flush()
+            self.replay_position(user_id, *position_key)
+            self.db.commit()
+        except HTTPException:
+            self.db.rollback()
+            raise
+
+    def require_transaction(self, user_id: str, transaction_id: str) -> FinanceTransaction:
+        transaction = self.repository.get_owned_transaction(user_id, transaction_id)
+        if transaction is None:
+            raise _not_found("Finance transaction not found")
+        return transaction
+
+    def replay_position(self, user_id: str, account_id: str, instrument_id: str) -> None:
+        transactions = self.repository.list_transactions_for_position(user_id, account_id, instrument_id)
+        position = self.repository.get_owned_position(user_id, account_id, instrument_id)
+        if position is None and not transactions:
+            return
+        if position is None:
+            position = FinancePosition(
+                user_id=user_id,
+                account_id=account_id,
+                instrument_id=instrument_id,
+                quantity=Decimal("0"),
+                average_cost=Decimal("0"),
+            )
+            self.db.add(position)
+
+        quantity = Decimal("0")
+        average_cost = Decimal("0")
+        for transaction in transactions:
+            if transaction.transaction_type == "buy":
+                total_cost = quantity * average_cost + transaction.quantity * transaction.unit_price + transaction.fee
+                quantity += transaction.quantity
+                average_cost = total_cost / quantity
+            elif transaction.transaction_type == "sell":
+                if transaction.quantity > quantity:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={"code": "VALIDATION_ERROR", "message": "transaction history would create a negative position"},
+                    )
+                quantity -= transaction.quantity
+                if quantity == 0:
+                    average_cost = Decimal("0")
+
+        position.quantity = quantity
+        position.average_cost = average_cost
+        if position.market_price is not None:
+            position.market_value = position.market_price * quantity
+            position.unrealized_profit_loss = position.market_value - quantity * average_cost
 
     def create_candidate(self, user_id: str, payload: FinanceCandidateCreate) -> FinanceCandidate:
         if self.repository.get_instrument(payload.instrument_id) is None:
@@ -215,7 +314,7 @@ class FinanceService:
 
     def build_dashboard(self, user_id: str) -> dict:
         profile = self.get_or_create_profile(user_id)
-        positions = self.repository.list_positions(user_id)
+        positions = [position for position in self.repository.list_positions(user_id) if position.quantity != 0]
         instruments = {item.id: item for item in self.db.query(FinancialInstrument).filter(FinancialInstrument.id.in_([p.instrument_id for p in positions])).all()} if positions else {}
         accounts = {item.id: item for item in self.repository.list_accounts(user_id)}
         cost_basis_by_currency: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
@@ -322,6 +421,7 @@ def serialize_transaction(transaction: FinanceTransaction) -> dict:
         "quantity": decimal_string(transaction.quantity),
         "unitPrice": decimal_string(transaction.unit_price),
         "fee": decimal_string(transaction.fee),
+        "clientReference": transaction.client_reference,
         "currency": transaction.currency,
         "occurredOn": transaction.occurred_on.isoformat(),
         "source": transaction.source,
