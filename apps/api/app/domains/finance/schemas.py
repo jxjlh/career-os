@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
@@ -12,6 +12,9 @@ RiskPreference = Literal["conservative", "balanced", "aggressive"]
 TransactionType = Literal["buy", "sell", "dividend", "fee"]
 
 MARKET_CURRENCY: dict[str, str] = {"CN": "CNY", "HK": "HKD", "US": "USD"}
+Money = Annotated[Decimal, Field(max_digits=20, decimal_places=8)]
+PositiveMoney = Annotated[Decimal, Field(gt=Decimal("0"), max_digits=20, decimal_places=8)]
+Ratio = Annotated[Decimal, Field(ge=Decimal("0"), le=Decimal("1"), max_digits=6, decimal_places=4)]
 
 
 class FinanceSchema(BaseModel):
@@ -21,11 +24,11 @@ class FinanceSchema(BaseModel):
 class FinanceProfilePatch(FinanceSchema):
     risk_preference: RiskPreference | None = None
     base_currency: Currency | None = None
-    reserve_cash_ratio: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("1"))
-    target_allocation: dict[AssetClass | Literal["cash"], Decimal] | None = None
-    max_instrument_concentration: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("1"))
-    max_portfolio_drawdown: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("1"))
-    max_instrument_drawdown: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("1"))
+    reserve_cash_ratio: Ratio | None = None
+    target_allocation: dict[AssetClass | Literal["cash"], Ratio] | None = None
+    max_instrument_concentration: Ratio | None = None
+    max_portfolio_drawdown: Ratio | None = None
+    max_instrument_drawdown: Ratio | None = None
     investment_horizon: Literal["short_term", "medium_term", "long_term"] | None = None
     alert_settings: dict[str, bool] | None = None
 
@@ -39,7 +42,7 @@ class FinanceProfilePatch(FinanceSchema):
 class FinanceAccountCreate(FinanceSchema):
     name: str = Field(min_length=1, max_length=120)
     market: Market
-    currency: Currency | None = None
+    currency: Currency
     account_type: Literal["fund", "stock", "broker", "manual"] = "manual"
 
     @model_validator(mode="after")
@@ -84,9 +87,10 @@ class FinanceTransactionCreate(FinanceSchema):
     instrument_id: str | None = None
     instrument: FinancialInstrumentInput | None = None
     transaction_type: TransactionType
-    quantity: Decimal = Field(gt=Decimal("0"))
-    unit_price: Decimal = Field(ge=Decimal("0"))
-    fee: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
+    quantity: PositiveMoney
+    unit_price: Money
+    fee: Money = Decimal("0")
+    client_reference: str = Field(min_length=1, max_length=128)
     currency: Currency | None = None
     occurred_on: date
     notes: str | None = Field(default=None, max_length=2000)
@@ -98,12 +102,30 @@ class FinanceTransactionCreate(FinanceSchema):
         return self
 
 
+class FinanceTransactionPatch(FinanceSchema):
+    account_id: str | None = None
+    instrument_id: str | None = None
+    transaction_type: TransactionType | None = None
+    quantity: PositiveMoney | None = None
+    unit_price: Money | None = None
+    fee: Money | None = None
+    currency: Currency | None = None
+    occurred_on: date | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def contains_an_update(self) -> "FinanceTransactionPatch":
+        if not self.model_fields_set:
+            raise ValueError("provide at least one transaction field")
+        return self
+
+
 class FinanceCandidateCreate(FinanceSchema):
     instrument_id: str
     suitability_reason: str | None = Field(default=None, max_length=3000)
     allocation_gap: dict[str, str] = Field(default_factory=dict)
-    target_allocation_min: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("1"))
-    target_allocation_max: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("1"))
+    target_allocation_min: Ratio | None = None
+    target_allocation_max: Ratio | None = None
     research_status: Literal["watching", "researching", "ready", "archived"] = "watching"
     alert_eligible: bool = True
 
@@ -121,8 +143,8 @@ class FinanceCandidateCreate(FinanceSchema):
 class FinanceCandidatePatch(FinanceSchema):
     suitability_reason: str | None = Field(default=None, max_length=3000)
     allocation_gap: dict[str, str] | None = None
-    target_allocation_min: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("1"))
-    target_allocation_max: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("1"))
+    target_allocation_min: Ratio | None = None
+    target_allocation_max: Ratio | None = None
     research_status: Literal["watching", "researching", "ready", "archived"] | None = None
     alert_eligible: bool | None = None
 

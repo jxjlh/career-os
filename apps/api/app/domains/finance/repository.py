@@ -55,6 +55,28 @@ class FinanceRepository:
             .first()
         )
 
+    def get_transaction_by_client_reference(self, user_id: str, client_reference: str) -> FinanceTransaction | None:
+        return (
+            self.db.query(FinanceTransaction)
+            .filter(
+                FinanceTransaction.user_id == user_id,
+                FinanceTransaction.client_reference == client_reference,
+            )
+            .first()
+        )
+
+    def list_transactions_for_position(self, user_id: str, account_id: str, instrument_id: str) -> list[FinanceTransaction]:
+        return (
+            self.db.query(FinanceTransaction)
+            .filter(
+                FinanceTransaction.user_id == user_id,
+                FinanceTransaction.account_id == account_id,
+                FinanceTransaction.instrument_id == instrument_id,
+            )
+            .order_by(FinanceTransaction.occurred_on.asc(), FinanceTransaction.created_at.asc(), FinanceTransaction.id.asc())
+            .all()
+        )
+
     def get_instrument(self, instrument_id: str) -> FinancialInstrument | None:
         return self.db.query(FinancialInstrument).filter(FinancialInstrument.id == instrument_id).first()
 

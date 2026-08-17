@@ -1454,6 +1454,7 @@ class FinancialInstrument(Base):
 
 class FinanceTransaction(Base):
     __tablename__ = "finance_transactions"
+    __table_args__ = (UniqueConstraint("user_id", "client_reference", name="uq_finance_transaction_user_client_reference"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
@@ -1463,6 +1464,7 @@ class FinanceTransaction(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8))
     unit_price: Mapped[Decimal] = mapped_column(Numeric(20, 8))
     fee: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=Decimal("0"))
+    client_reference: Mapped[str] = mapped_column(String(128))
     currency: Mapped[str] = mapped_column(String(3))
     occurred_on: Mapped[date] = mapped_column(Date, index=True)
     source: Mapped[str] = mapped_column(String(24), default="manual", index=True)

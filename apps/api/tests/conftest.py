@@ -12,6 +12,7 @@ import os
 os.environ.setdefault("APP_ENV", "test")
 
 import pytest
+from sqlalchemy import inspect, text
 
 from app.core.database import engine, ensure_columns
 from app.db.base import Base
@@ -24,6 +25,32 @@ def _ensure_tables():
     """session 级建表: 所有测试共用同一 SQLite 文件, 首次运行时建表."""
     Base.metadata.create_all(bind=engine)
     ensure_columns()
+    _ensure_finance_transaction_ledger_for_tests()
+
+
+def _ensure_finance_transaction_ledger_for_tests() -> None:
+    """Keep the long-lived SQLite test database compatible with the finance ledger."""
+    if engine.dialect.name != "sqlite":
+        return
+    with engine.begin() as connection:
+        if "finance_transactions" not in inspect(connection).get_table_names():
+            return
+        columns = {column["name"] for column in inspect(connection).get_columns("finance_transactions")}
+        if "client_reference" not in columns:
+            connection.execute(text("ALTER TABLE finance_transactions ADD COLUMN client_reference VARCHAR(128)"))
+        connection.execute(
+            text(
+                "UPDATE finance_transactions "
+                "SET client_reference = 'legacy-' || id "
+                "WHERE client_reference IS NULL"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_finance_transactions_user_client_reference_test "
+                "ON finance_transactions (user_id, client_reference)"
+            )
+        )
 
 
 @pytest.fixture(autouse=True)
