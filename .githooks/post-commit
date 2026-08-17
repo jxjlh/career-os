@@ -1,0 +1,22 @@
+#!/usr/bin/env sh
+
+set -u
+
+if [ "${SKIP_AUTO_PUSH:-}" = "1" ]; then
+  exit 0
+fi
+
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+
+if [ -z "$branch" ]; then
+  printf '%s\n' 'Auto-push skipped: HEAD is detached.' >&2
+  exit 0
+fi
+
+if git push origin "HEAD:refs/heads/$branch"; then
+  printf '%s\n' "Auto-push completed: origin/$branch"
+else
+  printf '%s\n' "Auto-push failed: commit is local; retry with git push origin $branch." >&2
+fi
+
+exit 0

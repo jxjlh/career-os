@@ -99,6 +99,20 @@
 
 ---
 
+## D6. GitHub → CI → Render 自动部署
+
+项目已按以下顺序部署：
+
+1. 在任意开发机器上首次执行 `./scripts/setup-auto-deploy.sh`。它会启用版本库里的 `.githooks/post-commit`。
+2. 每次成功 `git commit` 后，钩子会自动把当前分支推送到 `origin`。如需保留某次提交在本地，使用 `SKIP_AUTO_PUSH=1 git commit ...`。
+3. `master` 的 GitHub CI（API 测试、前端类型检查、Lint、构建）全部通过后，Render 才会部署 API 和 Web 服务；`render.yaml` 使用 `autoDeployTrigger: checksPass`。
+4. GitHub Actions 中的 **Verify Render deployment** 会轮询 API `/ready` 与 Web 根路径。若持续失败，工作流会失败并提示查看对应 Render 服务的构建/运行日志。
+5. 修复失败时，先按 GitHub Actions 或 Render 日志处理根因，执行相关验证，再提交。自动推送与 CI/Render 部署会再次触发。
+
+> 自动推送只会在提交后发生，不会在保存文件时自动创建提交，以避免把未完成工作、误删或敏感内容发布到 GitHub。
+
+---
+
 ## 验证清单
 
 - [ ] `curl https://<render域名>/health` 返回 ok

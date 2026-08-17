@@ -11,7 +11,8 @@ services:
     plan: free
     dockerfilePath: ./apps/api/Dockerfile
     healthCheckPath: /health
-    autoDeploy: true
+    # 仅在 GitHub CI 全部通过后才开始生产部署。
+    autoDeployTrigger: checksPass
     envVars:
       - key: APP_ENV
         value: production
@@ -64,7 +65,8 @@ services:
     rootDir: apps/web
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
-    autoDeploy: true
+    # 仅在 GitHub CI 全部通过后才开始生产部署。
+    autoDeployTrigger: checksPass
     envVars:
       - key: API_UPSTREAM
         # 注意：Render 因基础名 ai-life-os-api 被占用，给服务分配了带后缀 -4y3x 的 URL。
