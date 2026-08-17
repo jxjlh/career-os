@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
@@ -157,3 +158,44 @@ class FinanceCandidatePatch(FinanceSchema):
         ):
             raise ValueError("targetAllocationMin must not exceed targetAllocationMax")
         return self
+
+
+class FinanceImportRow(FinanceSchema):
+    """An OCR row that the user may correct before confirming it as a transaction."""
+
+    row_id: str = Field(default_factory=lambda: uuid4().hex, min_length=1, max_length=64)
+    account_id: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=300)
+    symbol: str | None = Field(default=None, min_length=1, max_length=64)
+    market: Market | None = None
+    asset_class: AssetClass | None = None
+    currency: Currency | None = None
+    quantity: PositiveMoney | None = None
+    unit_price: Money | None = None
+    fee: Money = Decimal("0")
+    occurred_on: date | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+    confidence: Ratio = Decimal("0")
+
+    @model_validator(mode="after")
+    def instrument_values_are_consistent(self) -> "FinanceImportRow":
+        values = (self.name, self.symbol, self.market, self.asset_class, self.currency)
+        if any(value is not None for value in values) and any(value is None for value in values):
+            raise ValueError("recognized instrument data must include name, symbol, market, assetClass, and currency")
+        if self.market is not None and self.currency != MARKET_CURRENCY[self.market]:
+            raise ValueError("currency must match the selected market")
+        return self
+
+
+class FinanceImportPatch(FinanceSchema):
+    rows: list[FinanceImportRow] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def row_ids_are_unique(self) -> "FinanceImportPatch":
+        if len({row.row_id for row in self.rows}) != len(self.rows):
+            raise ValueError("rowId values must be unique")
+        return self
+
+
+class FinanceImportConfirm(FinanceImportPatch):
+    pass

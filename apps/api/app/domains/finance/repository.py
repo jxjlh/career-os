@@ -7,6 +7,7 @@ from app.db.models import (
     FinanceAccount,
     FinanceAnalysisRun,
     FinanceCandidate,
+    FinanceImport,
     FinancePosition,
     FinanceProfile,
     FinanceRecommendation,
@@ -174,6 +175,24 @@ class FinanceRepository:
             .join(FinanceAccount, FinanceAccount.id == FinancePosition.account_id)
             .filter(FinancePosition.user_id == user_id, FinanceAccount.user_id == user_id)
             .order_by(FinancePosition.created_at.desc())
+            .all()
+        )
+
+    def get_owned_import(self, user_id: str, import_id: str) -> FinanceImport | None:
+        return (
+            self.db.query(FinanceImport)
+            .filter(FinanceImport.id == import_id, FinanceImport.user_id == user_id)
+            .first()
+        )
+
+    def list_expired_open_imports(self, now) -> list[FinanceImport]:
+        return (
+            self.db.query(FinanceImport)
+            .filter(
+                FinanceImport.status.in_(("review", "processing")),
+                FinanceImport.expires_at.is_not(None),
+                FinanceImport.expires_at <= now,
+            )
             .all()
         )
 
