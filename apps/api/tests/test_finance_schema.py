@@ -44,7 +44,9 @@ def test_transaction_links_user_account_and_instrument() -> None:
             asset_class="fund",
             currency="CNY",
         )
-        db.add_all([user, account, instrument])
+        db.add(user)
+        db.commit()
+        db.add_all([account, instrument])
         db.commit()
 
         transaction = FinanceTransaction(
@@ -65,6 +67,42 @@ def test_transaction_links_user_account_and_instrument() -> None:
         assert transaction.user_id == user.id
         assert transaction.account_id == account.id
         assert transaction.instrument_id == instrument.id
+    finally:
+        db.rollback()
+        db.close()
+
+
+def test_transaction_rejects_missing_account_foreign_key() -> None:
+    db = SessionLocal()
+    try:
+        user = _create_profile()
+        instrument = FinancialInstrument(
+            market="CN",
+            symbol=f"fund-{user.id}",
+            name="示例基金",
+            asset_class="fund",
+            currency="CNY",
+        )
+        db.add_all([user, instrument])
+        db.commit()
+
+        db.add(
+            FinanceTransaction(
+                user_id=user.id,
+                account_id=str(uuid.uuid4()),
+                instrument_id=instrument.id,
+                transaction_type="buy",
+                quantity=Decimal("10"),
+                unit_price=Decimal("1.2"),
+                fee=Decimal("0"),
+                currency="CNY",
+                occurred_on=date(2026, 8, 17),
+                source="manual",
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            db.commit()
     finally:
         db.rollback()
         db.close()
