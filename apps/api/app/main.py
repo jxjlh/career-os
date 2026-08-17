@@ -23,6 +23,7 @@ from app.domains.english.seed import seed_word_books
 from app.domains.career.router import router as career_router
 from app.domains.dashboard.router import router as dashboard_router
 from app.domains.explorer.router import router as explorer_router
+from app.domains.finance.router import router as finance_router
 from app.domains.goals.router import router as goals_router
 from app.domains.health.router import router as health_router
 from app.domains.interviews.router import router as interviews_router
@@ -117,6 +118,7 @@ app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(dashboard_router, prefix=settings.api_prefix)
 app.include_router(skills_router, prefix=settings.api_prefix)
 app.include_router(explorer_router, prefix=settings.api_prefix)
+app.include_router(finance_router, prefix=settings.api_prefix)
 app.include_router(goals_router, prefix=settings.api_prefix)
 app.include_router(planner_router, prefix=settings.api_prefix)
 app.include_router(career_router, prefix=settings.api_prefix)
