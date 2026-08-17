@@ -15,7 +15,6 @@ const LINKS = [
   ["/skills", "nav.skills"],
   ["/explore", "nav.explore"],
   ["/planner", "nav.planner"],
-  ["/coach", "nav.coach"],
   ["/jobs", "nav.jobs"],
   ["/resume", "nav.resume"],
 ] as const;

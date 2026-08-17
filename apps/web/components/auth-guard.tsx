@@ -17,7 +17,6 @@ const TOKEN_KEY = "career_os_token";
 const APP_PREFIXES = [
   "/analytics",
   "/chat",
-  "/coach",
   "/contacts",
   "/career",
   "/dashboard",

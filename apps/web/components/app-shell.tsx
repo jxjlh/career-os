@@ -8,7 +8,6 @@ import {
   Moon,
   MoreHorizontal,
   Search,
-  Sparkles,
   Sun,
   Languages,
   X,
@@ -133,7 +132,6 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
     { href: "/dashboard", icon: Home, key: "dashboard" },
     { href: "/life", icon: Compass, key: "life" },
     { href: "/life/map", icon: MapPin, key: "lifeMap" },
-    { href: "/coach", icon: Sparkles, key: "coach" },
   ];
 
   return (
@@ -201,7 +199,6 @@ function MobileNavSheet({
       items: [
         { href: "/skills", key: "skills" },
         { href: "/planner", key: "planner" },
-        { href: "/coach", key: "coach" },
         { href: "/explore", key: "explore" },
         { href: "/library", key: "library" },
         { href: "/projects", key: "projects" },

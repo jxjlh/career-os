@@ -9,7 +9,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "AI Life OS",
     short_name: "Life OS",
-    description: "AI 人生教练与成长助手 —— 目标 · 打卡 · 旅行 · 地图 · 成就",
+    description: "人生与职业成长助手 —— 目标 · 打卡 · 旅行 · 地图 · 成就",
     start_url: "/",
     scope: "/",
     display: "standalone",
@@ -35,23 +35,6 @@ export default function manifest(): MetadataRoute.Manifest {
         sizes: "192x192",
         type: "image/png",
         purpose: "maskable",
-      },
-    ],
-    shortcuts: [
-      {
-        name: "AI 对话",
-        short_name: "对话",
-        url: "/life/coach/chat",
-      },
-      {
-        name: "今日建议",
-        short_name: "建议",
-        url: "/life/coach",
-      },
-      {
-        name: "长期记忆",
-        short_name: "记忆",
-        url: "/life/coach/memory",
       },
     ],
   };

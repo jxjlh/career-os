@@ -120,7 +120,7 @@
 - [ ] Render Shell `alembic current` 显示最新 head
 - [ ] 前端域名打开 → 注册/登录成功
 - [ ] 未登录访问 `/dashboard` → 自动重定向到 `/login`
-- [ ] `/life/coach` 能发起 AI 对话（经 rewrite 代理 → Render → Supabase → 讯飞）
+- [ ] `/planner` 能加载本周学习与阅读计划（经 rewrite 代理 → Render → Supabase）
 - [ ] `学习搜索` 能返回 Wikipedia / GitHub 结果（联网生效）
 - [ ] iPhone Safari → 添加到主屏幕 → 全屏运行、图标正确、状态栏样式正确
 
