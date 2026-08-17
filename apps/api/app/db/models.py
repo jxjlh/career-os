@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -12,6 +13,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -1394,5 +1396,189 @@ class DailyJournal(Base):
     skill_id: Mapped[str | None] = mapped_column(
         ForeignKey("skills.id", ondelete="SET NULL"), index=True
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class FinanceProfile(Base):
+    __tablename__ = "finance_profiles"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_finance_profile_user"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    risk_preference: Mapped[str] = mapped_column(String(16), default="balanced")
+    base_currency: Mapped[str] = mapped_column(String(3), default="CNY")
+    target_allocation: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    reserve_cash_ratio: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=Decimal("0.10"))
+    max_instrument_concentration: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=Decimal("0.30"))
+    max_portfolio_drawdown: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=Decimal("0.15"))
+    max_instrument_drawdown: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=Decimal("0.20"))
+    investment_horizon: Mapped[str] = mapped_column(String(24), default="medium_term")
+    alert_settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class FinanceAccount(Base):
+    __tablename__ = "finance_accounts"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_finance_account_user_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    market: Mapped[str] = mapped_column(String(16), index=True)
+    currency: Mapped[str] = mapped_column(String(3))
+    account_type: Mapped[str] = mapped_column(String(24), default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class FinancialInstrument(Base):
+    __tablename__ = "financial_instruments"
+    __table_args__ = (UniqueConstraint("market", "symbol", name="uq_finance_instrument_market_symbol"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    market: Mapped[str] = mapped_column(String(16), index=True)
+    symbol: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(300))
+    asset_class: Mapped[str] = mapped_column(String(32), index=True)
+    product_type: Mapped[str | None] = mapped_column(String(48))
+    currency: Mapped[str] = mapped_column(String(3))
+    identifier: Mapped[str | None] = mapped_column(String(96), index=True)
+    benchmark: Mapped[str | None] = mapped_column(String(200))
+    provider_mapping: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class FinanceTransaction(Base):
+    __tablename__ = "finance_transactions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("finance_accounts.id", ondelete="CASCADE"), index=True)
+    instrument_id: Mapped[str] = mapped_column(ForeignKey("financial_instruments.id", ondelete="RESTRICT"), index=True)
+    transaction_type: Mapped[str] = mapped_column(String(24), index=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8))
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(20, 8))
+    fee: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=Decimal("0"))
+    currency: Mapped[str] = mapped_column(String(3))
+    occurred_on: Mapped[date] = mapped_column(Date, index=True)
+    source: Mapped[str] = mapped_column(String(24), default="manual", index=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class FinancePosition(Base):
+    __tablename__ = "finance_positions"
+    __table_args__ = (UniqueConstraint("user_id", "account_id", "instrument_id", name="uq_finance_position_account_instrument"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("finance_accounts.id", ondelete="CASCADE"), index=True)
+    instrument_id: Mapped[str] = mapped_column(ForeignKey("financial_instruments.id", ondelete="RESTRICT"), index=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=Decimal("0"))
+    average_cost: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=Decimal("0"))
+    market_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    market_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    unrealized_profit_loss: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    target_allocation: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    valued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class FinanceCandidate(Base):
+    __tablename__ = "finance_candidates"
+    __table_args__ = (UniqueConstraint("user_id", "instrument_id", name="uq_finance_candidate_user_instrument"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    instrument_id: Mapped[str] = mapped_column(ForeignKey("financial_instruments.id", ondelete="CASCADE"), index=True)
+    suitability_reason: Mapped[str | None] = mapped_column(Text)
+    allocation_gap: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    target_allocation_min: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    target_allocation_max: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    research_status: Mapped[str] = mapped_column(String(24), default="watching", index=True)
+    alert_eligible: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class FinanceImport(Base):
+    __tablename__ = "finance_imports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    temporary_object_path: Mapped[str | None] = mapped_column(Text)
+    raw_ocr_text: Mapped[str | None] = mapped_column(Text)
+    extracted_rows: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    source_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class FinanceSnapshot(Base):
+    __tablename__ = "finance_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("finance_accounts.id", ondelete="CASCADE"), index=True)
+    instrument_id: Mapped[str | None] = mapped_column(ForeignKey("financial_instruments.id", ondelete="CASCADE"), index=True)
+    snapshot_on: Mapped[date] = mapped_column(Date, index=True)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    market_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    portfolio_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    allocation: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    return_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    drawdown: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    concentration: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    data_fresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class FinanceAnalysisRun(Base):
+    __tablename__ = "finance_analysis_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    run_on: Mapped[date] = mapped_column(Date, index=True)
+    inputs: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    rule_results: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    source_timestamps: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    explanation: Mapped[str | None] = mapped_column(Text)
+    data_fresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class FinanceRecommendation(Base):
+    __tablename__ = "finance_recommendations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    analysis_run_id: Mapped[str] = mapped_column(ForeignKey("finance_analysis_runs.id", ondelete="CASCADE"), index=True)
+    candidate_id: Mapped[str | None] = mapped_column(ForeignKey("finance_candidates.id", ondelete="SET NULL"), index=True)
+    instrument_id: Mapped[str | None] = mapped_column(ForeignKey("financial_instruments.id", ondelete="SET NULL"), index=True)
+    action: Mapped[str] = mapped_column(String(24), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    suggested_allocation_min: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    suggested_allocation_max: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    explanation: Mapped[str | None] = mapped_column(Text)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    counterevidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    confidence: Mapped[str] = mapped_column(String(16), default="medium")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    disposition: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    rule_triggers: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
