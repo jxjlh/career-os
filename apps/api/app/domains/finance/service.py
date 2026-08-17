@@ -1,5 +1,7 @@
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -7,11 +9,27 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     FinanceAccount,
+    FinanceAnalysisRun,
     FinanceCandidate,
     FinancePosition,
     FinanceProfile,
+    FinanceRecommendation,
+    FinanceSnapshot,
     FinanceTransaction,
     FinancialInstrument,
+)
+from app.domains.finance.analysis import (
+    AnalysisCandidate,
+    AnalysisPosition,
+    RuleRecommendation,
+    evaluate_portfolio,
+    quotes_are_fresh,
+)
+from app.domains.finance.market_data import (
+    MarketDataError,
+    MarketDataProvider,
+    MarketQuote,
+    get_market_data_provider,
 )
 from app.domains.finance.repository import FinanceRepository
 from app.domains.finance.schemas import (
@@ -360,6 +378,206 @@ class FinanceService:
         self.db.delete(candidate)
         self.db.commit()
 
+    def run_analysis(
+        self,
+        user_id: str,
+        *,
+        provider: MarketDataProvider | None = None,
+        now: datetime | None = None,
+    ) -> FinanceAnalysisRun:
+        now = now or datetime.now(UTC)
+        run_on = now.date()
+        existing = self.repository.get_analysis_for_day(user_id, run_on)
+        if existing is not None:
+            return existing
+
+        run = FinanceAnalysisRun(user_id=user_id, run_on=run_on, status="running")
+        self.db.add(run)
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            existing = self.repository.get_analysis_for_day(user_id, run_on)
+            if existing is not None:
+                return existing
+            raise
+        self.db.refresh(run)
+
+        market_data_provider = provider if provider is not None else get_market_data_provider()
+        if market_data_provider is None:
+            return self._finish_analysis_without_market_data(run, "unavailable", "market_data_provider_not_configured")
+
+        profile = self.get_or_create_profile(user_id)
+        positions = [position for position in self.repository.list_positions(user_id) if position.quantity > 0]
+        candidates = self.repository.list_candidates(user_id)
+        instrument_ids = {position.instrument_id for position in positions} | {candidate.instrument_id for candidate in candidates}
+        instruments = {instrument.id: instrument for instrument in self.repository.list_instruments(instrument_ids)}
+        required_instruments = [instrument for instrument in instruments.values() if instrument.is_active]
+        try:
+            quotes = market_data_provider.fetch_quotes(required_instruments)
+        except MarketDataError:
+            return self._finish_analysis_without_market_data(run, "unavailable", "market_data_provider_error")
+        except Exception:
+            return self._finish_analysis_without_market_data(run, "unavailable", "market_data_provider_error")
+
+        required_quote_ids = [position.instrument_id for position in positions] + [candidate.instrument_id for candidate in candidates if candidate.alert_eligible and candidate.research_status == "ready"]
+        fresh = quotes_are_fresh(quotes, required_quote_ids, now)
+        currencies_match = all(quotes[instrument_id].currency == profile.base_currency for instrument_id in required_quote_ids if instrument_id in quotes)
+        if not fresh or not currencies_match:
+            reason = "market_data_stale_or_incomplete" if not fresh else "fx_rate_not_configured"
+            return self._finish_analysis_without_market_data(run, "stale", reason)
+
+        analysis_positions = [
+            AnalysisPosition(
+                id=position.id,
+                account_id=position.account_id,
+                instrument_id=position.instrument_id,
+                asset_class=instruments[position.instrument_id].asset_class,
+                currency=instruments[position.instrument_id].currency,
+                quantity=position.quantity,
+                market_value=position.quantity * quotes[position.instrument_id].price,
+            )
+            for position in positions
+            if position.instrument_id in instruments and position.instrument_id in quotes
+        ]
+        analysis_candidates = [
+            AnalysisCandidate(
+                id=candidate.id,
+                instrument_id=candidate.instrument_id,
+                asset_class=instruments[candidate.instrument_id].asset_class,
+                currency=instruments[candidate.instrument_id].currency,
+                is_active=instruments[candidate.instrument_id].is_active,
+                research_status=candidate.research_status,
+                alert_eligible=candidate.alert_eligible,
+                target_allocation_min=candidate.target_allocation_min,
+                target_allocation_max=candidate.target_allocation_max,
+                allocation_gap=candidate.allocation_gap,
+            )
+            for candidate in candidates
+            if candidate.instrument_id in instruments and candidate.instrument_id in quotes
+        ]
+        rules = evaluate_portfolio(profile, analysis_positions, analysis_candidates, quotes, now)
+        run.inputs = {
+            "positionCount": len(analysis_positions),
+            "candidateCount": len(analysis_candidates),
+            "baseCurrency": profile.base_currency,
+        }
+        run.rule_results = {"dataStatus": {"state": "fresh", "reason": None}, "actions": [_serialize_rule(rule) for rule in rules]}
+        run.source_timestamps = {instrument_id: _iso_string(quote.as_of) for instrument_id, quote in quotes.items()}
+        run.data_fresh_at = min((quote.as_of for quote in quotes.values()), default=None)
+        # AI may only summarize these persisted rule drafts after this transaction;
+        # it never supplies or mutates the action set itself.
+        run.explanation = None
+        run.status = "completed"
+        run.completed_at = datetime.now(UTC)
+        self._persist_analysis_snapshots(user_id, run_on, positions, quotes)
+        self._persist_rule_recommendations(user_id, run, rules)
+        self.db.commit()
+        self.db.refresh(run)
+        return run
+
+    async def enrich_analysis_explanation(self, user_id: str, analysis_id: str) -> FinanceAnalysisRun:
+        """Use AI only to summarize already-persisted deterministic rule drafts."""
+        run = self.repository.get_owned_analysis(user_id, analysis_id)
+        if run is None:
+            raise _not_found("Finance analysis run not found")
+        if run.status != "completed" or run.explanation:
+            return run
+        fallback = _deterministic_summary_from_run(run)
+        try:
+            from app.providers.ai.registry import get_ai_provider
+
+            response = await get_ai_provider().complete(
+                [
+                    {"role": "system", "content": "仅根据给定的理财规则草案写简短说明；不得新增、删除或改变任何动作。"},
+                    {"role": "user", "content": str(run.rule_results)},
+                ]
+            )
+            run.explanation = response.strip()[:1200] or fallback
+        except Exception:
+            run.explanation = fallback
+        self.db.commit()
+        self.db.refresh(run)
+        return run
+
+    def get_latest_analysis(self, user_id: str) -> FinanceAnalysisRun | None:
+        return self.repository.get_latest_analysis(user_id)
+
+    def list_recommendations(self, user_id: str) -> list[FinanceRecommendation]:
+        return self.repository.list_pending_recommendations(user_id)
+
+    def dismiss_recommendation(self, user_id: str, recommendation_id: str) -> FinanceRecommendation:
+        recommendation = self.repository.get_owned_recommendation(user_id, recommendation_id)
+        if recommendation is None:
+            raise _not_found("Finance recommendation not found")
+        recommendation.disposition = "dismissed"
+        self.db.commit()
+        self.db.refresh(recommendation)
+        return recommendation
+
+    def _finish_analysis_without_market_data(self, run: FinanceAnalysisRun, state: str, reason: str) -> FinanceAnalysisRun:
+        run.status = f"data_{state}"
+        run.inputs = {}
+        run.rule_results = {"dataStatus": {"state": state, "reason": reason}, "actions": []}
+        run.source_timestamps = {}
+        run.data_fresh_at = None
+        run.explanation = "行情数据未就绪，因此未生成任何买入、加仓、减仓或卖出条件卡。"
+        run.completed_at = datetime.now(UTC)
+        self.db.commit()
+        self.db.refresh(run)
+        return run
+
+    def _persist_analysis_snapshots(
+        self,
+        user_id: str,
+        snapshot_on,
+        positions: list[FinancePosition],
+        quotes: dict[str, MarketQuote],
+    ) -> None:
+        for position in positions:
+            quote = quotes.get(position.instrument_id)
+            if quote is None:
+                continue
+            self.db.add(
+                FinanceSnapshot(
+                    user_id=user_id,
+                    account_id=position.account_id,
+                    instrument_id=position.instrument_id,
+                    snapshot_on=snapshot_on,
+                    price=quote.price,
+                    quantity=position.quantity,
+                    market_value=position.quantity * quote.price,
+                    data_fresh_at=quote.as_of,
+                    evidence={"source": "market_data", "asOf": _iso_string(quote.as_of)},
+                )
+            )
+
+    def _persist_rule_recommendations(
+        self,
+        user_id: str,
+        run: FinanceAnalysisRun,
+        rules: list[RuleRecommendation],
+    ) -> None:
+        for rule in rules:
+            self.db.add(
+                FinanceRecommendation(
+                    user_id=user_id,
+                    analysis_run_id=run.id,
+                    candidate_id=rule.candidate_id,
+                    instrument_id=rule.instrument_id,
+                    action=rule.action,
+                    title=rule.title,
+                    suggested_allocation_min=rule.suggested_allocation_min,
+                    suggested_allocation_max=rule.suggested_allocation_max,
+                    explanation=_deterministic_rule_explanation(rule),
+                    evidence=rule.evidence,
+                    counterevidence=rule.counterevidence,
+                    confidence=rule.confidence,
+                    expires_at=datetime.now(UTC) + timedelta(days=7),
+                    rule_triggers=rule.evidence,
+                )
+            )
+
     def build_dashboard(self, user_id: str) -> dict:
         profile = self.get_or_create_profile(user_id)
         positions = [position for position in self.repository.list_positions(user_id) if position.quantity != 0]
@@ -490,4 +708,78 @@ def serialize_candidate(candidate: FinanceCandidate) -> dict:
         "alertEligible": candidate.alert_eligible,
         "createdAt": iso_string(candidate.created_at),
         "updatedAt": iso_string(candidate.updated_at),
+    }
+
+
+def _iso_string(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _serialize_rule(rule: RuleRecommendation) -> dict[str, Any]:
+    return {
+        "action": rule.action,
+        "title": rule.title,
+        "instrumentId": rule.instrument_id,
+        "candidateId": rule.candidate_id,
+        "suggestedAllocationMin": decimal_string(rule.suggested_allocation_min),
+        "suggestedAllocationMax": decimal_string(rule.suggested_allocation_max),
+        "evidence": rule.evidence,
+        "counterevidence": rule.counterevidence,
+        "confidence": rule.confidence,
+    }
+
+
+def _deterministic_rule_explanation(rule: RuleRecommendation) -> str:
+    evidence = "；".join(item["message"] for item in rule.evidence)
+    return f"规则条件：{evidence}" if evidence else "规则条件已满足，请结合自身计划复核。"
+
+
+def _deterministic_summary(rules: list[RuleRecommendation]) -> str:
+    if not rules:
+        return "当前数据未触发需要展示的规则条件；不会执行任何自动交易。"
+    return f"本次依据已确认的风险与配置规则生成 {len(rules)} 条待复核行动卡；系统不会自动下单。"
+
+
+def _deterministic_summary_from_run(run: FinanceAnalysisRun) -> str:
+    actions = run.rule_results.get("actions", []) if isinstance(run.rule_results, dict) else []
+    if not actions:
+        return "当前数据未触发需要展示的规则条件；不会执行任何自动交易。"
+    return f"本次依据已确认的风险与配置规则生成 {len(actions)} 条待复核行动卡；系统不会自动下单。"
+
+
+def serialize_analysis_run(run: FinanceAnalysisRun) -> dict:
+    rule_results = run.rule_results if isinstance(run.rule_results, dict) else {}
+    return {
+        "id": run.id,
+        "status": run.status,
+        "runOn": run.run_on.isoformat(),
+        "dataStatus": rule_results.get("dataStatus", {"state": "unavailable", "reason": "analysis_not_completed"}),
+        "inputs": run.inputs,
+        "actions": rule_results.get("actions", []),
+        "explanation": run.explanation,
+        "dataFreshAt": _iso_string(run.data_fresh_at),
+        "completedAt": _iso_string(run.completed_at),
+        "createdAt": _iso_string(run.created_at),
+    }
+
+
+def serialize_recommendation(recommendation: FinanceRecommendation) -> dict:
+    return {
+        "id": recommendation.id,
+        "analysisRunId": recommendation.analysis_run_id,
+        "candidateId": recommendation.candidate_id,
+        "instrumentId": recommendation.instrument_id,
+        "action": recommendation.action,
+        "title": recommendation.title,
+        "suggestedAllocationMin": decimal_string(recommendation.suggested_allocation_min),
+        "suggestedAllocationMax": decimal_string(recommendation.suggested_allocation_max),
+        "explanation": recommendation.explanation,
+        "evidence": recommendation.evidence,
+        "counterevidence": recommendation.counterevidence,
+        "confidence": recommendation.confidence,
+        "expiresAt": _iso_string(recommendation.expires_at),
+        "disposition": recommendation.disposition,
+        "createdAt": _iso_string(recommendation.created_at),
     }

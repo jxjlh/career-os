@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
@@ -30,7 +30,7 @@ class FinanceProfilePatch(FinanceSchema):
     max_portfolio_drawdown: Ratio | None = None
     max_instrument_drawdown: Ratio | None = None
     investment_horizon: Literal["short_term", "medium_term", "long_term"] | None = None
-    alert_settings: dict[str, bool] | None = None
+    alert_settings: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def target_allocation_is_not_over_100_percent(self) -> "FinanceProfilePatch":
