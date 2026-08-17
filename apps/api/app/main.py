@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -160,6 +160,9 @@ if frontend_dir.exists():
         # API 请求永远不走这里（已被 router 匹配）
         # 静态资源（/_next/*）也不走这里（已被 StaticFiles mount 匹配）
         # 带文件扩展名的请求（如 .js, .css, .png）尝试直接返回文件
+        api_prefix = settings.api_prefix.strip("/")
+        if full_path == api_prefix or full_path.startswith(f"{api_prefix}/"):
+            raise HTTPException(status_code=404, detail="API route not found")
         candidate = frontend_dir / full_path
         if candidate.is_file():
             return FileResponse(candidate)
