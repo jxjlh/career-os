@@ -36,7 +36,7 @@ jobs:
             # 使用 --max-time 60 防止超时
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               --max-time 60 \
-              https://ai-life-os-api-4y3x.onrender.com/ready)
+              https://ai-life-os-api-4y3x.onrender.com/ready || true)
 
             if [ "$STATUS" = "200" ]; then
               echo "✅ Success! HTTP $STATUS"
@@ -62,7 +62,7 @@ jobs:
 
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               --max-time 60 \
-              https://ai-life-os-web.onrender.com/)
+              https://ai-life-os-web.onrender.com/ || true)
 
             if [ "$STATUS" = "200" ]; then
               echo "✅ Frontend OK! HTTP $STATUS"
