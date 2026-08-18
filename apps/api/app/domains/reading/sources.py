@@ -208,7 +208,7 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
         identifiers = volume.get("industryIdentifiers") or []
         authors = [str(author) for author in volume.get("authors") or []]
         score = _match_score(title_query, author_query, title, authors, identifiers)
-        if score < 5:
+        if score < 85:
             continue
         access = raw.get("accessInfo") or {}
         download_url, download_format = _download_info(access)

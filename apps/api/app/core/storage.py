@@ -54,7 +54,7 @@ async def upload_object(path: str, content: bytes, content_type: str) -> str:
                 bucket_response = await client.post(
                     f"{storage_url}/bucket",
                     headers=_storage_headers(settings.supabase_service_role_key, "application/json"),
-                    json={"id": bucket, "name": bucket, "public": True},
+                    json={"id": bucket, "name": bucket, "public": False},
                 )
                 if bucket_response.status_code not in {200, 201, 409}:
                     raise AppError(

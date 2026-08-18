@@ -159,7 +159,7 @@ class StorageService:
             response = client.post(
                 url,
                 headers=headers,
-                json={"id": bucket, "name": bucket, "public": True},
+                json={"id": bucket, "name": bucket, "public": False},
             )
         if response.status_code >= 400 and response.status_code not in (400, 409):
             raise RuntimeError(f"Supabase bucket setup failed: HTTP {response.status_code}")
