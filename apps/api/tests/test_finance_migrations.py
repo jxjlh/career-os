@@ -73,9 +73,9 @@ def test_finance_ledger_and_analysis_migrations_round_trip_without_full_history(
             connection.execute(text("INSERT INTO finance_analysis_runs VALUES ('run-1', 'user-1', '2026-08-17')"))
             with pytest.raises(IntegrityError):
                 connection.execute(text("INSERT INTO finance_analysis_runs VALUES ('run-2', 'user-1', '2026-08-17')"))
-            connection.execute(text("INSERT INTO finance_recommendations VALUES ('rec-1', 'run-1', 'instrument-1', NULL, 'reduce_risk')"))
+            connection.execute(text("INSERT INTO finance_recommendations (id, analysis_run_id, instrument_id, candidate_id, action) VALUES ('rec-1', 'run-1', 'instrument-1', NULL, 'reduce_risk')"))
             with pytest.raises(IntegrityError):
-                connection.execute(text("INSERT INTO finance_recommendations VALUES ('rec-2', 'run-1', 'instrument-1', NULL, 'reduce_risk')"))
+                connection.execute(text("INSERT INTO finance_recommendations (id, analysis_run_id, instrument_id, candidate_id, action) VALUES ('rec-2', 'run-1', 'instrument-1', NULL, 'reduce_risk')"))
 
         command.downgrade(config, "20260817_finance_ledger")
         command.downgrade(config, "20260817_finance")

@@ -6,20 +6,23 @@ import app.domains.reading.sources as sources
 
 
 @pytest.mark.asyncio
-async def test_search_book_sources_keeps_exact_metadata_match_and_download_url(monkeypatch) -> None:
+async def test_search_book_sources_keeps_exact_metadata_match(monkeypatch) -> None:
+    """Open Library returns docs; exact title matches must be kept with metadata."""
     payload = {
-        "items": [
+        "docs": [
             {
-                "id": "exact",
-                "volumeInfo": {
-                    "title": "Deep Work",
-                    "authors": ["Cal Newport"],
-                    "industryIdentifiers": [{"type": "ISBN_13", "identifier": "9781455586691"}],
-                    "infoLink": "https://books.example/deep-work",
-                },
-                "accessInfo": {"epub": {"isAvailable": True, "downloadLink": "https://books.example/deep-work.epub"}},
+                "key": "/works/OL12345W",
+                "title": "Deep Work",
+                "author_name": ["Cal Newport"],
+                "isbn": ["9781455586691"],
+                "cover_i": 12345,
+                "first_sentence": ["An engaging read about focus."],
             },
-            {"id": "wrong", "volumeInfo": {"title": "Unrelated Book"}, "accessInfo": {}},
+            {
+                "key": "/works/OL99999W",
+                "title": "食谱大全",
+                "author_name": ["某人"],
+            },
         ]
     }
 
@@ -33,27 +36,27 @@ async def test_search_book_sources_keeps_exact_metadata_match_and_download_url(m
     result = await sources.search_book_sources("Deep Work")
 
     assert [item["title"] for item in result["items"]] == ["Deep Work"]
-    assert result["items"][0]["canDownload"] is True
-    assert result["items"][0]["downloadUrl"].endswith(".epub")
+    assert result["items"][0]["author"] == "Cal Newport"
+    assert result["items"][0]["isExactMatch"] is True
+    assert result["items"][0]["isbn"] == "9781455586691"
+    assert result["items"][0]["sourceKey"] == "open_library"
 
 
 @pytest.mark.asyncio
 async def test_search_book_sources_requires_matching_author_when_query_includes_one(monkeypatch) -> None:
+    """When query includes author, only author-matching docs must be returned."""
     payload = {
-        "items": [
+        "docs": [
             {
-                "id": "same-title-wrong-author",
-                "volumeInfo": {"title": "Deep Work", "authors": ["Another Author"]},
-                "accessInfo": {},
+                "key": "/works/OL11111W",
+                "title": "Deep Work",
+                "author_name": ["Another Author"],
             },
             {
-                "id": "exact-title-and-author",
-                "volumeInfo": {
-                    "title": "Deep Work",
-                    "authors": ["Cal Newport"],
-                    "infoLink": "https://books.example/deep-work",
-                },
-                "accessInfo": {"pdf": {"isAvailable": True, "downloadLink": "https://books.example/deep-work.pdf"}},
+                "key": "/works/OL22222W",
+                "title": "Deep Work",
+                "author_name": ["Cal Newport"],
+                "isbn": ["9781455586691"],
             },
         ]
     }
@@ -67,6 +70,6 @@ async def test_search_book_sources_requires_matching_author_when_query_includes_
     monkeypatch.setattr(sources.httpx, "AsyncClient", lambda **kwargs: Client())
     result = await sources.search_book_sources("Deep Work - Cal Newport")
 
-    assert [item["id"] for item in result["items"]] == ["exact-title-and-author"]
+    assert [item["id"] for item in result["items"]] == ["/works/OL22222W"]
     assert result["items"][0]["isExactMatch"] is True
-    assert result["items"][0]["downloadFormat"] == "PDF"
+    assert result["items"][0]["author"] == "Cal Newport"

@@ -1,7 +1,7 @@
 """add finance_recommendation decision detail columns
 
 Revision ID: 20260917_add_finance_rec_details
-Revises: 20260817_add_finance_analysis_idempotency
+Revises: 20260817_finance_analysis
 Create Date: 2026-09-17
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "20260917_add_finance_rec_details"
-down_revision: Union[str, None] = "20260817_add_finance_analysis_idempotency"
+down_revision: Union[str, None] = "20260817_finance_analysis"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

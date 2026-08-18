@@ -38,12 +38,26 @@ class FakeOcrProvider:
             )
         ]
 
+    async def extract_async(self, image: bytes, content_type: str):
+        return self.extract(image, content_type)
+
 
 async def _uploaded_path(path: str, content: bytes, content_type: str) -> str:
     assert path.startswith("finance-imports/")
     assert content == b"image"
     assert content_type == "image/png"
     return path
+
+
+def _wait_for_ocr(client: TestClient, import_data: dict) -> dict:
+    """Poll GET /finance/imports/{id} until OCR background task finishes."""
+    for _ in range(30):
+        if import_data["status"] != "processing":
+            return import_data
+        import_data = client.get(
+            f"/api/v1/finance/imports/{import_data['id']}", headers=HEADERS
+        ).json()["data"]
+    raise AssertionError(f"OCR did not complete in time: {import_data}")
 
 
 def _account(client: TestClient, headers: dict[str, str]) -> str:
@@ -69,8 +83,8 @@ def _upload(client: TestClient, monkeypatch, *, confidence: str = "0.92") -> dic
         headers=HEADERS,
         files={"file": ("holding.png", b"image", "image/png")},
     )
-    assert response.status_code == 201, response.text
-    return response.json()["data"]
+    assert response.status_code == 202, response.text
+    return _wait_for_ocr(client, response.json()["data"])
 
 
 def _reviewed_rows(imported: dict, account_id: str) -> list[dict]:
@@ -199,6 +213,9 @@ def test_ocr_failure_deletes_temporary_object_before_clearing_sensitive_data(mon
         def extract(self, image: bytes, content_type: str):
             raise RuntimeError("upstream unavailable")
 
+        async def extract_async(self, image: bytes, content_type: str):
+            raise RuntimeError("upstream unavailable")
+
     async def _delete(path: str) -> None:
         deleted.append(path)
 
@@ -210,21 +227,18 @@ def test_ocr_failure_deletes_temporary_object_before_clearing_sensitive_data(mon
     monkeypatch.setattr("app.domains.finance.router.upload_object", _store)
     monkeypatch.setattr("app.domains.finance.service.delete_object", _delete)
     with TestClient(app) as client:
-        failed = client.post(
+        response = client.post(
             "/api/v1/finance/imports/screenshot",
             headers=HEADERS,
             files={"file": ("holding.png", b"image", "image/png")},
         )
-        assert failed.status_code == 503
-        assert failed.json()["error"]["code"] == "OCR_EXTRACTION_FAILED"
+        assert response.status_code == 202, response.text
+        import_data = _wait_for_ocr(client, response.json()["data"])
+        assert import_data["status"] == "failed"
+        assert import_data["errorCode"] == "OCR_EXTRACTION_FAILED"
 
     with SessionLocal() as db:
-        failed_import = (
-            db.query(FinanceImport)
-            .filter(FinanceImport.status == "failed")
-            .order_by(FinanceImport.created_at.desc())
-            .first()
-        )
+        failed_import = db.get(FinanceImport, import_data["id"])
         assert failed_import is not None
         assert deleted == stored
         assert failed_import.status == "failed"
@@ -238,6 +252,11 @@ def test_batch_import_keeps_successful_reviews_and_cleans_failed_image(monkeypat
 
     class PartiallyFailingOcrProvider:
         def extract(self, image: bytes, content_type: str):
+            if image == b"bad-image":
+                raise RuntimeError("upstream unavailable")
+            return FakeOcrProvider().extract(image, content_type)
+
+        async def extract_async(self, image: bytes, content_type: str):
             if image == b"bad-image":
                 raise RuntimeError("upstream unavailable")
             return FakeOcrProvider().extract(image, content_type)
@@ -262,14 +281,32 @@ def test_batch_import_keeps_successful_reviews_and_cleans_failed_image(monkeypat
             ],
         )
 
-    assert response.status_code == 201, response.text
+    assert response.status_code == 202, response.text
     payload = response.json()["data"]
-    assert len(payload["imports"]) == 1
-    assert payload["imports"][0]["status"] == "review"
-    assert payload["imports"][0]["sourceFilename"] == "first.png"
-    assert payload["failures"] == [{"filename": "second.png", "code": "OCR_EXTRACTION_FAILED"}]
+    assert len(payload["imports"]) == 2
+    assert payload["failures"] == []
     assert len(stored) == 2
-    assert deleted == [stored[1]]
+
+    # Both imports are created during upload; OCR runs in the background
+    with TestClient(app) as client:
+        final_states = []
+        for imp in payload["imports"]:
+            import_data = _wait_for_ocr(client, imp)
+            final_states.append(import_data)
+
+    successful = [s for s in final_states if s["sourceFilename"] == "first.png"]
+    assert len(successful) == 1
+    assert successful[0]["status"] == "review"
+    assert successful[0]["rows"][0]["name"] == "易方达蓝筹精选"
+
+    failed = [s for s in final_states if s["sourceFilename"] == "second.png"]
+    assert len(failed) == 1
+    assert failed[0]["status"] == "failed"
+    assert failed[0]["errorCode"] == "OCR_EXTRACTION_FAILED"
+
+    # Failed import's temporary object is cleaned up
+    assert len(deleted) == 1
+    assert deleted[0] == stored[1]
 
 
 def test_batch_import_rejects_more_than_nine_images_before_storing(monkeypatch) -> None:
