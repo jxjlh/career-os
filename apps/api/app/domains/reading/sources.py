@@ -1,4 +1,8 @@
-"""Canonical, metadata-backed book discovery with optional lawful download links."""
+"""Book discovery using Open Library (free, no API key required).
+
+Open Library is the primary and only search source - no Google dependency.
+Supports Chinese and English book searches with intelligent query handling.
+"""
 
 import logging
 import re
@@ -6,11 +10,8 @@ from typing import Any
 
 import httpx
 
-from app.core.config import get_settings
-
 logger = logging.getLogger("app.reading.sources")
 
-GOOGLE_BOOKS_VOLUMES_URL = "https://www.googleapis.com/books/v1/volumes"
 OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json"
 
 
@@ -49,21 +50,40 @@ def _match_score(
 ) -> int:
     normalized_query = _normalize(title_query)
     normalized_title = _normalize(title)
-    if not normalized_query or not normalized_title:
+    if not normalized_query:
         return 0
     if _is_isbn(title_query) and any(_normalize(item.get("identifier")) == normalized_query for item in identifiers):
         return 100
+
     normalized_author_query = _normalize(author_query)
     normalized_authors = [_normalize(author) for author in authors]
-    author_matches = not normalized_author_query or any(
-        normalized_author_query in author or author in normalized_author_query for author in normalized_authors if author
+
+    # Check if query matches authors (for author-only searches like "刘慈欣")
+    query_matches_author = any(
+        normalized_query in author or author in normalized_query for author in normalized_authors if author
     )
-    if not author_matches:
+
+    # If user specifically searched for an author, check author match
+    if normalized_author_query:
+        author_matches = any(
+            normalized_author_query in author or author in normalized_author_query
+            for author in normalized_authors if author
+        )
+        if not author_matches:
+            return 0
+    elif query_matches_author:
+        # Query matches an author - give it a good score
+        if normalized_query == normalized_title:
+            return 120
+        return 70
+
+    # Title matching
+    if not normalized_title:
         return 0
     if normalized_query == normalized_title:
-        return 120 if normalized_author_query else 100
+        return 100
     if normalized_query in normalized_title or normalized_title in normalized_query:
-        return 95 if normalized_author_query else 85
+        return 80
     overlap = _char_overlap(normalized_query, normalized_title)
     min_overlap = max(2, min(len(normalized_query), len(normalized_title)) // 3)
     if overlap >= min_overlap:
@@ -81,61 +101,27 @@ def _download_info(access: dict[str, Any]) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _build_search_query(title_query: str, author_query: str | None, isbn: bool) -> str:
-    """Build a Google Books search query with fallback strategies."""
-    if isbn:
-        return f"isbn:{title_query}"
+def _pad_short_query(query: str) -> str:
+    """Pad short queries to meet Open Library's minimum 3-character requirement."""
+    if len(query.strip()) >= 3:
+        return query.strip()
+    # Add a space to help with short queries like "三体" (2 chars)
+    return query.strip() + " "
 
-    parts: list[str] = []
-    parts.append(f'intitle:"{title_query}"')
-    if author_query:
-        parts.append(f'inauthor:"{author_query}"')
-    parts.append(title_query)
-    return " OR ".join(parts) if len(parts) > 1 else parts[0]
-
-
-async def _google_books_search(search_query: str, limit: int) -> list[dict[str, Any]]:
-    """Execute a single Google Books API search with optional API key and retry."""
-    import asyncio as _asyncio_mod
-    params: dict[str, Any] = {"q": search_query, "maxResults": min(limit * 3, 40), "printType": "books"}
-    settings = get_settings()
-    if settings.google_books_api_key:
-        params["key"] = settings.google_books_api_key
-    max_attempts = 4
-    for attempt in range(max_attempts):
-        try:
-            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-                response = await client.get(GOOGLE_BOOKS_VOLUMES_URL, params=params)
-            response.raise_for_status()
-            items = response.json().get("items") or []
-            return items
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 429 and attempt < max_attempts - 1:
-                delay = 2 * (attempt + 1)
-                logger.info("Google Books rate limited, retrying in %ds (attempt %d/%d)", delay, attempt + 1, max_attempts)
-                await _asyncio_mod.sleep(delay)
-                continue
-            logger.warning("Google Books search failed for query %r: %s", search_query, exc)
-            return []
-        except httpx.HTTPError as exc:
-            logger.warning("Google Books search failed for query %r: %s", search_query, exc)
-            return []
-    return []
 
 async def _open_library_search(search_query: str, limit: int) -> list[dict[str, Any]]:
-    """Fallback search using Open Library API (free, no key required)."""
-    # Open Library requires at least 3 characters for search queries
-    if len(search_query.strip()) < 3:
-        logger.info("Open Library search skipped: query too short (%r), need >= 3 chars", search_query)
-        return []
-    params = {"q": search_query, "limit": min(limit * 3, 40), "fields": "key,title,author_name,cover_i,isbn,publish_year,first_sentence"}
+    """Search using Open Library API (free, no key required).
+    
+    Handles short queries by adding padding to meet the 3-character minimum.
+    """
+    padded_query = _pad_short_query(search_query)
+    params = {"q": padded_query, "limit": min(limit * 3, 40), "fields": "key,title,author_name,cover_i,isbn,publish_year,first_sentence"}
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             response = await client.get(OPEN_LIBRARY_SEARCH_URL, params=params)
         response.raise_for_status()
         data = response.json()
         docs = data.get("docs") or []
-        # Normalize Open Library results to match Google Books format
         normalized: list[dict[str, Any]] = []
         for doc in docs:
             title = str(doc.get("title") or "").strip()
@@ -151,7 +137,10 @@ async def _open_library_search(search_query: str, limit: int) -> list[dict[str, 
                 "volumeInfo": {
                     "title": title,
                     "authors": authors,
-                    "industryIdentifiers": [{"type": "ISBN_13" if len(str(isbn)) == 13 else "ISBN_10", "identifier": str(isbn)} for isbn in isbns[:2]] if isbns else [],
+                    "industryIdentifiers": [
+                        {"type": "ISBN_13" if len(str(isbn)) == 13 else "ISBN_10", "identifier": str(isbn)}
+                        for isbn in isbns[:2]
+                    ] if isbns else [],
                     "description": description,
                     "imageLinks": {"thumbnail": cover_url} if cover_url else {},
                     "infoLink": f"https://openlibrary.org{key}" if key else None,
@@ -166,6 +155,14 @@ async def _open_library_search(search_query: str, limit: int) -> list[dict[str, 
 
 
 async def search_book_sources(query: str, limit: int = 10, language: str = "zh") -> dict[str, Any]:
+    """Search books using Open Library only (no Google dependency).
+    
+    Supports:
+    - Direct title search
+    - Title + author search (e.g., "三体 刘慈欣")
+    - ISBN search
+    - Short queries (padded to meet minimum length)
+    """
     normalized_query = _normalize(query)
     title_query, author_query = _split_title_author_query(query)
     isbn = _is_isbn(query)
@@ -174,17 +171,16 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
     if isbn:
         search_queries.append(f"isbn:{query}")
     elif author_query:
-        search_queries.append(f'intitle:"{title_query}" inauthor:"{author_query}"')
-        search_queries.append(f'"{title_query}" "{author_query}"')
+        search_queries.append(f"{title_query} {author_query}")
+        search_queries.append(title_query)
     else:
-        search_queries.append(f'intitle:"{title_query}"')
         search_queries.append(title_query)
 
     all_raw_items: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
 
     for sq in search_queries:
-        raw_items = await _google_books_search(sq, limit)
+        raw_items = await _open_library_search(sq, limit)
         for raw in raw_items:
             rid = raw.get("id", "")
             if rid and rid not in seen_ids:
@@ -193,18 +189,6 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
         if all_raw_items:
             break
 
-    if not all_raw_items:
-        logger.info("Google Books returned no results, trying Open Library fallback for query %r", query)
-        for sq in search_queries:
-            raw_items = await _open_library_search(sq, limit)
-            for raw in raw_items:
-                rid = raw.get("id", "")
-                if rid and rid not in seen_ids:
-                    seen_ids.add(rid)
-                    all_raw_items.append(raw)
-            if all_raw_items:
-                break
-
     items: list[dict[str, Any]] = []
     for raw in all_raw_items:
         volume = raw.get("volumeInfo") or {}
@@ -212,7 +196,7 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
         identifiers = volume.get("industryIdentifiers") or []
         authors = [str(author) for author in volume.get("authors") or []]
         score = _match_score(title_query, author_query, title, authors, identifiers)
-        if score < 85:
+        if score < 30:
             continue
         access = raw.get("accessInfo") or {}
         download_url, download_format = _download_info(access)
@@ -232,8 +216,8 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
                 "downloadPolicy": "provider_authorized" if download_url else None,
                 "matchScore": score,
                 "isExactMatch": score >= 100,
-                "sourceKey": "google_books",
-                "sourceName": "Google Books",
+                "sourceKey": "open_library",
+                "sourceName": "Open Library",
                 "isBookSource": True,
                 "isComplete": bool(download_url),
             }
@@ -242,5 +226,13 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
     items.sort(key=lambda item: (-item["matchScore"], item["title"]))
     return {
         "items": items[:limit],
-        "sources": [{"key": "google_books", "name": "Google Books", "status": "succeeded", "resultCount": len(items), "query": normalized_query}],
+        "sources": [
+            {
+                "key": "open_library",
+                "name": "Open Library",
+                "status": "succeeded",
+                "resultCount": len(items),
+                "query": normalized_query,
+            }
+        ],
     }
