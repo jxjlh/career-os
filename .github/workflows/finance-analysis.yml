@@ -2,6 +2,8 @@ name: Run personal finance analysis
 
 on:
   schedule:
+    # 北京时间 14:45（UTC 06:45），工作日：确保在 15:00 收盘前生成分析并在首页显示未读行动卡。
+    - cron: "45 6 * * 1-5"
     # 17:30 China Standard Time: after mainland China and Hong Kong market close.
     - cron: "30 9 * * 1-5"
     # 22:30 UTC: after the US market close in both daylight-saving and standard time.

@@ -4,10 +4,20 @@ import { createScreenshotImportForm } from "@/lib/finance-import-form";
 
 export type FinanceMarket = "CN" | "HK" | "US";
 export type FinanceCurrency = "CNY" | "HKD" | "USD";
-export type FinanceAssetClass = "fund" | "etf" | "stock";
+export type FinanceAssetClass = "fund" | "etf" | "stock" | "cash";
 export type RiskPreference = "conservative" | "balanced" | "aggressive";
 export type TransactionType = "buy" | "sell" | "dividend" | "fee";
-export type RecommendationAction = "observe" | "build" | "add" | "pause" | "rebalance" | "reduce_risk" | "exit_review";
+export type RecommendationAction =
+  | "observe"
+  | "build"
+  | "add"
+  | "pause"
+  | "rebalance"
+  | "reduce_risk"
+  | "exit_review"
+  | "hold"
+  | "build_position"
+  | "add_position";
 
 export type ApiEnvelope<T> = { data: T };
 
@@ -81,11 +91,15 @@ export interface FinanceHolding {
   accountName: string;
   instrumentId: string;
   instrument: FinancialInstrument;
+  assetClass?: FinanceAssetClass;
   quantity: string;
   averageCost: string;
   costBasis: string;
   marketPrice: string | null;
   marketValue: string | null;
+  dayChange?: string | null;
+  unrealizedPnl?: string | null;
+  unrealizedPnlPct?: string | null;
   currency: FinanceCurrency;
   targetAllocation: string | null;
   valuedAt: string | null;
@@ -95,16 +109,65 @@ export interface FinanceDashboardSummary {
   baseCurrency: FinanceCurrency;
   positionCount: number;
   pricedPositionCount: number;
+  // 兼容旧前端：成本 / 总资产估值
   costBasis: string | null;
   marketValue: string | null;
+  // 总资产卡 6 指标
+  totalPositionValue?: string | null; // 总仓位金额（持仓市值，不含现金）
+  dayChange?: string | null; // 今日收益
+  cumulativeReturn?: string | null; // 累计收益
+  returnRate?: string | null; // 收益率
+  cashRatio?: string | null; // 可用现金比例
+  availableCash?: string | null; // 可用现金金额
   costBasisByCurrency: Partial<Record<FinanceCurrency, string>>;
   marketValueByCurrency: Partial<Record<FinanceCurrency, string>>;
+}
+
+export interface MarketDailyIndexRow {
+  name: string;
+  symbol: string;
+  changePercent: string | null;
+  price: string | null;
+}
+
+export interface FinanceMarketDaily {
+  date: string;
+  overview: string;
+  indexPerformances: MarketDailyIndexRow[];
+  styleAndSectorChanges: string[];
+  portfolioImpact: string[];
+}
+
+export interface NewFundBuyRecommendation {
+  candidateId: string;
+  instrumentId: string;
+  name: string;
+  symbol: string | null;
+  assetClass: FinanceAssetClass;
+  targetMin: string | null;
+  targetMax: string | null;
+  suggestedBuyMin: string;
+  suggestedBuyMax: string;
+  reason: string;
+}
+
+export interface NewFundBuyCard {
+  eligibleForBuy: boolean;
+  cashRatio: string | null;
+  reserveCashRatio: string | null;
+  maxInstrumentConcentration: string | null;
+  riskPreference: RiskPreference;
+  availableCash: string | null;
+  candidateCount: number;
+  recommendation: NewFundBuyRecommendation | null;
 }
 
 export interface FinanceDashboard {
   profile: FinanceProfile;
   summary: FinanceDashboardSummary;
   positions: FinanceHolding[];
+  marketDaily?: FinanceMarketDaily;
+  newFundBuyCard?: NewFundBuyCard;
   dataStatus: "manual_only" | string;
 }
 
@@ -136,6 +199,12 @@ export interface FinanceRecommendation {
   title: string;
   suggestedAllocationMin: string | null;
   suggestedAllocationMax: string | null;
+  suggestedAmountMin: string | null;
+  suggestedAmountMax: string | null;
+  positionChangePct: string | null;
+  triggerReason: string | null;
+  riskNote: string | null;
+  sourceData: Record<string, unknown> | null;
   explanation: string | null;
   evidence: FinanceEvidence[];
   counterevidence: FinanceEvidence[];

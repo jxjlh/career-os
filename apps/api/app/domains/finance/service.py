@@ -742,6 +742,12 @@ class FinanceService:
                     title=rule.title,
                     suggested_allocation_min=rule.suggested_allocation_min,
                     suggested_allocation_max=rule.suggested_allocation_max,
+                    suggested_amount_min=rule.suggested_amount_min,
+                    suggested_amount_max=rule.suggested_amount_max,
+                    position_change_pct=rule.position_change_pct,
+                    trigger_reason=rule.trigger_reason,
+                    risk_note=rule.risk_note,
+                    source_data=rule.source_data,
                     explanation=_deterministic_rule_explanation(rule),
                     evidence=rule.evidence,
                     counterevidence=rule.counterevidence,
@@ -758,44 +764,170 @@ class FinanceService:
         accounts = {item.id: item for item in self.repository.list_accounts(user_id)}
         cost_basis_by_currency: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
         market_value_by_currency: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+        # 总资产卡6指标计算
+        total_cost_basis = Decimal("0")
+        total_market_value = Decimal("0")
+        total_day_change = Decimal("0")  # 今日收益（估算），基于当前持仓当日涨跌幅
+        total_positions_cost = Decimal("0")  # 持仓成本（不含现金）
+        total_positions_market_value = Decimal("0")  # 持仓市值（不含现金）
+        cash_value = Decimal("0")
         priced_count = 0
+        index_observations: list[dict[str, Any]] = []
+        style_shift_notes: list[str] = []
         serialized_positions: list[dict] = []
         for position in positions:
             instrument = instruments[position.instrument_id]
             account = accounts[position.account_id]
             cost_basis = position.quantity * position.average_cost
+            market_value = position.market_value if position.market_value is not None else cost_basis
             cost_basis_by_currency[instrument.currency] += cost_basis
+            market_value_by_currency[instrument.currency] += market_value
+            total_cost_basis += cost_basis
+            total_market_value += market_value
+            if instrument.asset_class == "cash" or instrument.instrument_type == "cash":
+                cash_value += market_value
+            else:
+                total_positions_cost += cost_basis
+                total_positions_market_value += market_value
+            # 估算今日收益：如有估值数据 day_change_percent
+            day_change_pct = None
+            try:
+                if instrument.metadata and isinstance(instrument.metadata, dict):
+                    day_change_pct = instrument.metadata.get("dayChangePct") or instrument.metadata.get("day_change_pct")
+                if day_change_pct is None and position.metadata and isinstance(position.metadata, dict):
+                    day_change_pct = position.metadata.get("dayChangePct") or position.metadata.get("day_change_pct")
+            except Exception:
+                day_change_pct = None
+            if day_change_pct is not None:
+                try:
+                    total_day_change += Decimal(str(day_change_pct)) * market_value
+                except Exception:
+                    pass
             if position.market_value is not None:
-                market_value_by_currency[instrument.currency] += position.market_value
                 priced_count += 1
+                if instrument.is_index:
+                    index_observations.append({
+                        "name": instrument.name,
+                        "symbol": instrument.symbol,
+                        "changePercent": decimal_string(Decimal(str(day_change_pct)) * Decimal("100")) if day_change_pct is not None else None,
+                        "price": decimal_string(position.market_price),
+                    })
             serialized_positions.append({
                 "id": position.id,
                 "accountId": position.account_id,
                 "accountName": account.name,
                 "instrumentId": position.instrument_id,
                 "instrument": serialize_instrument(instrument),
+                "assetClass": instrument.asset_class,
                 "quantity": decimal_string(position.quantity),
                 "averageCost": decimal_string(position.average_cost),
                 "costBasis": decimal_string(cost_basis),
                 "marketPrice": decimal_string(position.market_price),
-                "marketValue": decimal_string(position.market_value),
+                "marketValue": decimal_string(market_value),
+                "dayChange": decimal_string((Decimal(str(day_change_pct)) * market_value)) if day_change_pct is not None else None,
+                "unrealizedPnl": decimal_string((market_value - cost_basis)) if market_value is not None else None,
+                "unrealizedPnlPct": decimal_string(((market_value - cost_basis) / cost_basis)) if (market_value is not None and cost_basis > 0) else None,
                 "currency": instrument.currency,
                 "targetAllocation": decimal_string(position.target_allocation),
                 "valuedAt": iso_string(position.valued_at),
             })
         base_currency = profile.base_currency
+        cumulative_return = total_market_value - total_cost_basis if total_cost_basis > 0 else Decimal("0")
+        return_rate = (cumulative_return / total_cost_basis) if total_cost_basis > Decimal("0") else Decimal("0")
+        cash_ratio = (cash_value / total_market_value) if total_market_value > Decimal("0") else Decimal("0")
+        if not index_observations:
+            # 没有真实行情，用占位数据，确保市场日报卡结构稳定
+            index_observations = [
+                {"name": "上证指数", "symbol": "000001.SH", "changePercent": None, "price": None},
+                {"name": "沪深300", "symbol": "000300.SH", "changePercent": None, "price": None},
+                {"name": "中证500", "symbol": "000905.SH", "changePercent": None, "price": None},
+                {"name": "中证1000", "symbol": "000852.SH", "changePercent": None, "price": None},
+                {"name": "创业板指", "symbol": "399006.SZ", "changePercent": None, "price": None},
+            ]
+        style_shift_notes.append("风格与行业表现需要接入指数数据源后自动生成，当前以指数变化为观察参考。")
+        # 生成市场日报卡：结合持仓说明影响
+        portfolio_impact_notes: list[str] = []
+        if cumulative_return > 0:
+            portfolio_impact_notes.append(f"你的持仓当前累计浮盈 {decimal_string(cumulative_return)} {base_currency}（{decimal_string(return_rate * 100)}%），今日估算收益 {decimal_string(total_day_change)} {base_currency}。")
+        elif cumulative_return < 0:
+            portfolio_impact_notes.append(f"你的持仓当前累计浮亏 {decimal_string(-cumulative_return)} {base_currency}（{decimal_string(return_rate * 100)}%），今日估算收益 {decimal_string(total_day_change)} {base_currency}。")
+        else:
+            portfolio_impact_notes.append("你的持仓当前成本与市值基本持平，任何动作前请先查看持仓决策卡。")
+        if cash_ratio > Decimal("0.2"):
+            portfolio_impact_notes.append(f"可用现金比例 {decimal_string(cash_ratio * 100)}%，高于 20% 安全垫；新基金买入卡可据此给出买入建议。")
+        else:
+            portfolio_impact_notes.append(f"可用现金比例 {decimal_string(cash_ratio * 100)}%，如要买入请先评估流动性与预留现金要求。")
+        # 新基金买入建议（候选基金概览，详情走 rule_recommendations）
+        candidates = self.repository.list_candidates(user_id)
+        active_ready_candidates = [c for c in candidates if c.research_status == "ready" and not c.archived_at]
+        max_instrument_concentration = profile.max_instrument_concentration or Decimal("1")
+        reserve_cash_ratio = profile.reserve_cash_ratio or Decimal("0")
+        eligible_for_buy = cash_ratio >= reserve_cash_ratio and cash_ratio > Decimal("0")
+        buy_card = {
+            "eligibleForBuy": eligible_for_buy,
+            "cashRatio": decimal_string(cash_ratio),
+            "reserveCashRatio": decimal_string(reserve_cash_ratio),
+            "maxInstrumentConcentration": decimal_string(max_instrument_concentration),
+            "riskPreference": profile.risk_preference,
+            "availableCash": decimal_string(cash_value),
+            "candidateCount": len(active_ready_candidates),
+            "recommendation": None,
+        }
+        if active_ready_candidates:
+            top_candidate = active_ready_candidates[0]
+            top_instrument = self.db.query(FinancialInstrument).filter(FinancialInstrument.id == top_candidate.instrument_id).first()
+            buy_card["recommendation"] = {
+                "candidateId": top_candidate.id,
+                "instrumentId": top_candidate.instrument_id,
+                "name": top_instrument.name if top_instrument else top_candidate.instrument_id,
+                "symbol": top_instrument.symbol if top_instrument else None,
+                "assetClass": top_candidate.asset_class,
+                "targetMin": decimal_string(top_candidate.target_allocation_min),
+                "targetMax": decimal_string(top_candidate.target_allocation_max),
+                "suggestedBuyMin": decimal_string(cash_value * Decimal("0.3")) if eligible_for_buy else "0",
+                "suggestedBuyMax": decimal_string(cash_value * Decimal("0.6")) if eligible_for_buy else "0",
+                "reason": (
+                    (f"现金比例 {decimal_string(cash_ratio * 100)}% 满足预留要求，建议优先评估候选池中的「{top_instrument.name if top_instrument else '此标的'}」是否与现有持仓重叠度低。")
+                    if eligible_for_buy else
+                    (f"当前现金比例 {decimal_string(cash_ratio * 100)}% 低于预留 {decimal_string(reserve_cash_ratio * 100)}%，暂不建议新买入。")
+                ),
+            }
+        market_daily = {
+            "date": datetime.now(UTC).strftime("%Y-%m-%d"),
+            "overview": (
+                "当日市场概览待行情授权后生成；当前仅输出结构化卡片、指数表现占位与对你持仓的具体影响分析。"
+            ),
+            "indexPerformances": index_observations,
+            "styleAndSectorChanges": style_shift_notes,
+            "portfolioImpact": portfolio_impact_notes,
+        }
         return {
             "profile": serialize_profile(profile),
             "summary": {
                 "baseCurrency": base_currency,
                 "positionCount": len(positions),
                 "pricedPositionCount": priced_count,
-                "costBasis": decimal_string(cost_basis_by_currency.get(base_currency)) if len(cost_basis_by_currency) <= 1 else None,
-                "marketValue": decimal_string(market_value_by_currency.get(base_currency)) if positions and priced_count == len(positions) and len(market_value_by_currency) <= 1 else None,
+                # 持仓成本（不含现金）
+                "costBasis": decimal_string(total_positions_cost) if (len(cost_basis_by_currency) <= 1) else {currency: decimal_string(value) for currency, value in cost_basis_by_currency.items()},
+                # 总仓位金额 = 持仓市值（不含现金）
+                "totalPositionValue": decimal_string(total_positions_market_value) if (positions and priced_count == len(positions) and len(market_value_by_currency) <= 1) else None,
+                # 今日收益（估算）
+                "dayChange": decimal_string(total_day_change),
+                # 累计收益
+                "cumulativeReturn": decimal_string(cumulative_return),
+                # 收益率
+                "returnRate": decimal_string(return_rate),
+                # 可用现金比例
+                "cashRatio": decimal_string(cash_ratio),
+                "availableCash": decimal_string(cash_value),
+                # 保留原字段以兼容旧前端
+                "marketValue": decimal_string(total_market_value) if positions and priced_count == len(positions) and len(market_value_by_currency) <= 1 else None,
                 "costBasisByCurrency": {currency: decimal_string(value) for currency, value in cost_basis_by_currency.items()},
                 "marketValueByCurrency": {currency: decimal_string(value) for currency, value in market_value_by_currency.items()},
             },
             "positions": serialized_positions,
+            "marketDaily": market_daily,
+            "newFundBuyCard": buy_card,
             "dataStatus": "manual_only",
         }
 
@@ -983,6 +1115,12 @@ def serialize_recommendation(recommendation: FinanceRecommendation) -> dict:
         "title": recommendation.title,
         "suggestedAllocationMin": decimal_string(recommendation.suggested_allocation_min),
         "suggestedAllocationMax": decimal_string(recommendation.suggested_allocation_max),
+        "suggestedAmountMin": decimal_string(recommendation.suggested_amount_min),
+        "suggestedAmountMax": decimal_string(recommendation.suggested_amount_max),
+        "positionChangePct": decimal_string(recommendation.position_change_pct),
+        "triggerReason": recommendation.trigger_reason,
+        "riskNote": recommendation.risk_note,
+        "sourceData": recommendation.source_data,
         "explanation": recommendation.explanation,
         "evidence": recommendation.evidence,
         "counterevidence": recommendation.counterevidence,
