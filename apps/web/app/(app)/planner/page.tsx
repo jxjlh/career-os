@@ -15,6 +15,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import { Badge, Button, EmptyState, SectionHeader, Skeleton, Textarea } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
@@ -451,13 +452,13 @@ function TaskCard({
           {(task.goalName || task.skillName || task.milestoneName) && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {task.goalName && (
-                <a
-                  href={`/life?goal=${task.goalId}`}
+                <Link
+                  href={`/life/goals/${task.goalId}`}
                   onClick={(e) => e.stopPropagation()}
                   className="text-[10px] text-primary hover:underline"
                 >
                   #{task.goalName}
-                </a>
+                </Link>
               )}
               {task.skillName && (
                 <a

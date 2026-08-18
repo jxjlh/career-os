@@ -2,6 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
@@ -238,9 +239,9 @@ export function WeeklyPlanProgress() {
       {progress.goals && progress.goals.length > 0 && (
         <div className="mt-4 space-y-1.5">
           {progress.goals.slice(0, 3).map((goal) => (
-            <a
+            <Link
               key={goal.id}
-              href={`/life?goal=${goal.id}`}
+              href={`/life/goals/${goal.id}`}
               className="group flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-elevated/30"
             >
               <span className="min-w-0 flex-1 truncate text-[12px] text-text-secondary group-hover:text-text">
@@ -255,7 +256,7 @@ export function WeeklyPlanProgress() {
               <span className="font-display text-[11px] tabular-nums text-text-tertiary">
                 {Math.round(goal.progress)}%
               </span>
-            </a>
+            </Link>
           ))}
         </div>
       )}
