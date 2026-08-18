@@ -243,7 +243,7 @@ export function ActiveGoals() {
               title={g.title}
               progress={progressOf(g)}
               category={g.category}
-              href={`/life/goals/${g.id}`}
+              href={`/life/goals/detail?id=${g.id}`}
             />
           ))
         )}

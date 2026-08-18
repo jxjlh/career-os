@@ -104,7 +104,7 @@ function GoalColumn({
           return (
             <Link
               key={goal.id}
-              href={`/life/goals/${goal.id}`}
+              href={`/life/goals/detail?id=${goal.id}`}
               className={`block rounded-[10px] border p-3 transition-colors ${
                 selectedId === goal.id
                   ? "border-primary/50 bg-primary/8"

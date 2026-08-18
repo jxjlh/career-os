@@ -224,7 +224,7 @@ export default function BucketDetailPage() {
           <p className="mt-1 text-[12px] text-muted">让 AI 为这次旅行定制详细攻略与每日行程。</p>
           {joined && lifeGoalId ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              <Link href={`/life/goals/${lifeGoalId}/ai`}>
+              <Link href={`/life/goals/ai?goalId=${lifeGoalId}`}>
                 <Button variant="outline" size="sm" className="gap-1.5">
                   <Sparkles className="h-3.5 w-3.5" />
                   生成 AI 旅行攻略

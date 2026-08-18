@@ -241,7 +241,7 @@ export function WeeklyPlanProgress() {
           {progress.goals.slice(0, 3).map((goal) => (
             <Link
               key={goal.id}
-              href={`/life/goals/${goal.id}`}
+              href={`/life/goals/detail?id=${goal.id}`}
               className="group flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-elevated/30"
             >
               <span className="min-w-0 flex-1 truncate text-[12px] text-text-secondary group-hover:text-text">

@@ -453,7 +453,7 @@ function TaskCard({
             <div className="mt-1.5 flex flex-wrap gap-1">
               {task.goalName && (
                 <Link
-                  href={`/life/goals/${task.goalId}`}
+                  href={`/life/goals/detail?id=${task.goalId}`}
                   onClick={(e) => e.stopPropagation()}
                   className="text-[10px] text-primary hover:underline"
                 >

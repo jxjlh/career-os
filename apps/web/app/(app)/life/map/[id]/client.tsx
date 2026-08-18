@@ -159,7 +159,7 @@ export default function MapDetailPage() {
           <h2 className="mb-3 text-sm font-semibold">关联</h2>
           <div className="space-y-2">
             {lifeGoalId && (
-              <Link href={`/life/goals/${lifeGoalId}`} className="flex items-center justify-between rounded-[10px] bg-surface-muted p-2.5 transition-colors hover:bg-primary/5">
+              <Link href={`/life/goals/detail?id=${lifeGoalId}`} className="flex items-center justify-between rounded-[10px] bg-surface-muted p-2.5 transition-colors hover:bg-primary/5">
                 <span className="flex items-center gap-2 text-[13px]">
                   🎯 {goalTitle || "人生目标"}
                 </span>
@@ -211,7 +211,7 @@ export default function MapDetailPage() {
           </div>
           <p className="mt-1 text-[12px] text-muted">让 AI 为这个目的地定制详细攻略与每日行程。</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Link href={`/life/goals/${lifeGoalId}/ai`}>
+            <Link href={`/life/goals/ai?goalId=${lifeGoalId}`}>
               <Button variant="outline" size="sm" className="gap-1.5">
                 <Compass className="h-3.5 w-3.5" />
                 生成 AI 旅行攻略

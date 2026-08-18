@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { TravelChat } from "@/components/life/ai/travel-chat";
@@ -15,11 +15,12 @@ import type { TravelPlanResponse } from "@/lib/life";
 type Envelope = { data: any };
 
 export default function LifeGoalAiPage() {
-  const params = useParams<{ id: string }>();
-  const goalId = params.id;
+  const searchParams = useSearchParams();
+  const goalId = searchParams.get("goalId") ?? "";
   const goal = useQuery<Envelope>({
     queryKey: ["life-goal", goalId],
     queryFn: () => apiFetch(`/life/goals/${goalId}`),
+    enabled: Boolean(goalId),
   });
   const [plan, setPlan] = useState<TravelPlanResponse | null>(null);
 
@@ -27,7 +28,7 @@ export default function LifeGoalAiPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <Link href={`/life/goals/${goalId}`} className="mb-4 inline-flex">
+      <Link href={`/life/goals/detail?id=${goalId}`} className="mb-4 inline-flex">
         <Button variant="ghost" size="icon">
           <ArrowLeft className="h-4 w-4" />
         </Button>

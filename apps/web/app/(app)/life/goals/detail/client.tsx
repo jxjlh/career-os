@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Check, Sparkles, Users } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { LifeCameraPanel } from "@/components/life/camera/life-camera-panel";
@@ -16,18 +16,20 @@ import { getCategoryMeta, getGoalRecords, type LifeRecord } from "@/lib/life";
 type Envelope = { data: any };
 
 export default function LifeGoalDetailPage() {
-  const params = useParams<{ id: string }>();
-  const goalId = params.id;
+  const searchParams = useSearchParams();
+  const goalId = searchParams.get("id") ?? "";
   const queryClient = useQueryClient();
   const [showCamera, setShowCamera] = useState(false);
 
   const goal = useQuery<Envelope>({
     queryKey: ["life-goal", goalId],
     queryFn: () => apiFetch(`/life/goals/${goalId}`),
+    enabled: Boolean(goalId),
   });
   const records = useQuery<LifeRecord[]>({
     queryKey: ["life-goal-records", goalId],
     queryFn: () => getGoalRecords(goalId),
+    enabled: Boolean(goalId),
   });
 
   const updateStatus = useMutation({
@@ -94,7 +96,7 @@ export default function LifeGoalDetailPage() {
             记录这一刻
           </Button>
           {data.category === "travel" && (
-            <Link href={`/life/goals/${goalId}/ai`}>
+            <Link href={`/life/goals/ai?goalId=${goalId}`}>
               <Button variant="outline">
                 <Sparkles className="h-4 w-4" />
                 AI 生成旅行攻略
@@ -117,7 +119,7 @@ export default function LifeGoalDetailPage() {
         <h2 className="text-sm font-semibold">人生记录</h2>
         {items.length === 0 && (
           <p className="rounded-[10px] border border-dashed border-border bg-surface p-6 text-center text-[13px] text-muted">
-            还没有记录，点击“记录这一刻”开始。
+            还没有记录，点击"记录这一刻"开始。
           </p>
         )}
         {items.map((record: any) => (

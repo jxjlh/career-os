@@ -50,7 +50,7 @@ export function JoinButton({
           已加入
         </Button>
         {lifeGoalId && (
-          <Link href={`/life/goals/${lifeGoalId}`}>
+          <Link href={`/life/goals/detail?id=${lifeGoalId}`}>
             <Button variant="ghost" size={size}>
               查看目标
             </Button>
@@ -91,7 +91,7 @@ export function JoinButton({
               <p className="text-[13px] font-medium">已加入人生目标</p>
               <p className="text-[11px] text-muted">已为你创建对应的人生目标与任务</p>
             </div>
-            <Link href={`/life/goals/${justJoined.lifeGoalId}`}>
+            <Link href={`/life/goals/detail?id=${justJoined.lifeGoalId}`}>
               <Button size="sm" variant="outline">
                 立即查看
               </Button>
