@@ -34,51 +34,25 @@ const DEFAULT_API_BASE =
     : "/api/v1";
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE;
 
-// ── Token 缓存 ──────────────────────────────────────────────────────
-// 避免每次 apiFetch 都调用 supabase.auth.getSession()（虽是本地读取，但仍有开销）。
-// 缓存 token，2 分钟内复用，过期后重新获取。
-let _cachedToken: string | null = null;
-let _tokenCachedAt = 0;
-const TOKEN_CACHE_TTL_MS = 2 * 60 * 1000; // 2 分钟
-
-async function getCachedToken(): Promise<string | null> {
-  const now = Date.now();
-  // 缓存有效期内直接返回
-  if (_cachedToken && now - _tokenCachedAt < TOKEN_CACHE_TTL_MS) {
-    return _cachedToken;
-  }
-  // 获取新鲜 token
-  if (isSupabaseConfigured) {
-    const token = await getAccessToken();
-    if (token) {
-      _cachedToken = token;
-      _tokenCachedAt = now;
-      if (typeof window !== "undefined") {
-        localStorage.setItem("career_os_token", token);
-        writeSessionCookie(token);
-      }
-    }
-    return token;
-  }
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("career_os_token");
-  }
-  return null;
-}
-
-/** 清除 token 缓存（登出或 401 时调用） */
-export function clearTokenCache(): void {
-  _cachedToken = null;
-  _tokenCachedAt = 0;
-}
-
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
-  const token = await getCachedToken();
+  // 关键修复：必须用 Supabase session 里的新鲜 token，而非登录时写死的 localStorage。
+  // access_token 1 小时过期；旧实现读旧值 → 后端 401 → 所有功能失效。
+  let token: string | null = null;
+  if (isSupabaseConfigured) {
+    token = await getAccessToken();
+    if (token && typeof window !== "undefined") {
+      // 同步到 localStorage + cookie，让 Edge middleware 路由守卫与下次请求一致
+      localStorage.setItem("career_os_token", token);
+      writeSessionCookie(token);
+    }
+  } else if (typeof window !== "undefined") {
+    token = localStorage.getItem("career_os_token");
+  }
   headers.set("Authorization", token ? `Bearer ${token}` : "Bearer dev");
 
   const url = path.startsWith("/api/v1") ? path : `${API_BASE}${path}`;
@@ -89,26 +63,18 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   });
 
   if (!res.ok) {
-    // 401 时清除 token 缓存，下次请求会重新获取
-    if (res.status === 401) {
-      clearTokenCache();
-    }
-    let payload: any = null;
+    let payload: { error?: { code?: string; message?: string } } | null = null;
     try {
       payload = await res.json();
     } catch {
       // ignore
     }
-    // 兼容两种错误格式: {"error": {"message": "..."}} 和 {"detail": {"message": "..."}}
-    const serverMsg = payload?.error?.message || payload?.detail?.message;
-    const serverCode = payload?.error?.code || payload?.detail?.code;
+    const serverMsg = payload?.error?.message;
     const localizedMsg = STATUS_MESSAGES[res.status];
     const message = serverMsg || localizedMsg || `请求失败 (${res.status})`;
-    throw new ApiError(message, serverCode, res.status);
+    throw new ApiError(message, payload?.error?.code, res.status);
   }
-  if (res.status === 204) {
-    return undefined as T;
-  }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 

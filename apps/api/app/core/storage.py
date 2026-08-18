@@ -54,7 +54,7 @@ async def upload_object(path: str, content: bytes, content_type: str) -> str:
                 bucket_response = await client.post(
                     f"{storage_url}/bucket",
                     headers=_storage_headers(settings.supabase_service_role_key, "application/json"),
-                    json={"id": bucket, "name": bucket, "public": False},
+                    json={"id": bucket, "name": bucket, "public": True},
                 )
                 if bucket_response.status_code not in {200, 201, 409}:
                     raise AppError(
@@ -144,17 +144,7 @@ async def resolve_object_url(path: str) -> str | None:
 
     if cloud_configured:
         bucket = settings.supabase_storage_bucket
-        sign_url = f"{settings.supabase_url.rstrip('/')}/storage/v1/object/sign/{bucket}/{path}"
-        headers = _storage_headers(settings.supabase_service_role_key)
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                response = await client.post(sign_url, headers=headers, json={"expiresIn": 3600})
-        except httpx.HTTPError:
-            return None
-        if response.status_code < 400:
-            signed = response.json().get("signedURL")
-            if signed:
-                return f"{settings.supabase_url.rstrip('/')}{signed}" if signed.startswith("/") else signed
+        return f"{settings.supabase_url.rstrip('/')}/storage/v1/object/public/{bucket}/{path}"
 
     if _cloud_storage_required(settings.app_env):
         return None

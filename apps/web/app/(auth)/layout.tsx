@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BrandMark } from "@/components/brand-mark";
 import { AuthGuard } from "@/components/auth-guard";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -15,12 +15,12 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div className="relative z-10 w-full max-w-[420px]">
           {/* Logo 区 —— ✦ CareerOS + YOUR LIFE OS */}
           <div className="mb-10 flex flex-col items-center text-center">
-            <Link href="/" className="flex items-center gap-2.5">
+            <a href="/" className="flex items-center gap-2.5">
               <span className="font-display text-2xl font-bold text-primary-glow">✦</span>
               <span className="font-display text-[22px] font-bold tracking-tight text-text">
                 CareerOS
               </span>
-            </Link>
+            </a>
             <p className="mt-2 font-display text-[10px] font-medium uppercase tracking-[0.24em] text-text-tertiary">
               YOUR LIFE OS
             </p>

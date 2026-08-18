@@ -2,24 +2,35 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
 
+import EmojiBurst from "../../../../../components/originkit/ui/emojiburst";
 import { Button } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
 import {
   ActiveGoals,
   Hero,
   LifeMapPreview,
+  LifeStats,
   StreakCard,
   WeeklyPlanProgress,
 } from "@/components/dashboard";
-import { resolveMediaUrl } from "@/lib/chat";
-import { journalApi, TIME_SLOTS, MOODS, type Journal } from "@/lib/journal";
+import { journalApi } from "@/lib/journal";
 
 type Envelope = { data: any };
 
 /**
  * CareerOS Dashboard —— 年轻人的人生操作系统首页。
+ *
+ * 取代传统 StatCard grid + EChart + calendar 的 Dashboard 表达，
+ * 改用 Hero / Streak / ActiveGoals / LifeMap / Mood / LifeStats 六段式叙事。
+ *
+ * 不破坏现有功能：
+ *  - onboarding 引导卡片保留
+ *  - /dashboard/ai-advice 保留为底部轻量 AI 提示（不再做成 Card）
+ *  - /dashboard/summary / trends / calendar API 不动，仅在首页不再展示
+ *    （trend/calendar 数据已在 /analytics 页面展示，非删除功能）
  */
 export default function DashboardPage() {
   const onboarding = useQuery<Envelope>({
@@ -40,11 +51,11 @@ export default function DashboardPage() {
             <p className="text-[13px] font-medium text-text">完成引导，让 AI 为你生成路线与计划</p>
             <p className="mt-0.5 text-[12px] text-text-tertiary">只需要 2 分钟。</p>
           </div>
-          <a href="/onboarding">
+          <Link href="/onboarding">
             <Button size="sm" variant="primary">
               开始引导
             </Button>
-          </a>
+          </Link>
         </div>
       )}
 
@@ -57,16 +68,19 @@ export default function DashboardPage() {
       {/* 3. Active Goals —— 轻量 Row 列表 */}
       <ActiveGoals />
 
-      {/* 4. Weekly Plan Progress —— 本周计划进度 */}
+      {/* 4. Weekly Plan Progress —— 本周计划进度 (AI 周计划入口) */}
       <WeeklyPlanProgress />
 
       {/* 5. Life Map —— 人生轨迹预览 */}
       <LifeMapPreview />
 
-      {/* 6. Daily Journal —— 每日小记详情 (合并原 TODAY'S MOOD + 每日小记) */}
-      <DailyJournal />
+      {/* 6. Mood → Journal 入口 */}
+      <JournalEntry />
 
-      {/* 7. AI 提示 —— 保留功能 */}
+      {/* 7. Life Stats —— 杂志排版数字 */}
+      <LifeStats />
+
+      {/* 7. AI 提示 —— 保留功能，极轻量，不再做成 Card */}
       {advice.data?.data?.advice && (
         <section className="mt-12 border-t border-border-subtle/60 pt-6">
           <div className="flex items-center gap-2">
@@ -84,257 +98,68 @@ export default function DashboardPage() {
   );
 }
 
-const MOOD_EMOJIS = MOODS.map((m) => m.emoji);
-const MOOD_LABELS = MOODS.map((m) => m.label);
+const MOOD_EMOJIS = ["😵", "😐", "🙂", "😎", "✨"] as const;
 
 /**
- * DailyJournal —— Dashboard 上的每日小记详情组件.
- * 合并了原 TODAY'S MOOD (时间段可视化) 和 每日小记详情.
- * 只展示每日小记的完整信息.
+ * Journal Entry —— Dashboard 上的小记入口卡片.
+ * 显示今天是否已记录心情, 可点击跳转到 /journal
  */
-function DailyJournal() {
+function JournalEntry() {
+  const router = useRouter();
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][today.getDay()];
 
-  const { data, isLoading } = useQuery<{ data: Journal[] }>({
+  const { data } = useQuery<{ data: { moodIndex: number } | null }>({
     queryKey: ["journal", todayStr],
     queryFn: () => journalApi.getByDate(todayStr),
-    staleTime: 60_000,
+    staleTime: 0,
   });
 
-  const entries = data?.data ?? [];
-  const recordedCount = entries.length;
-  const avgMood = recordedCount > 0
-    ? Math.round(entries.reduce((sum, e) => sum + e.moodIndex, 0) / recordedCount)
-    : null;
-
-  // 找到每个主时段的最新记录
-  const getSlotEntry = (slotKey: string) => {
-    const slot = TIME_SLOTS.find((s) => s.key === slotKey);
-    if (!slot) return null;
-    // 查找该主时段下所有子时段的记录，取最新的
-    const slotEntries = entries.filter((e) =>
-      slot.subSlots.some((ss) => ss.key === e.timeSlot)
-    );
-    return slotEntries.length > 0 ? slotEntries[slotEntries.length - 1] : null;
-  };
-
-  const hasAnyContent = entries.some((e) => e.content && e.content.trim().length > 0);
-  const latestEntry = entries.length > 0 ? entries[entries.length - 1] : null;
-
-  // 收集所有照片（去重）
-  const allPhotos: string[] = [];
-  const seenPhotoUrls = new Set<string>();
-  for (const e of entries) {
-    if (e.photos && e.photos.length > 0) {
-      for (const p of e.photos) {
-        if (!seenPhotoUrls.has(p)) {
-          seenPhotoUrls.add(p);
-          allPhotos.push(p);
-        }
-      }
-    }
-  }
+  const journal = data?.data;
 
   return (
     <section className="mt-10">
-      {/* 标题行 */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
-            每日小记
+            TODAY'S MOOD
           </h2>
           <p className="mt-1 text-[13px] text-text-tertiary">
-            {today.getMonth() + 1}月{today.getDate()}日 · {weekday}
-            {recordedCount > 0 && ` · 已记录 ${recordedCount} 个时段`}
-            {allPhotos.length > 0 && ` · ${allPhotos.length} 张照片`}
+            {journal ? "今天还不错" : "How are you feeling?"}
           </p>
         </div>
-        <Link
-          href="/journal"
-          className="text-[12px] text-primary transition-colors hover:text-primary-glow"
-        >
-          {recordedCount > 0 ? "编辑详情 →" : "开始记录 →"}
-        </Link>
+        <EmojiBurst
+          label={journal ? "查看/编辑 →" : "开始记录 →"}
+          emojis="✨,📝,💡,🌱,🎯"
+          burstCount={10}
+          power={8}
+          spread={48}
+          gravity={4}
+          emojiSize={18}
+          objectColor="transparent"
+          textColor="var(--text-tertiary)"
+          radius={12}
+          autoBurst={false}
+          style={{ width: "auto", height: 36, minWidth: 0, minHeight: 0 }}
+          font={{ fontSize: "12px", fontWeight: 500 }}
+          onClick={() => window.setTimeout(() => router.push("/journal"), 220)}
+        />
       </div>
-
-      {/* 时间段可视化 + 心情详情 */}
-      <div className="mt-3 rounded-xl border border-white/5 bg-surface/30 p-4">
-        {/* 时间段心情条 */}
-        <div className="flex items-center gap-2">
-          {TIME_SLOTS.map((slot) => {
-            const entry = getSlotEntry(slot.key);
-            const subSlot = entry ? (slot.subSlots.find((ss) => ss.key === entry.timeSlot) ?? slot.subSlots[0]) : null;
-            return (
-              <Link
-                key={slot.key}
-                href="/journal"
-                className="group flex flex-1 flex-col items-center gap-1 rounded-lg py-2 transition-all duration-200 hover:bg-surface-elevated/40"
-              >
-                <span className={`text-lg transition-opacity ${entry ? "opacity-100" : "opacity-25"}`}>
-                  {slot.icon}
-                </span>
-                {entry ? (
-                  <span className="text-lg">{MOOD_EMOJIS[entry.moodIndex]}</span>
-                ) : (
-                  <span className="h-4 w-4 rounded-full border border-white/10" />
-                )}
-                <span className="text-[9px] font-medium uppercase tracking-wider text-text-tertiary">
-                  {slot.label}
-                </span>
-                {subSlot && (
-                  <span className="text-[8px] text-text-tertiary/60">{subSlot.label}</span>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-
-        {/* 心情统计 */}
-        {avgMood !== null && (
-          <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
-            <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
-              <span>今日平均心情</span>
-              <span className="text-base">{MOOD_EMOJIS[avgMood]}</span>
-              <span className="text-[11px] text-text-tertiary/70">{MOOD_LABELS[avgMood]}</span>
-            </div>
-            {hasAnyContent && latestEntry && (
-              <span className="max-w-[50%] truncate text-right text-[11px] text-text-tertiary/70">
-                最新: {latestEntry.content}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* 未记录提示 */}
-        {recordedCount === 0 && (
-          <div className="mt-3 text-center">
-            <p className="text-[12px] text-text-tertiary">点击时间段开始记录你的心情</p>
-          </div>
-        )}
+      <div className="mt-3 flex items-center gap-2">
+        {MOOD_EMOJIS.map((m, i) => (
+          <span
+            key={m}
+            className={`flex h-11 w-11 items-center justify-center rounded-[12px] text-xl
+              ${journal?.moodIndex === i
+                ? "bg-primary/12 ring-1 ring-primary/40"
+                : "bg-surface/40 opacity-50"
+              }
+            `}
+          >
+            {m}
+          </span>
+        ))}
       </div>
-
-      {/* 照片墙 */}
-      {allPhotos.length > 0 && (
-        <Link href="/journal" className="block mt-4">
-          <div className="rounded-xl border border-white/5 bg-surface/30 p-4 transition-colors hover:bg-surface/50">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
-                今日照片 · {allPhotos.length}
-              </span>
-              <span className="text-[10px] text-primary/80">查看全部 →</span>
-            </div>
-            <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
-              {allPhotos.slice(0, 5).map((url, i) => (
-                <div
-                  key={url}
-                  className="relative aspect-square overflow-hidden rounded-lg bg-surface/40 ring-1 ring-white/5"
-                >
-                  <img
-                    src={resolveMediaUrl(url)}
-                    alt={`daily-photo-${i}`}
-                    className="h-full w-full object-cover"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
-                    }}
-                  />
-                </div>
-              ))}
-              {allPhotos.length > 5 && (
-                <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-surface-elevated/60 ring-1 ring-white/5">
-                  <span className="text-[13px] font-semibold text-text-primary">
-                    +{allPhotos.length - 5}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        </Link>
-      )}
-
-      {/* 各时段小记卡片 */}
-      {entries.length > 0 && (
-        <div className="mt-4 space-y-2">
-          {entries.map((entry) => {
-            const moodMeta = MOODS[entry.moodIndex];
-            const mainSlot = TIME_SLOTS.find((s) =>
-              s.subSlots.some((ss) => ss.key === entry.timeSlot)
-            );
-            const subSlot = mainSlot?.subSlots.find((ss) => ss.key === entry.timeSlot);
-            return (
-              <Link
-                key={entry.id}
-                href="/journal"
-                className="block rounded-xl border border-white/5 bg-surface/20 p-3 transition-all duration-200 hover:bg-surface/40 hover:border-white/10"
-              >
-                <div className="flex items-start gap-3">
-                  {/* 左侧: 时段 + 心情 */}
-                  <div className="flex w-[84px] shrink-0 flex-col items-center gap-1 rounded-lg bg-surface/40 py-2">
-                    <span className="text-xs opacity-70">{mainSlot?.icon}</span>
-                    <span className="text-lg">{moodMeta?.emoji}</span>
-                    <span className="text-[9px] font-medium text-text-tertiary">
-                      {subSlot?.label ?? mainSlot?.label ?? entry.timeSlot}
-                    </span>
-                  </div>
-
-                  {/* 右侧: 内容 + 照片 + 标签 */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-medium text-text-secondary">
-                        {moodMeta?.label}
-                      </span>
-                      {entry.tags && entry.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {entry.tags.slice(0, 3).map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] text-primary/90"
-                            >
-                              #{tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {entry.content && (
-                      <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-text-primary/90">
-                        {entry.content}
-                      </p>
-                    )}
-                    {entry.photos && entry.photos.length > 0 && (
-                      <div className="mt-2 grid grid-cols-4 gap-1">
-                        {entry.photos.slice(0, 4).map((p, i) => (
-                          <div
-                            key={`${entry.id}-${i}`}
-                            className="relative aspect-square overflow-hidden rounded-md bg-surface/40"
-                          >
-                            <img
-                              src={resolveMediaUrl(p)}
-                              alt={`entry-photo-${i}`}
-                              className="h-full w-full object-cover"
-                              onError={(e) => {
-                                (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
-                              }}
-                            />
-                            {i === 3 && entry.photos!.length > 4 && (
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                                <span className="text-[11px] font-semibold text-white">
-                                  +{entry.photos!.length - 4}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
     </section>
   );
 }

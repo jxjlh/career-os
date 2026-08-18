@@ -12,7 +12,6 @@ class OpenAIProvider(AIProvider):
     def __init__(self) -> None:
         settings = get_settings()
         self.api_key = settings.openai_api_key
-        self.base_url = settings.openai_base_url.rstrip("/")
         self.model = settings.openai_model
 
     async def complete(self, messages, response_format=None, **kwargs) -> str:
@@ -27,7 +26,7 @@ class OpenAIProvider(AIProvider):
             payload["response_format"] = {"type": response_format}
         headers = {"Authorization": f"Bearer {self.api_key}"}
         async with httpx.AsyncClient(timeout=30, headers=headers) as client:
-            resp = await client.post(f"{self.base_url}/chat/completions", json=payload)
+            resp = await client.post("https://api.openai.com/v1/chat/completions", json=payload)
             resp.raise_for_status()
             data = resp.json()
         return data["choices"][0]["message"]["content"]

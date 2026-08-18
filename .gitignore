@@ -39,3 +39,4 @@ apps/api/media/
 skills-lock.json
 .vercel
 .env*
+.originkit/

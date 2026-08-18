@@ -16,15 +16,13 @@ export function LifeStats() {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
-  const { data, isLoading } = useQuery<{ data: Journal[] }>({
+  const { data, isLoading } = useQuery<{ data: Journal | null }>({
     queryKey: ["journal", todayStr],
     queryFn: () => journalApi.getByDate(todayStr),
     staleTime: 0,
   });
 
-  const journals = data?.data ?? [];
-  // 取最新的一条作为主要展示
-  const journal = journals.length > 0 ? journals[journals.length - 1] : null;
+  const journal = data?.data;
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);

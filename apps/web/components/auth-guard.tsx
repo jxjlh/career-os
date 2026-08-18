@@ -16,14 +16,10 @@ const TOKEN_KEY = "career_os_token";
 
 const APP_PREFIXES = [
   "/analytics",
-  "/chat",
-  "/contacts",
   "/career",
   "/dashboard",
-  "/english",
   "/explore",
   "/interviews",
-  "/journal",
   "/jobs",
   "/library",
   "/life",

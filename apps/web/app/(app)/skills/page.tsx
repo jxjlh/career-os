@@ -73,6 +73,10 @@ export default function SkillsPage() {
       if (id === selectedId) setSelectedId("");
       void queryClient.invalidateQueries({ queryKey: ["skill-matrix"] });
     },
+    onError: (error: any) => {
+      const msg = error?.message || "删除技能失败，请稍后重试";
+      alert(msg);
+    },
   });
 
   const updateProgress = useMutation({

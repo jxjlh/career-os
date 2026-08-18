@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Briefcase, FileText, Image as ImageIcon, Loader2, Upload, X } from "lucide-react";
+import { Briefcase, Download, FileText, Image as ImageIcon, Loader2, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button, Card, Input, SectionHeader, Textarea } from "@/components/ui";
@@ -19,33 +19,59 @@ function formatBytes(size?: number | null): string {
 
 function ProjectFileAsset({ projectId, file }: { projectId: string; file: any }) {
   const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     let mounted = true;
+    setLoading(true);
     apiFetch<{ data: { url: string } }>(`/projects/${projectId}/files/${file.id}/download`)
       .then((res) => {
-        if (mounted) setUrl(res.data.url);
+        if (mounted) { setUrl(res.data.url); setLoading(false); }
       })
-      .catch(() => {});
-    return () => {
-      mounted = false;
-    };
+      .catch(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
   }, [projectId, file.id]);
 
+  const handleDownload = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!url) return;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.originalName || "download";
+    a.target = "_blank";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   return (
-    <a
-      href={url || undefined}
-      target="_blank"
-      rel="noreferrer"
-      className="flex items-center gap-2 rounded-[8px] border border-border bg-surface px-2.5 py-1.5 text-xs text-text transition-colors hover:border-primary/35"
-    >
-      {file.fileType === "image" && url ? (
+    <div className="flex items-center gap-2 rounded-[8px] border border-border bg-surface px-2.5 py-1.5 text-xs text-text transition-colors hover:border-primary/35">
+      {loading ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
+      ) : file.fileType === "image" && url ? (
         <img src={url} alt="" className="h-6 w-6 rounded-[4px] object-cover" />
       ) : (
         <FileText className="h-3.5 w-3.5 text-muted" />
       )}
-      <span className="min-w-0 flex-1 truncate">{file.originalName}</span>
+      <a
+        href={url || undefined}
+        target="_blank"
+        rel="noreferrer"
+        className="min-w-0 flex-1 truncate hover:text-primary"
+      >
+        {file.originalName}
+      </a>
       {formatBytes(file.sizeBytes) && <span className="shrink-0 text-muted">{formatBytes(file.sizeBytes)}</span>}
-    </a>
+      {url && (
+        <button
+          onClick={handleDownload}
+          className="shrink-0 rounded p-1 text-muted transition-colors hover:bg-primary/10 hover:text-primary"
+          aria-label="下载文件"
+          title="下载"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
   );
 }
 

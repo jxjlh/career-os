@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -19,7 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
@@ -586,12 +584,10 @@ class BookmarkTag(Base):
 
 
 class ReadingBook(Base):
-    """用户的阅读书单、进度和阅读计划."""
+    """用户的阅读书单、进度和阅读计划。"""
 
     __tablename__ = "reading_books"
-    __table_args__ = (
-        UniqueConstraint("user_id", "title", "author", name="uq_reading_books_user_title_author"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "title", "author", name="uq_reading_books_user_title_author"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
@@ -601,7 +597,7 @@ class ReadingBook(Base):
     cover_url: Mapped[str | None] = mapped_column(Text)
     source_url: Mapped[str | None] = mapped_column(Text)
     isbn: Mapped[str | None] = mapped_column(String(32))
-    status: Mapped[str] = mapped_column(String(16), default="want", index=True)  # want/reading/finished/unread
+    status: Mapped[str] = mapped_column(String(16), default="want", index=True)
     current_page: Mapped[int] = mapped_column(Integer, default=0)
     total_pages: Mapped[int | None] = mapped_column(Integer)
     progress_percent: Mapped[float] = mapped_column(Float, default=0)
@@ -1161,228 +1157,16 @@ class CoachTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
-# ── Sprint 12 好友聊天与群组 ─────────────────────────────────────
-class ChatConversation(Base):
-    """聊天会话: 私聊 (direct) 和群聊 (group). 私聊会话两人共享一个会话ID."""
-
-    __tablename__ = "chat_conversations"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    conversation_type: Mapped[str] = mapped_column(String(16), default="direct", index=True)  # direct | group
-    name: Mapped[str | None] = mapped_column(String(120))  # 群聊名称
-    avatar_url: Mapped[str | None] = mapped_column(Text)  # 群聊头像
-    owner_id: Mapped[str | None] = mapped_column(ForeignKey("profiles.id", ondelete="SET NULL"), index=True)  # 群主
-    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    last_message_preview: Mapped[str | None] = mapped_column(String(500))  # 最后一条消息预览
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
-
-    members: Mapped[list["ConversationMember"]] = relationship(back_populates="conversation")
-
-
-class ConversationMember(Base):
-    """会话成员: 私聊两人, 群聊多人. 用于查询用户的所有会话."""
-
-    __tablename__ = "conversation_members"
-    __table_args__ = (
-        UniqueConstraint("conversation_id", "user_id", name="uq_conversation_members_pair"),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    conversation_id: Mapped[str] = mapped_column(ForeignKey("chat_conversations.id", ondelete="CASCADE"), index=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
-    role: Mapped[str] = mapped_column(String(16), default="member")  # owner | admin | member
-    last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 最后已读时间
-    muted: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否静音
-    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-
-    conversation: Mapped["ChatConversation"] = relationship(back_populates="members")
-    user: Mapped["Profile"] = relationship()
-
-
-class ChatMessage(Base):
-    """聊天消息: 支持文本、图片、系统消息. 图片存储路径可下载."""
-
-    __tablename__ = "chat_messages"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    conversation_id: Mapped[str] = mapped_column(ForeignKey("chat_conversations.id", ondelete="CASCADE"), index=True)
-    sender_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="SET NULL"), index=True)
-    message_type: Mapped[str] = mapped_column(String(16), default="text", index=True)  # text | image | system
-    content: Mapped[str | None] = mapped_column(Text)  # 文本内容或图片URL
-    # 图片相关
-    image_url: Mapped[str | None] = mapped_column(Text)  # 图片URL (Supabase Storage)
-    image_width: Mapped[int | None] = mapped_column(Integer)
-    image_height: Mapped[int | None] = mapped_column(Integer)
-    # 系统消息类型
-    system_action: Mapped[str | None] = mapped_column(String(40))  # added_member | removed_member | renamed | ...
-    system_meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    # 引用回复
-    reply_to_id: Mapped[str | None] = mapped_column(ForeignKey("chat_messages.id", ondelete="SET NULL"))
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 软删除
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
-
-    conversation: Mapped["ChatConversation"] = relationship()
-    sender: Mapped["Profile"] = relationship()
-
-
-class MessageRead(Base):
-    """消息已读状态: 记录每条消息的已读用户, 用于显示"已读"状态."""
-
-    __tablename__ = "message_reads"
-    __table_args__ = (
-        UniqueConstraint("message_id", "user_id", name="uq_message_reads_pair"),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    message_id: Mapped[str] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
-    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-
-
-# ── Sprint 13 English Learning ─────────────────────────────────────
-class WordBook(Base):
-    """词书: CET-4/CET-6/考研/雅思/托福. 由种子 JSON 幂等写入."""
-
-    __tablename__ = "word_books"
-    __table_args__ = (UniqueConstraint("code", name="uq_word_books_code"),)
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    code: Mapped[str] = mapped_column(String(32))  # cet4 / cet6 / kaoyan / ielts / toefl
-    name: Mapped[str] = mapped_column(String(80))
-    level: Mapped[str] = mapped_column(String(32))
-    description: Mapped[str | None] = mapped_column(Text)
-    total_words: Mapped[int] = mapped_column(Integer, default=0)
-    sort_order: Mapped[int] = mapped_column(SmallInteger, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-
-
-class Word(Base):
-    """单词: 属于某词书."""
-
-    __tablename__ = "words"
-    __table_args__ = (
-        UniqueConstraint("book_id", "spelling", name="uq_words_book_spelling"),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    book_id: Mapped[str] = mapped_column(ForeignKey("word_books.id", ondelete="CASCADE"), index=True)
-    spelling: Mapped[str] = mapped_column(String(120), index=True)
-    phonetic: Mapped[str | None] = mapped_column(String(120))
-    pos: Mapped[str | None] = mapped_column(String(40))
-    meaning: Mapped[str] = mapped_column(Text)
-    example_en: Mapped[str | None] = mapped_column(Text)
-    example_zh: Mapped[str | None] = mapped_column(Text)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0)
-    ai_mnemonic: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-
-
-class UserWord(Base):
-    """用户对某单词的 SRS 状态. 一人一词一条."""
-
-    __tablename__ = "user_words"
-    __table_args__ = (
-        UniqueConstraint("user_id", "word_id", name="uq_user_words_user_word"),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
-    word_id: Mapped[str] = mapped_column(ForeignKey("words.id", ondelete="CASCADE"), index=True)
-    book_id: Mapped[str] = mapped_column(ForeignKey("word_books.id", ondelete="CASCADE"), index=True)
-    status: Mapped[str] = mapped_column(String(16), default="new", index=True)  # new/learning/review/mastered
-    ease_factor: Mapped[float] = mapped_column(Float, default=2.5)
-    interval_days: Mapped[int] = mapped_column(Integer, default=0)
-    repetitions: Mapped[int] = mapped_column(SmallInteger, default=0)
-    due_date: Mapped[date] = mapped_column(Date, default=date.today, index=True)
-    last_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    review_count: Mapped[int] = mapped_column(Integer, default=0)
-    is_starred: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
-
-
-class WordReviewLog(Base):
-    """每次复习日志: 词、评分、前后状态."""
-
-    __tablename__ = "word_review_logs"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
-    word_id: Mapped[str] = mapped_column(ForeignKey("words.id", ondelete="CASCADE"), index=True)
-    rating: Mapped[str] = mapped_column(String(16))  # again/hard/good/easy
-    prev_status: Mapped[str] = mapped_column(String(16))
-    new_status: Mapped[str] = mapped_column(String(16))
-    prev_interval: Mapped[int] = mapped_column(Integer, default=0)
-    new_interval: Mapped[int] = mapped_column(Integer, default=0)
-    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
-
-
-class ListeningMaterial(Base):
-    """听力材料: 标题/原文/翻译/难度/题目. 音频由 TTS 懒合成."""
-
-    __tablename__ = "listening_materials"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    book_id: Mapped[str | None] = mapped_column(ForeignKey("word_books.id", ondelete="SET NULL"), index=True)
-    title: Mapped[str] = mapped_column(String(200))
-    transcript: Mapped[str] = mapped_column(Text)
-    translation: Mapped[str | None] = mapped_column(Text)
-    difficulty: Mapped[str] = mapped_column(String(16), default="medium", index=True)
-    duration_seconds: Mapped[int | None] = mapped_column(Integer)
-    audio_url: Mapped[str | None] = mapped_column(Text)
-    audio_status: Mapped[str] = mapped_column(String(16), default="pending")  # pending/ready/failed
-    questions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
-    is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-
-
-class ListeningAttempt(Base):
-    """用户某次听力答题记录."""
-
-    __tablename__ = "listening_attempts"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
-    material_id: Mapped[str] = mapped_column(ForeignKey("listening_materials.id", ondelete="CASCADE"), index=True)
-    question_index: Mapped[int] = mapped_column(SmallInteger, default=0)
-    user_answer: Mapped[str | None] = mapped_column(Text)
-    is_correct: Mapped[bool | None] = mapped_column(Boolean)
-    duration_seconds: Mapped[int | None] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-
-
-class EnglishStudySession(Base):
-    """英语学习会话: 一次连续学习 (新学/复习/时长). 用于打卡统计."""
-
-    __tablename__ = "english_study_sessions"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
-    session_date: Mapped[date] = mapped_column(Date, default=date.today, index=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    duration_minutes: Mapped[int] = mapped_column(Integer, default=0)
-    new_words: Mapped[int] = mapped_column(Integer, default=0)
-    review_words: Mapped[int] = mapped_column(Integer, default=0)
-    mastered_words: Mapped[int] = mapped_column(Integer, default=0)
-    listening_count: Mapped[int] = mapped_column(Integer, default=0)
-    listening_correct: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-
-
 # ── Sprint 11 Daily Journal ────────────────────────────────────────
 class DailyJournal(Base):
-    """每日小记: 记录当天心情 + 内容, 可关联目标/技能. 支持一天多个时间段."""
+    """每日小记: 记录当天心情 + 内容, 可关联目标/技能. 一人一天一条."""
 
     __tablename__ = "daily_journals"
-    __table_args__ = (UniqueConstraint("user_id", "journal_date", "time_slot", name="uq_daily_journal_user_date_slot"),)
+    __table_args__ = (UniqueConstraint("user_id", "journal_date", name="uq_daily_journal_user_date"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
     journal_date: Mapped[date] = mapped_column(Date, index=True)
-    # 时间段: morning / afternoon / evening / night
-    time_slot: Mapped[str] = mapped_column(String(20), default="morning", index=True)
     # 心情: emoji 序号 0-4, 对应 😵😐🙂😎✨
     mood_index: Mapped[int] = mapped_column(SmallInteger)
     content: Mapped[str | None] = mapped_column(Text)

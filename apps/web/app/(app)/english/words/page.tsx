@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, ChevronRight, Flame, GraduationCap, Loader2, Calendar, Target, RotateCcw, AlertTriangle, List } from "lucide-react";
+import { BookOpen, ChevronRight, Flame, GraduationCap, Loader2, Calendar, Target, RotateCcw, AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -82,7 +82,7 @@ export default function WordsPage() {
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">单词学习</h1>
-        <p className="mt-1 text-sm text-muted">每本词书使用完整词书关系数据，按周计划科学学习</p>
+        <p className="mt-1 text-sm text-muted">选择词书，按周计划科学学习</p>
       </div>
 
       {loading && (
@@ -198,15 +198,6 @@ export default function WordsPage() {
                     {startingId === book.id ? "初始化中..." : "启用此词书"}
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  title="查看完整词表"
-                  onClick={() => router.push(`/english/words/catalog?bookId=${book.id}`)}
-                >
-                  <List className="h-3.5 w-3.5" />
-                  完整词表
-                </Button>
               </div>
             </Card>
           );
@@ -230,7 +221,7 @@ export default function WordsPage() {
           </li>
           <li className="flex items-start gap-2">
             <span className="mt-0.5 text-danger">•</span>
-            <span>评分&quot;陌生&quot;的单词会立即加入复习队列，确保掌握</span>
+            <span>评分"陌生"的单词会立即加入复习队列，确保掌握</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="mt-0.5 text-warning">•</span>
