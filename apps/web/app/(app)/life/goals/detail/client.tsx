@@ -119,7 +119,7 @@ export default function LifeGoalDetailPage() {
         <h2 className="text-sm font-semibold">人生记录</h2>
         {items.length === 0 && (
           <p className="rounded-[10px] border border-dashed border-border bg-surface p-6 text-center text-[13px] text-muted">
-            还没有记录，点击"记录这一刻"开始。
+            还没有记录，点击&ldquo;记录这一刻&rdquo;开始。
           </p>
         )}
         {items.map((record: any) => (
