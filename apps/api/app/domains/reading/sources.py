@@ -124,6 +124,10 @@ async def _google_books_search(search_query: str, limit: int) -> list[dict[str, 
 
 async def _open_library_search(search_query: str, limit: int) -> list[dict[str, Any]]:
     """Fallback search using Open Library API (free, no key required)."""
+    # Open Library requires at least 3 characters for search queries
+    if len(search_query.strip()) < 3:
+        logger.info("Open Library search skipped: query too short (%r), need >= 3 chars", search_query)
+        return []
     params = {"q": search_query, "limit": min(limit * 3, 40), "fields": "key,title,author_name,cover_i,isbn,publish_year,first_sentence"}
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
