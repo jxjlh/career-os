@@ -906,6 +906,7 @@ def serialize_import(finance_import: FinanceImport) -> dict[str, Any]:
     )
     return {
         "id": finance_import.id,
+        "sourceFilename": (finance_import.source_metadata or {}).get("filename"),
         "status": finance_import.status,
         "rows": rows,
         "needsReview": needs_review,

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -229,3 +230,188 @@ def test_ocr_failure_deletes_temporary_object_before_clearing_sensitive_data(mon
         assert failed_import.status == "failed"
         assert failed_import.temporary_object_path is None
         assert failed_import.raw_ocr_text is None
+
+
+def test_batch_import_keeps_successful_reviews_and_cleans_failed_image(monkeypatch) -> None:
+    deleted: list[str] = []
+    stored: list[str] = []
+
+    class PartiallyFailingOcrProvider:
+        def extract(self, image: bytes, content_type: str):
+            if image == b"bad-image":
+                raise RuntimeError("upstream unavailable")
+            return FakeOcrProvider().extract(image, content_type)
+
+    async def _store(path: str, content: bytes, content_type: str) -> str:
+        stored.append(path)
+        return path
+
+    async def _delete(path: str) -> None:
+        deleted.append(path)
+
+    monkeypatch.setattr("app.domains.finance.ocr.get_holding_ocr_provider", lambda: PartiallyFailingOcrProvider())
+    monkeypatch.setattr("app.domains.finance.router.upload_object", _store)
+    monkeypatch.setattr("app.domains.finance.service.delete_object", _delete)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/finance/imports/screenshots",
+            headers=HEADERS,
+            files=[
+                ("files", ("first.png", b"image", "image/png")),
+                ("files", ("second.png", b"bad-image", "image/png")),
+            ],
+        )
+
+    assert response.status_code == 201, response.text
+    payload = response.json()["data"]
+    assert len(payload["imports"]) == 1
+    assert payload["imports"][0]["status"] == "review"
+    assert payload["imports"][0]["sourceFilename"] == "first.png"
+    assert payload["failures"] == [{"filename": "second.png", "code": "OCR_EXTRACTION_FAILED"}]
+    assert len(stored) == 2
+    assert deleted == [stored[1]]
+
+
+def test_batch_import_rejects_more_than_nine_images_before_storing(monkeypatch) -> None:
+    async def _store(path: str, content: bytes, content_type: str) -> str:
+        raise AssertionError("batch validation must run before storage")
+
+    monkeypatch.setattr("app.domains.finance.router.upload_object", _store)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/finance/imports/screenshots",
+            headers=HEADERS,
+            files=[("files", (f"holding-{index}.png", b"image", "image/png")) for index in range(10)],
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "IMPORT_BATCH_TOO_LARGE"
+
+
+def test_openai_vision_fallback_extracts_strict_rows(monkeypatch) -> None:
+    from app.domains.finance import ocr
+
+    captured: dict[str, object] = {}
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"rows":[{"name":"易方达蓝筹精选","symbol":"005827","market":"CN","assetClass":"fund","currency":"CNY","quantity":"100","unitPrice":"1.23","confidence":"0.92"}]}'
+                        }
+                    }
+                ]
+            }
+
+    def _post(url: str, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr(
+        ocr,
+        "get_settings",
+        lambda: SimpleNamespace(
+            finance_ocr_api_url="",
+            finance_ocr_api_key="",
+            finance_ocr_model="gpt-4o-mini",
+            openai_api_key="test-key",
+            openai_base_url="https://vision.example/v1",
+        ),
+    )
+    monkeypatch.setattr(ocr.httpx, "post", _post)
+
+    rows = ocr.get_holding_ocr_provider().extract(b"image", "image/png")
+
+    assert captured["url"] == "https://vision.example/v1/chat/completions"
+    assert captured["headers"] == {"Authorization": "Bearer test-key"}
+    message = captured["json"]["messages"][0]
+    assert message["content"][1]["image_url"]["url"] == "data:image/png;base64,aW1hZ2U="
+    assert rows[0].name == "易方达蓝筹精选"
+    assert rows[0].asset_class == "fund"
+
+
+def test_openai_vision_fallback_rejects_invalid_json_rows(monkeypatch) -> None:
+    from app.core.errors import AppError
+    from app.domains.finance import ocr
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": '{"rows":"not-a-list"}'}}]}
+
+    monkeypatch.setattr(
+        ocr,
+        "get_settings",
+        lambda: SimpleNamespace(
+            finance_ocr_api_url="",
+            finance_ocr_api_key="",
+            finance_ocr_model="gpt-4o-mini",
+            openai_api_key="test-key",
+            openai_base_url="https://vision.example/v1",
+        ),
+    )
+    monkeypatch.setattr(ocr.httpx, "post", lambda *_args, **_kwargs: Response())
+
+    try:
+        ocr.get_holding_ocr_provider().extract(b"image", "image/png")
+    except AppError as exc:
+        assert exc.code == "OCR_EXTRACTION_FAILED"
+    else:
+        raise AssertionError("invalid OCR JSON must not produce fabricated holding rows")
+
+
+def test_ocr_provider_prefers_dedicated_service_then_openai_fallback(monkeypatch) -> None:
+    from app.core.errors import AppError
+    from app.domains.finance import ocr
+
+    monkeypatch.setattr(
+        ocr,
+        "get_settings",
+        lambda: SimpleNamespace(
+            finance_ocr_api_url="https://ocr.example/imports",
+            finance_ocr_api_key="dedicated-key",
+            finance_ocr_model="gpt-4o-mini",
+            openai_api_key="openai-key",
+            openai_base_url="https://vision.example/v1",
+        ),
+    )
+    assert isinstance(ocr.get_holding_ocr_provider(), ocr.HttpHoldingOcrProvider)
+
+    monkeypatch.setattr(
+        ocr,
+        "get_settings",
+        lambda: SimpleNamespace(
+            finance_ocr_api_url="",
+            finance_ocr_api_key="",
+            finance_ocr_model="gpt-4o-mini",
+            openai_api_key="openai-key",
+            openai_base_url="https://vision.example/v1",
+        ),
+    )
+    assert isinstance(ocr.get_holding_ocr_provider(), ocr.OpenAICompatibleVisionHoldingOcrProvider)
+
+    monkeypatch.setattr(
+        ocr,
+        "get_settings",
+        lambda: SimpleNamespace(
+            finance_ocr_api_url="",
+            finance_ocr_api_key="",
+            finance_ocr_model="gpt-4o-mini",
+            openai_api_key="",
+            openai_base_url="https://vision.example/v1",
+        ),
+    )
+    try:
+        ocr.get_holding_ocr_provider()
+    except AppError as exc:
+        assert exc.code == "OCR_NOT_CONFIGURED"
+    else:
+        raise AssertionError("missing OCR credentials must not fabricate recognition")

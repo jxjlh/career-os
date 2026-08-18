@@ -1,5 +1,7 @@
 import { apiFetch } from "@/lib/api";
 
+import { createScreenshotImportForm } from "@/lib/finance-import-form";
+
 export type FinanceMarket = "CN" | "HK" | "US";
 export type FinanceCurrency = "CNY" | "HKD" | "USD";
 export type FinanceAssetClass = "fund" | "etf" | "stock";
@@ -161,6 +163,7 @@ export interface FinanceImportRow {
 
 export interface FinanceImport {
   id: string;
+  sourceFilename: string | null;
   status: "processing" | "review" | "confirmed" | "discarded" | "failed" | string;
   rows: FinanceImportRow[];
   needsReview: boolean;
@@ -170,6 +173,16 @@ export interface FinanceImport {
   processedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface FinanceScreenshotImportFailure {
+  filename: string;
+  code: string;
+}
+
+export interface FinanceScreenshotImportBatch {
+  imports: FinanceImport[];
+  failures: FinanceScreenshotImportFailure[];
 }
 
 export type ProfilePatch = Partial<Pick<FinanceProfile, "riskPreference" | "baseCurrency" | "targetAllocation" | "reserveCashRatio" | "maxInstrumentConcentration" | "maxPortfolioDrawdown" | "maxInstrumentDrawdown" | "investmentHorizon" | "alertSettings">>;
@@ -226,6 +239,9 @@ export const financeApi = {
     const form = new FormData();
     form.append("file", file);
     return envelope<FinanceImport>("/finance/imports/screenshot", { method: "POST", body: form });
+  },
+  uploadScreenshots: (files: File[]) => {
+    return envelope<FinanceScreenshotImportBatch>("/finance/imports/screenshots", { method: "POST", body: createScreenshotImportForm(files) });
   },
   getImport: (id: string) => envelope<FinanceImport>(`/finance/imports/${id}`),
   updateImport: (id: string, rows: FinanceImportRow[]) => envelope<FinanceImport>(`/finance/imports/${id}`, json("PATCH", { rows })),
