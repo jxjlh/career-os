@@ -35,6 +35,7 @@ const zh = {
     chat: "消息",
     friends: "好友",
     english: "英语学习",
+    finance: "个人理财",
   },
   common: {
     search: "搜索",
@@ -378,6 +379,7 @@ const en: Dictionary = {
     chat: "Messages",
     friends: "Friends",
     english: "English",
+    finance: "Personal Finance",
   },
   common: {
     search: "Search",

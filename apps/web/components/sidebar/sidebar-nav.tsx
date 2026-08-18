@@ -8,6 +8,7 @@ import {
   Home,
   Images,
   Library,
+  WalletCards,
   MapPin,
   NotebookPen,
   Search,
@@ -49,6 +50,7 @@ const NAV: NavItem[] = [
   { key: "library", href: "/library", icon: Library, group: "grow" },
   { key: "projects", href: "/projects", icon: FolderKanban, group: "grow" },
   { key: "english", href: "/english", icon: BookOpen, group: "grow" },
+  { key: "finance", href: "/finance", icon: WalletCards, group: "grow" },
 ];
 
 const GROUP_ORDER: GroupKey[] = ["now", "grow"];
