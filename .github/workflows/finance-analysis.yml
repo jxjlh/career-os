@@ -1,0 +1,35 @@
+name: Run personal finance analysis
+
+on:
+  schedule:
+    # 17:30 China Standard Time: after mainland China and Hong Kong market close.
+    - cron: "30 9 * * 1-5"
+    # 22:30 UTC: after the US market close in both daylight-saving and standard time.
+    - cron: "30 22 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FINANCE_ANALYSIS_API_URL: ${{ secrets.FINANCE_ANALYSIS_API_URL }}
+      FINANCE_SCHEDULER_TOKEN: ${{ secrets.FINANCE_SCHEDULER_TOKEN }}
+    steps:
+      - name: Verify scheduler configuration
+        run: |
+          if [ -z "$FINANCE_ANALYSIS_API_URL" ] || [ -z "$FINANCE_SCHEDULER_TOKEN" ]; then
+            echo "FINANCE_ANALYSIS_API_URL and FINANCE_SCHEDULER_TOKEN secrets must both be configured."
+            exit 1
+          fi
+
+      - name: Trigger analysis
+        run: >-
+          curl --fail-with-body --retry 3 --retry-all-errors --max-time 60
+          -H "X-Finance-Scheduler-Token: $FINANCE_SCHEDULER_TOKEN"
+          -H "Content-Type: application/json"
+          --data '{"scope":"all_markets"}'
+          "$FINANCE_ANALYSIS_API_URL/api/v1/finance/analysis/run"
