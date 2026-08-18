@@ -1,16 +1,20 @@
 import asyncio
+import secrets
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.security import get_current_user
 from app.core.storage import delete_object, upload_object
-from app.db.models import Profile
+from app.db.models import FinanceProfile, Profile
 from app.domains.finance import ocr
 from app.domains.finance.repository import FinanceRepository
 from app.domains.finance.schemas import (
@@ -266,12 +270,37 @@ def get_dashboard(current_user: CurrentUser, db: DbSession) -> dict:
     return {"data": FinanceService(db).build_dashboard(current_user.id)}
 
 
-@router.post("/finance/analysis/run")
-async def run_analysis(current_user: CurrentUser, db: DbSession) -> dict:
+@router.post("/finance/analysis/run", response_model=None)
+async def run_analysis(
+    db: DbSession,
+    authorization: Annotated[str | None, Header()] = None,
+    x_dev_user_id: Annotated[str | None, Header()] = None,
+    scheduler_token: Annotated[str | None, Header(alias="X-Finance-Scheduler-Token")] = None,
+) -> dict | JSONResponse:
+    if authorization:
+        current_user = get_current_user(db=db, authorization=authorization, x_dev_user_id=x_dev_user_id)
+        service = FinanceService(db)
+        run = service.run_analysis(current_user.id)
+        run = await service.enrich_analysis_explanation(current_user.id, run.id)
+        return {"data": serialize_analysis_run(run)}
+
+    configured_token = get_settings().finance_scheduler_token
+    if not configured_token or not scheduler_token or not secrets.compare_digest(configured_token, scheduler_token):
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "UNAUTHORIZED", "message": "Scheduler authentication required"},
+        )
+
     service = FinanceService(db)
-    run = service.run_analysis(current_user.id)
-    run = await service.enrich_analysis_explanation(current_user.id, run.id)
-    return {"data": serialize_analysis_run(run)}
+    user_ids = [user_id for (user_id,) in db.query(FinanceProfile.user_id).all()]
+    for user_id in user_ids:
+        run = service.run_analysis(user_id)
+        await service.enrich_analysis_explanation(user_id, run.id)
+
+    return JSONResponse(
+        status_code=202,
+        content=jsonable_encoder({"data": {"scope": "all_markets", "processedUsers": len(user_ids)}}),
+    )
 
 
 @router.get("/finance/analysis/latest")
