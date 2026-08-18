@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import secrets
 from pathlib import Path
 from typing import Annotated
@@ -250,12 +251,15 @@ async def _process_import_ocr_async(
     This avoids Render's ~60s gateway timeout by returning the processing import to
     the client before OCR begins. The client polls GET /finance/imports/{id}.
     """
-    # create_task spawns this outside HTTP; open a fresh DB session to avoid sharing
+    logger = logging.getLogger("finance.ocr")
     db: Session = next(get_db())  # type: ignore[arg-type]
     try:
         service = FinanceService(db)
         try:
+            t0 = asyncio.get_running_loop().time()
             extracted = await provider.extract_async(image, content_type or "image/png")
+            elapsed = asyncio.get_running_loop().time() - t0
+            logger.info("OCR done import=%s rows=%d elapsed=%.1fs", import_id, len(extracted), elapsed)
             if not extracted:
                 raise AppError(
                     code="OCR_NO_HOLDINGS_FOUND",

@@ -16,6 +16,7 @@ dependencies = [
   "cryptography>=43,<45",
   "websockets>=12,<18",
   "psycopg[binary]>=3.2,<4",
+  "Pillow>=10,<12",
 ]
 
 [dependency-groups]
