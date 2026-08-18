@@ -784,7 +784,7 @@ class FinanceService:
             market_value_by_currency[instrument.currency] += market_value
             total_cost_basis += cost_basis
             total_market_value += market_value
-            if instrument.asset_class == "cash" or instrument.instrument_type == "cash":
+            if instrument.asset_class == "cash" or instrument.product_type == "cash":
                 cash_value += market_value
             else:
                 total_positions_cost += cost_basis
