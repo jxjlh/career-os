@@ -124,41 +124,83 @@ def delete_transaction(transaction_id: str, current_user: CurrentUser, db: DbSes
     FinanceService(db).delete_transaction(current_user.id, transaction_id)
 
 
-@router.post("/finance/imports/screenshot", status_code=201)
+@router.post("/finance/imports/screenshot", status_code=202)
 async def import_holdings_screenshot(
     current_user: CurrentUser,
     db: DbSession,
     file: Annotated[UploadFile, File(...)],
 ) -> dict:
+    """Upload holding screenshot and start OCR in the background. Returns immediately with processing status."""
     image = await _read_import_image(file)
+    stored_path = await _store_import_image(current_user, file, image)
+    service = FinanceService(db)
+    finance_import = service.create_import(
+        current_user.id,
+        stored_path,
+        {
+            "filename": Path(file.filename or "holding-image").name,
+            "contentType": file.content_type,
+            "sizeBytes": len(image),
+            "mode": "async_ocr",
+        },
+    )
     provider = ocr.get_holding_ocr_provider()
-    finance_import = await _create_import_from_image(current_user, db, file, image, provider)
+    # Fire and forget OCR so we don't block HTTP response > Render 60s gateway timeout
+    asyncio.create_task(
+        _process_import_ocr_async(
+            user_id=current_user.id,
+            import_id=finance_import.id,
+            image=image,
+            content_type=file.content_type,
+            provider=provider,
+        )
+    )
     return {"data": serialize_import(finance_import)}
 
 
-@router.post("/finance/imports/screenshots", status_code=201)
+@router.post("/finance/imports/screenshots", status_code=202)
 async def import_holdings_screenshots(
     current_user: CurrentUser,
     db: DbSession,
     files: Annotated[list[UploadFile], File(...)],
 ) -> dict:
+    """Batch upload holding screenshots. Each one OCRs in the background and returns immediately."""
     if len(files) > _IMPORT_BATCH_LIMIT:
         raise AppError(
             code="IMPORT_BATCH_TOO_LARGE",
             message="一次最多上传 9 张持仓截图",
             status=422,
         )
-    images = [(file, await _read_import_image(file)) for file in files]
     provider = ocr.get_holding_ocr_provider()
+    service = FinanceService(db)
     imports = []
     failures = []
-    for file, image in images:
+    for file in files:
         try:
-            finance_import = await _create_import_from_image(current_user, db, file, image, provider)
+            image = await _read_import_image(file)
+            stored_path = await _store_import_image(current_user, file, image)
+            finance_import = service.create_import(
+                current_user.id,
+                stored_path,
+                {
+                    "filename": Path(file.filename or "holding-image").name,
+                    "contentType": file.content_type,
+                    "sizeBytes": len(image),
+                    "mode": "async_ocr",
+                },
+            )
+            imports.append(serialize_import(finance_import))
+            asyncio.create_task(
+                _process_import_ocr_async(
+                    user_id=current_user.id,
+                    import_id=finance_import.id,
+                    image=image,
+                    content_type=file.content_type,
+                    provider=provider,
+                )
+            )
         except AppError as exc:
             failures.append({"filename": Path(file.filename or "holding-image").name, "code": exc.code})
-        else:
-            imports.append(serialize_import(finance_import))
     return {"data": {"imports": imports, "failures": failures}}
 
 
@@ -181,66 +223,70 @@ async def _read_import_image(file: UploadFile) -> bytes:
     return image
 
 
-async def _create_import_from_image(
-    current_user: Profile,
-    db: Session,
-    file: UploadFile,
-    image: bytes,
-    provider: ocr.HoldingOcrProvider,
-) -> FinanceImport:
+async def _store_import_image(current_user: Profile, file: UploadFile, image: bytes) -> str:
     assert file.content_type in _IMPORT_SUFFIX_BY_CONTENT_TYPE
-
     suffix = _IMPORT_SUFFIX_BY_CONTENT_TYPE[file.content_type]
     path = f"finance-imports/{current_user.id}/{uuid4().hex}{suffix}"
-    stored_path = await upload_object(path, image, file.content_type)
-    service = FinanceService(db)
     try:
-        finance_import = service.create_import(
-            current_user.id,
-            stored_path,
-            {
-                "filename": Path(file.filename or "holding-image").name,
-                "contentType": file.content_type,
-                "sizeBytes": len(image),
-            },
-        )
+        return await upload_object(path, image, file.content_type)
     except Exception:
-        await delete_object(stored_path)
+        try:
+            await delete_object(path)
+        except Exception:
+            pass
         raise
+
+
+async def _process_import_ocr_async(
+    *,
+    user_id: str,
+    import_id: str,
+    image: bytes,
+    content_type: str | None,
+    provider: ocr.HoldingOcrProvider,
+) -> None:
+    """Run OCR in the background, outside of the HTTP request context.
+
+    This avoids Render's ~60s gateway timeout by returning the processing import to
+    the client before OCR begins. The client polls GET /finance/imports/{id}.
+    """
+    # create_task spawns this outside HTTP; open a fresh DB session to avoid sharing
+    db: Session = next(get_db())  # type: ignore[arg-type]
     try:
-        extracted = await asyncio.to_thread(provider.extract, image, file.content_type)
-        if not extracted:
-            raise AppError(
-                code="OCR_NO_HOLDINGS_FOUND",
-                message="未识别到可确认的持仓，请使用更清晰截图或手动维护",
-                status=422,
-            )
-        rows = [
-            FinanceImportRow(
-                name=row.name,
-                symbol=row.symbol,
-                market=row.market,
-                asset_class=row.asset_class,
-                currency=row.currency,
-                quantity=row.quantity,
-                unit_price=row.unit_price,
-                confidence=row.confidence,
-            )
-            for row in extracted
-        ]
-        raw_ocr_text = "\n".join(row.raw_text or "" for row in extracted)
-        finance_import = service.set_import_rows(current_user.id, finance_import.id, rows, raw_ocr_text)
-    except AppError as exc:
-        await service.fail_import(current_user.id, finance_import.id, exc.code)
-        raise
-    except Exception as exc:
-        await service.fail_import(current_user.id, finance_import.id, "OCR_EXTRACTION_FAILED")
-        raise AppError(
-            code="OCR_EXTRACTION_FAILED",
-            message="持仓截图识别失败，请稍后重试或改用手动维护",
-            status=503,
-        ) from exc
-    return finance_import
+        service = FinanceService(db)
+        try:
+            extracted = await provider.extract_async(image, content_type or "image/png")
+            if not extracted:
+                raise AppError(
+                    code="OCR_NO_HOLDINGS_FOUND",
+                    message="未识别到可确认的持仓，请使用更清晰截图或手动维护",
+                    status=422,
+                )
+            rows = [
+                FinanceImportRow(
+                    name=row.name,
+                    symbol=row.symbol,
+                    market=row.market,
+                    asset_class=row.asset_class,
+                    currency=row.currency,
+                    quantity=row.quantity,
+                    unit_price=row.unit_price,
+                    confidence=row.confidence,
+                )
+                for row in extracted
+            ]
+            raw_ocr_text = "\n".join(row.raw_text or "" for row in extracted)
+            service.set_import_rows(user_id, import_id, rows, raw_ocr_text)
+        except AppError as exc:
+            await service.fail_import(user_id, import_id, exc.code)
+        except Exception as exc:
+            error_code = "OCR_TIMEOUT" if ocr._is_timeout(exc) else "OCR_EXTRACTION_FAILED"  # type: ignore[attr-defined]
+            await service.fail_import(user_id, import_id, error_code)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 @router.get("/finance/imports/{import_id}")
