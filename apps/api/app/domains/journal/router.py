@@ -92,6 +92,9 @@ def upload_journal_image(
         return {"data": {"url": url}}
     except ValueError as e:
         raise HTTPException(status_code=400, detail={"code": "BAD_REQUEST", "message": str(e)})
+    except RuntimeError as e:
+        logger.error("Journal image upload failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=503, detail={"code": "MEDIA_UPLOAD_FAILED", "message": str(e)}) from e
     except Exception as e:
         logger.error("Journal image upload failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail={"code": "UPLOAD_FAILED", "message": "上传失败，请稍后重试"})

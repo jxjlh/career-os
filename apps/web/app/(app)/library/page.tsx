@@ -108,7 +108,8 @@ function ReadingSection() {
     setSourceSearchBookId(book.id);
     setSourceMessages((current) => ({ ...current, [book.id]: "正在搜索可阅读来源…" }));
     try {
-      const results = await searchBookResources(book.title, false);
+      const searchTerm = book.author ? `${book.title} - ${book.author}` : book.title;
+      const results = await searchBookResources(searchTerm, false);
       setSourceResults((current) => ({ ...current, [book.id]: results.filter((item: any) => item.isBookSource && item.url) }));
       if (results.length === 0) {
         setSourceMessages((current) => ({ ...current, [book.id]: "暂时没有找到可阅读来源，请稍后重试。" }));
@@ -140,7 +141,7 @@ function ReadingSection() {
     <div className="space-y-4">
       <Card className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold">阅读书籍</h2><p className="mt-1 text-xs text-muted">AI 推荐完整出版书籍，也可以搜索书名；系统会记住你的页码、状态和阅读计划。</p></div><Button size="sm" onClick={() => recommend.mutate()} disabled={recommend.isPending}><Sparkles className="h-4 w-4" />AI 推荐好书</Button></div>
-        <div className="mt-4 flex gap-2"><Input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); searchBooks(); } }} placeholder="搜索书名、作者或主题" /><Button variant="outline" onClick={searchBooks} disabled={searching || !query.trim()}>{searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}搜索书籍</Button></div>
+        <div className="mt-4 flex gap-2"><Input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); searchBooks(); } }} placeholder="搜索书名；精确匹配可输入：书名 - 作者" /><Button variant="outline" onClick={searchBooks} disabled={searching || !query.trim()}>{searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}搜索书籍</Button></div>
         {(recommendations.length > 0 || searchResults.length > 0) && <div className="mt-4 grid gap-3 md:grid-cols-2">{[...recommendations.map((item) => ({ ...item, recommendation: true })), ...searchResults].map((item: any, index) => <div key={`${item.title}-${item.url || index}`} className="rounded-xl border border-border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-semibold">{item.title}</p>{item.isExactMatch && <Badge variant="success">精确匹配</Badge>}</div><p className="mt-1 text-xs text-muted">{item.author || item.sourceName || item.provider}</p><p className="mt-2 line-clamp-3 text-xs text-text-secondary">{item.description || item.reason || item.snippet || "可加入书单后设置自己的阅读计划。"}</p><div className="mt-3 flex gap-2"><Button size="sm" onClick={() => void addBook(item)} disabled={createBook.isPending || searching}><Plus className="h-3.5 w-3.5" />加入想看</Button>{item.url && <a href={item.url} target="_blank" rel="noreferrer"><Button size="sm" variant="outline">查看来源<ExternalLink className="h-3.5 w-3.5" /></Button></a>}{item.downloadUrl && <a href={item.downloadUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="primary">下载 {item.downloadFormat || "文件"}</Button></a>}</div></div>)}</div>}
       </Card>
 

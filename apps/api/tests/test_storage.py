@@ -1,9 +1,11 @@
+from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
 
 import app.core.storage as storage
 import app.domains.life.service as life_service
+import app.services.storage as legacy_storage
 from app.core.errors import AppError
 
 
@@ -112,4 +114,42 @@ async def test_production_upload_does_not_fall_back_to_local_storage_after_cloud
 
     assert error.value.code == "MEDIA_UPLOAD_FAILED"
     assert error.value.status == 503
+    assert list(tmp_path.rglob("*")) == []
+
+
+def test_journal_image_upload_requires_cloud_storage_in_production(monkeypatch, tmp_path) -> None:
+    settings = SimpleNamespace(
+        app_env="production",
+        supabase_url="",
+        supabase_service_role_key="",
+        supabase_storage_bucket="life-records",
+        media_dir=str(tmp_path),
+    )
+    monkeypatch.setattr(legacy_storage, "get_settings", lambda: settings)
+
+    service = legacy_storage.StorageService()
+
+    with pytest.raises(RuntimeError, match="云端存储"):
+        service.upload_journal_image(BytesIO(b"image"), "photo.jpg", "user-1")
+
+    assert list(tmp_path.rglob("*")) == []
+
+
+def test_journal_image_upload_does_not_fall_back_after_cloud_failure(monkeypatch, tmp_path) -> None:
+    settings = SimpleNamespace(
+        app_env="production",
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key="service-role-key",
+        supabase_storage_bucket="life-records",
+        media_dir=str(tmp_path),
+    )
+    monkeypatch.setattr(legacy_storage, "get_settings", lambda: settings)
+
+    service = legacy_storage.StorageService()
+    monkeypatch.setattr(service, "_ensure_bucket", lambda bucket: None)
+    monkeypatch.setattr(service, "_upload_supabase", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("failed")))
+
+    with pytest.raises(RuntimeError, match="云端存储"):
+        service.upload_journal_image(BytesIO(b"image"), "photo.jpg", "user-1")
+
     assert list(tmp_path.rglob("*")) == []

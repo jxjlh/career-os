@@ -47,6 +47,16 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!previewUrl) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPreviewUrl(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [previewUrl]);
 
   useEffect(() => {
     if (existing) {
@@ -358,14 +368,21 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
                   key={`${url}-${i}`}
                   className="relative aspect-square overflow-hidden rounded-xl bg-surface/40 ring-1 ring-white/5"
                 >
-                  <img
-                    src={resolveMediaUrl(url)}
-                    alt={`photo-${i}`}
-                    className="h-full w-full object-cover"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
-                    }}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setPreviewUrl(resolveMediaUrl(url))}
+                    className="h-full w-full"
+                    aria-label={`放大查看第 ${i + 1} 张图片`}
+                  >
+                    <img
+                      src={resolveMediaUrl(url)}
+                      alt={`photo-${i}`}
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
+                      }}
+                    />
+                  </button>
                   <button
                     type="button"
                     onClick={() => removePhoto(i)}
@@ -496,6 +513,38 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
           )}
         </>
       )}
+
+      <AnimatePresence>
+        {previewUrl && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="日记图片预览"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setPreviewUrl(null)}
+          >
+            <motion.img
+              src={previewUrl}
+              alt="日记图片预览"
+              className="max-h-full max-w-full rounded-xl object-contain shadow-2xl"
+              initial={{ scale: 0.96 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.96 }}
+              onClick={(event) => event.stopPropagation()}
+            />
+            <button
+              type="button"
+              onClick={() => setPreviewUrl(null)}
+              className="absolute right-5 top-5 rounded-lg bg-black/60 px-3 py-2 text-sm text-white hover:bg-black/80"
+            >
+              关闭
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

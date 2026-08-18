@@ -91,15 +91,20 @@ class StorageService:
             raise ValueError("日记图片过大，请上传 8MB 以内的图片")
         content_type = self._guess_content_type(ext)
 
-        if self._supabase_configured():
-            try:
-                self._ensure_bucket("journal-images")
-                self._upload_supabase(path, content, content_type, bucket="journal-images")
-                # 日记桶保持私有，数据库只保存对象路径；读取时由 API 生成短期签名 URL。
-                return path
-            except Exception:
-                pass
-        return self._upload_local(path, content)
+        if not self._supabase_configured():
+            if self._cloud_storage_required():
+                raise RuntimeError("云端存储尚未配置，无法保存图片，请联系管理员后重试")
+            return self._upload_local(path, content)
+
+        try:
+            self._ensure_bucket("journal-images")
+            self._upload_supabase(path, content, content_type, bucket="journal-images")
+            # 日记桶保持私有，数据库只保存对象路径；读取时由 API 生成短期签名 URL。
+            return path
+        except Exception as exc:
+            if self._cloud_storage_required():
+                raise RuntimeError("云端存储上传失败，请稍后重试") from exc
+            return self._upload_local(path, content)
 
     def _supabase_configured(self) -> bool:
         """检查 Supabase 是否完整配置."""
@@ -107,6 +112,9 @@ class StorageService:
             self.settings.supabase_url
             and self.settings.supabase_service_role_key
         )
+
+    def _cloud_storage_required(self) -> bool:
+        return self.settings.app_env.strip().lower() not in {"dev", "development", "test", "testing"}
 
     def _upload_supabase(
         self,
@@ -169,7 +177,7 @@ class StorageService:
         if path.startswith(("http://", "https://")):
             return path
         if path.startswith("/media/"):
-            return path
+            return path if not self._cloud_storage_required() else None
 
         if self._supabase_configured():
             bucket = "journal-images" if path.startswith("journal/") else "chat-images"
@@ -188,7 +196,7 @@ class StorageService:
                 pass
 
         local = self._abs_media_dir() / path
-        if local.is_file():
+        if not self._cloud_storage_required() and local.is_file():
             return f"/media/{path}"
 
         return None
