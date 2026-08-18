@@ -1,30 +1,37 @@
 /** 聊天 API 客户端 */
 
-import { apiFetch } from "@/lib/api";
+import { apiFetch, API_BASE } from "@/lib/api";
 import { getAccessToken, isSupabaseConfigured } from "@/lib/supabase";
 
 // 后端基础地址 - 用于转换 /media/ 路径为完整 URL
 // 本地开发使用 http://127.0.0.1:8000
-// 生产环境使用环境变量 NEXT_PUBLIC_API_BASE_URL 或 /api/v1 的域名
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL 
-  ? process.env.NEXT_PUBLIC_API_BASE_URL.replace("/api/v1", "") 
-  : process.env.NODE_ENV === "development"
-    ? "http://127.0.0.1:8000"
-    : "";
+// 生产环境: Cloudflare 只代理 /api/*，不代理 /media/*，因此本地路径无法使用
+const API_BASE_URL = (() => {
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL.replace("/api/v1", "");
+  }
+  if (process.env.NODE_ENV === "development") {
+    return "http://127.0.0.1:8000";
+  }
+  // 生产环境: /media/ 路径不可用 (Cloudflare 只代理 /api/*)
+  // 新上传图片应使用 Supabase 公共 URL (https://...)
+  return "";
+})();
 
 /**
  * 将媒体路径转换为可访问的完整 URL
  * 后端返回的 /media/xxx 需要转换为完整地址才能访问
+ * 注意: 生产环境中 /media/ 路径不可用，必须使用 Supabase 公共 URL
  */
 export function resolveMediaUrl(path: string | null | undefined): string {
   if (!path) return "";
-  // 已经是完整 URL
+  // 已经是完整 URL (Supabase 公共 URL 等)
   if (path.startsWith("http://") || path.startsWith("https://")) {
     return path;
   }
-  // /media/xxx → 需要加上后端地址
+  // /media/xxx → 需要加上后端地址 (仅开发环境可用)
   if (path.startsWith("/media/")) {
-    return `${API_BASE_URL}${path}`;
+    return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
   }
   // 其他情况直接返回
   return path;

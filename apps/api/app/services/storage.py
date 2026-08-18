@@ -39,12 +39,18 @@ class StorageService:
         content = file.read()
         content_type = self._guess_content_type(ext)
 
-        if self._supabase_configured():
-            try:
-                return self._upload_supabase(path, content, content_type)
-            except Exception:
-                pass
-        return self._upload_local(path, content)
+        if not self._supabase_configured():
+            if self._cloud_storage_required():
+                raise RuntimeError("云端存储尚未配置，无法保存图片，请联系管理员后重试")
+            return self._upload_local(path, content)
+
+        try:
+            self._ensure_bucket("chat-images")
+            return self._upload_supabase(path, content, content_type, bucket="chat-images")
+        except Exception as exc:
+            if self._cloud_storage_required():
+                raise RuntimeError("云端存储上传失败，请稍后重试") from exc
+            return self._upload_local(path, content)
 
     def upload_avatar(
         self,
@@ -65,12 +71,18 @@ class StorageService:
             raise ValueError("头像文件过大，请上传 5MB 以内的图片")
         content_type = self._guess_content_type(ext)
 
-        if self._supabase_configured():
-            try:
-                return self._upload_supabase(path, content, content_type)
-            except Exception:
-                pass
-        return self._upload_local(path, content)
+        if not self._supabase_configured():
+            if self._cloud_storage_required():
+                raise RuntimeError("云端存储尚未配置，无法保存头像，请联系管理员后重试")
+            return self._upload_local(path, content)
+
+        try:
+            self._ensure_bucket("avatars")
+            return self._upload_supabase(path, content, content_type, bucket="avatars")
+        except Exception as exc:
+            if self._cloud_storage_required():
+                raise RuntimeError("头像上传失败，请稍后重试") from exc
+            return self._upload_local(path, content)
 
     def upload_journal_image(
         self,
@@ -98,8 +110,7 @@ class StorageService:
 
         try:
             self._ensure_bucket("journal-images")
-            self._upload_supabase(path, content, content_type, bucket="journal-images")
-            return f"{self.settings.supabase_url}/storage/v1/object/public/journal-images/{path}"
+            return self._upload_supabase(path, content, content_type, bucket="journal-images")
         except Exception as exc:
             if self._cloud_storage_required():
                 raise RuntimeError("云端存储上传失败，请稍后重试") from exc
@@ -172,27 +183,25 @@ class StorageService:
         return types.get(ext.lower(), "application/octet-stream")
 
     def get_download_url(self, path: str) -> str | None:
-        """获取下载 URL."""
+        """获取下载 URL - 返回永久公开 URL 而非临时签名 URL."""
         if path.startswith(("http://", "https://")):
             return path
+
         if path.startswith("/media/"):
             return path if not self._cloud_storage_required() else None
 
         if self._supabase_configured():
-            bucket = "journal-images" if path.startswith("journal/") else "chat-images"
-            url = f"{self.settings.supabase_url}/storage/v1/object/sign/{bucket}/{path}"
-            headers = {"Authorization": f"Bearer {self.settings.supabase_service_role_key}"}
-
-            try:
-                with httpx.Client(timeout=15.0, trust_env=False) as client:
-                    response = client.post(url, headers=headers, json={"expiresIn": 3600})
-
-                if response.status_code < 400:
-                    signed = response.json().get("signedURL")
-                    if signed:
-                        return f"{self.settings.supabase_url}{signed}" if signed.startswith("/") else signed
-            except Exception:
-                pass
+            # 根据路径前缀确定桶名
+            if path.startswith("journal/"):
+                bucket = "journal-images"
+            elif path.startswith("chat/"):
+                bucket = "chat-images"
+            elif path.startswith("avatars/"):
+                bucket = "avatars"
+            else:
+                bucket = "chat-images"
+            # 返回永久公开 URL (桶创建时已设为 public: True)
+            return f"{self.settings.supabase_url}/storage/v1/object/public/{bucket}/{path}"
 
         local = self._abs_media_dir() / path
         if not self._cloud_storage_required() and local.is_file():

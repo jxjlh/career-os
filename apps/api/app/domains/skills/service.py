@@ -39,7 +39,12 @@ class SkillService:
     def matrix(self, profile: Profile) -> list[dict]:
         self.skills.seed_defaults()
         user_rows = self.user_skills.list_by_user(profile.id)
-        return [skill_dict(skill, user_rows.get(skill.id)) for skill in self.skills.list_ordered()]
+        all_skills = {s.id: s for s in self.skills.list_ordered()}
+        return [
+            skill_dict(all_skills[skill_id], row)
+            for skill_id, row in user_rows.items()
+            if skill_id in all_skills
+        ]
 
     def update_progress(
         self,

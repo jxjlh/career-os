@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     exa_api_key: str = ""
     google_search_api_key: str = ""
     google_search_cx: str = ""
+    google_books_api_key: str = ""
     bing_api_key: str = ""
     github_token: str = ""
     youtube_api_key: str = ""
