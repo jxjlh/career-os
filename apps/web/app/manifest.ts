@@ -16,7 +16,7 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "portrait",
     background_color: "#0e0d14",
     theme_color: "#5b5bd6",
-    categories: ["productivity", "lifestyle", "education"],
+    categories: ["productivity", "lifestyle", "education", "finance"],
     icons: [
       {
         src: "/icons/career-os-appicon.png",
