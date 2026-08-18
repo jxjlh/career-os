@@ -8,7 +8,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
-from app.core.storage import upload_object
+from app.core.storage import resolve_object_url, upload_object
 from app.db.models import (
     BucketItem,
     CheckinStreak,
@@ -71,7 +71,7 @@ def life_goal_dict(goal: LifeGoal) -> dict:
         "location": goal.location,
         "latitude": goal.latitude,
         "longitude": goal.longitude,
-        "coverImage": goal.cover_image,
+        "coverImage": resolve_object_url(goal.cover_image) or goal.cover_image,
         "budget": goal.budget,
         "recommendedDays": goal.recommended_days,
         "bestSeason": goal.best_season,
@@ -86,14 +86,18 @@ def life_goal_dict(goal: LifeGoal) -> dict:
 
 
 def life_record_dict(record: LifeRecord) -> dict:
+    photo_url = resolve_object_url(record.photo_url) or record.photo_url
+    watermark_url = resolve_object_url(record.watermark_url) or record.watermark_url
+    video_url = resolve_object_url(record.video_url) or record.video_url
+    thumbnail_url = resolve_object_url(record.thumbnail_url) or record.thumbnail_url
     return {
         "id": record.id,
         "goalId": record.goal_id,
         "recordType": record.record_type,
-        "photoUrl": record.photo_url,
-        "watermarkUrl": record.watermark_url,
-        "videoUrl": record.video_url,
-        "thumbnailUrl": record.thumbnail_url,
+        "photoUrl": photo_url,
+        "watermarkUrl": watermark_url,
+        "videoUrl": video_url,
+        "thumbnailUrl": thumbnail_url,
         "durationSeconds": record.duration_seconds,
         "sceneType": record.scene_type,
         "aiTags": record.ai_tags or [],

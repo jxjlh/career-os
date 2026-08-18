@@ -149,7 +149,7 @@ class StorageService:
         return f"{self.settings.supabase_url}/storage/v1/object/public/{bucket}/{path}"
 
     def _ensure_bucket(self, bucket: str) -> None:
-        """确保 Supabase Storage 桶存在；已存在时保持幂等。"""
+        """确保 Supabase Storage 桶存在且为公开；已存在时自动修补 public 状态."""
         url = f"{self.settings.supabase_url}/storage/v1/bucket"
         headers = {
             "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
@@ -159,10 +159,28 @@ class StorageService:
             response = client.post(
                 url,
                 headers=headers,
-                json={"id": bucket, "name": bucket, "public": False},
+                json={"id": bucket, "name": bucket, "public": True},
             )
-        if response.status_code >= 400 and response.status_code not in (400, 409):
-            raise RuntimeError(f"Supabase bucket setup failed: HTTP {response.status_code}")
+            if response.status_code == 409:
+                self._fix_bucket_public(bucket)
+            elif response.status_code >= 400 and response.status_code != 400:
+                raise RuntimeError(f"Supabase bucket setup failed: HTTP {response.status_code}")
+
+    def _fix_bucket_public(self, bucket: str) -> None:
+        """将已存在的桶修补为公开，使之可通过公共 URL 访问."""
+        url = f"{self.settings.supabase_url}/storage/v1/bucket/{bucket}"
+        headers = {
+            "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
+            "Content-Type": "application/json",
+        }
+        with httpx.Client(timeout=15.0, trust_env=False) as client:
+            response = client.put(
+                url,
+                headers=headers,
+                json={"public": True},
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(f"Supabase bucket public patch failed: HTTP {response.status_code}")
 
     def _upload_local(self, path: str, content: bytes) -> str:
         """上传到本地 media 目录."""

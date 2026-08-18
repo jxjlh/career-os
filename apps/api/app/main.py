@@ -49,6 +49,21 @@ logger = logging.getLogger("app.main")
 _lifespan_initialized = False
 
 
+def _ensure_all_storage_buckets_public() -> None:
+    """启动时将所有存储桶修补为公开，确保图片可通过公共 URL 访问."""
+    try:
+        from app.services.storage import StorageService
+        svc = StorageService()
+        for bucket in ("avatars", "chat-images", "journal-images"):
+            try:
+                svc._ensure_bucket(bucket)
+                logger.info("storage bucket '%s' ensured public", bucket)
+            except Exception as e:
+                logger.warning("failed to ensure bucket '%s' public: %s", bucket, e)
+    except Exception as e:
+        logger.warning("storage bucket public check skipped: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _lifespan_initialized
@@ -79,6 +94,8 @@ async def lifespan(app: FastAPI):
                     seed_word_books(db)
             except Exception as e:  # noqa: BLE001
                 logger.error("production schema self-heal failed: %s", e, exc_info=True)
+
+        _ensure_all_storage_buckets_public()
         _lifespan_initialized = True
     yield
 

@@ -32,6 +32,25 @@ def _bucket_is_missing(response: httpx.Response) -> bool:
         return False
 
 
+async def _ensure_bucket_public(bucket: str) -> None:
+    """将已存在的桶修补为公开，使之可通过公共 URL 访问."""
+    settings = get_settings()
+    storage_url = f"{settings.supabase_url.rstrip('/')}/storage/v1"
+    headers = _storage_headers(settings.supabase_service_role_key, "application/json")
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.put(
+            f"{storage_url}/bucket/{bucket}",
+            headers=headers,
+            json={"public": True},
+        )
+    if response.status_code >= 400:
+        raise AppError(
+            code="MEDIA_UPLOAD_FAILED",
+            message="桶权限修复失败，请稍后重试",
+            status=503,
+        )
+
+
 async def upload_object(path: str, content: bytes, content_type: str) -> str:
     settings = get_settings()
     if not _cloud_storage_is_configured(settings.supabase_url, settings.supabase_service_role_key):
@@ -48,21 +67,9 @@ async def upload_object(path: str, content: bytes, content_type: str) -> str:
     object_url = f"{storage_url}/object/{bucket}/{path}"
     headers = _storage_headers(settings.supabase_service_role_key, content_type)
     try:
+        await _ensure_bucket_public(bucket)
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(object_url, headers=headers, content=content)
-            if _bucket_is_missing(response):
-                bucket_response = await client.post(
-                    f"{storage_url}/bucket",
-                    headers=_storage_headers(settings.supabase_service_role_key, "application/json"),
-                    json={"id": bucket, "name": bucket, "public": False},
-                )
-                if bucket_response.status_code not in {200, 201, 409}:
-                    raise AppError(
-                        code="MEDIA_UPLOAD_FAILED",
-                        message="图片上传到云端失败，请稍后重试",
-                        status=503,
-                    )
-                response = await client.post(object_url, headers=headers, content=content)
     except httpx.HTTPError as exc:
         raise AppError(
             code="MEDIA_UPLOAD_FAILED",

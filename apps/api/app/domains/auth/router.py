@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.storage import resolve_object_url
 from app.core.security import get_current_user
 from app.db.models import BackgroundJob, Profile, Skill, UserLimit, UserSkill
 from app.services.storage import StorageService
@@ -46,11 +47,16 @@ class OnboardingRequest(BaseModel):
 
 
 def _profile_dict(profile: Profile) -> dict:
+    avatar_url = profile.avatar_url
+    if avatar_url:
+        resolved = resolve_object_url(avatar_url)
+        if resolved:
+            avatar_url = resolved
     return {
         "id": profile.id,
         "email": profile.email,
         "displayName": profile.display_name,
-        "avatarUrl": profile.avatar_url,
+        "avatarUrl": avatar_url,
         "currentTitle": profile.current_title,
         "company": profile.company,
         "targetTitle": profile.target_title,
