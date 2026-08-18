@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     finance_market_data_api_key: str = ""
     finance_ocr_api_url: str = ""
     finance_ocr_api_key: str = ""
+    finance_ocr_model: str = "gpt-4o-mini"
     finance_scheduler_token: str = ""
 
 

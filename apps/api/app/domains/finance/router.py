@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.security import get_current_user
 from app.core.storage import delete_object, upload_object
-from app.db.models import FinanceProfile, Profile
+from app.db.models import FinanceImport, FinanceProfile, Profile
 from app.domains.finance import ocr
 from app.domains.finance.repository import FinanceRepository
 from app.domains.finance.schemas import (
@@ -48,6 +48,7 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 _SUPPORTED_IMPORT_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp"}
 _IMPORT_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024
+_IMPORT_BATCH_LIMIT = 9
 _IMPORT_SUFFIX_BY_CONTENT_TYPE = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 
 
@@ -129,13 +130,45 @@ async def import_holdings_screenshot(
     db: DbSession,
     file: Annotated[UploadFile, File(...)],
 ) -> dict:
+    image = await _read_import_image(file)
+    provider = ocr.get_holding_ocr_provider()
+    finance_import = await _create_import_from_image(current_user, db, file, image, provider)
+    return {"data": serialize_import(finance_import)}
+
+
+@router.post("/finance/imports/screenshots", status_code=201)
+async def import_holdings_screenshots(
+    current_user: CurrentUser,
+    db: DbSession,
+    files: Annotated[list[UploadFile], File(...)],
+) -> dict:
+    if len(files) > _IMPORT_BATCH_LIMIT:
+        raise AppError(
+            code="IMPORT_BATCH_TOO_LARGE",
+            message="一次最多上传 9 张持仓截图",
+            status=422,
+        )
+    images = [(file, await _read_import_image(file)) for file in files]
+    provider = ocr.get_holding_ocr_provider()
+    imports = []
+    failures = []
+    for file, image in images:
+        try:
+            finance_import = await _create_import_from_image(current_user, db, file, image, provider)
+        except AppError as exc:
+            failures.append({"filename": Path(file.filename or "holding-image").name, "code": exc.code})
+        else:
+            imports.append(serialize_import(finance_import))
+    return {"data": {"imports": imports, "failures": failures}}
+
+
+async def _read_import_image(file: UploadFile) -> bytes:
     if file.content_type not in _SUPPORTED_IMPORT_CONTENT_TYPES:
         raise AppError(
             code="INVALID_IMPORT_IMAGE",
             message="仅支持 PNG、JPEG 或 WebP 格式的持仓截图",
             status=422,
         )
-    provider = ocr.get_holding_ocr_provider()
     image = await file.read(_IMPORT_UPLOAD_LIMIT_BYTES + 1)
     if not image:
         raise AppError(code="INVALID_IMPORT_IMAGE", message="持仓截图不能为空", status=422)
@@ -145,6 +178,17 @@ async def import_holdings_screenshot(
             message="持仓截图不能超过 10 MB",
             status=413,
         )
+    return image
+
+
+async def _create_import_from_image(
+    current_user: Profile,
+    db: Session,
+    file: UploadFile,
+    image: bytes,
+    provider: ocr.HoldingOcrProvider,
+) -> FinanceImport:
+    assert file.content_type in _IMPORT_SUFFIX_BY_CONTENT_TYPE
 
     suffix = _IMPORT_SUFFIX_BY_CONTENT_TYPE[file.content_type]
     path = f"finance-imports/{current_user.id}/{uuid4().hex}{suffix}"
@@ -196,7 +240,7 @@ async def import_holdings_screenshot(
             message="持仓截图识别失败，请稍后重试或改用手动维护",
             status=503,
         ) from exc
-    return {"data": serialize_import(finance_import)}
+    return finance_import
 
 
 @router.get("/finance/imports/{import_id}")
