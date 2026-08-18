@@ -20,6 +20,7 @@ import pytest  # noqa: E402
 
 from app.core.database import engine, ensure_columns  # noqa: E402
 from app.db.base import Base  # noqa: E402
+from app.db.models import Profile  # noqa: E402
 from app.providers.ai.mock_provider import MockAIProvider  # noqa: E402
 from app.providers.search.mock_provider import MockSearchProvider  # noqa: E402
 
@@ -30,6 +31,22 @@ def _ensure_tables():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     ensure_columns()
+    with engine.begin() as connection:
+        connection.execute(
+            Profile.__table__.insert(),
+            [
+                {
+                    "id": "00000000-0000-0000-0000-000000000001",
+                    "email": "dev@career-os.local",
+                    "display_name": "Dev User",
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000002",
+                    "email": "other@career-os.local",
+                    "display_name": "Other User",
+                },
+            ],
+        )
     yield
     engine.dispose()
     TEST_DATABASE_PATH.unlink(missing_ok=True)
