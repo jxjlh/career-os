@@ -3,10 +3,9 @@
 import { ArrowDownRight, ArrowUpRight, CheckCircle2, Eye, Minus, Scale, TrendingDown, TrendingUp } from "lucide-react";
 
 import { Badge, Button, Card, SectionHeader } from "@/components/ui";
-import { displayMoney, toPercent, type FinanceHolding, type FinanceRecommendation } from "@/lib/finance";
+import { displayMoney, toPercent, type FinanceHolding, type FinanceRecommendation, type PositionDecisionRow } from "@/lib/finance";
 
 export type PositionDecision = {
-  /** action 归一化后的关键动作：加仓 / 减仓 / 卖出 / 继续持有 */
   decision: "buy_more" | "reduce" | "sell" | "hold";
   action: FinanceRecommendation["action"];
   holding?: FinanceHolding;
@@ -57,24 +56,36 @@ function buildDecisions(
       const decision = rec ? decisionOf(rec) : "hold";
       return { decision, action: rec?.action ?? "hold", holding, recommendation: rec };
     });
-  // 候选基金的加仓/建仓建议，作为额外「决策」挂在买入卡，这里不重复
   return decisions;
 }
 
 export function PositionDecisionCard({
   positions,
   recommendations,
+  positionDecisions,
   onDismiss,
   isDismissing,
   baseCurrency,
 }: {
   positions: FinanceHolding[];
   recommendations: FinanceRecommendation[];
+  positionDecisions?: PositionDecisionRow[];
   baseCurrency: "CNY" | "HKD" | "USD";
   onDismiss?: (id: string) => void;
   isDismissing?: boolean;
 }) {
-  const decisions = buildDecisions(positions, recommendations);
+  const usePrecomputed = positionDecisions && positionDecisions.length > 0;
+  const decisions: PositionDecision[] = usePrecomputed
+    ? (positionDecisions!.map((pd) => ({
+        decision: pd.decision,
+        action: pd.action,
+        holding: pd.holding,
+      })))
+    : buildDecisions(positions, recommendations);
+
+  const getRecForInstrument = (instrumentId: string): FinanceRecommendation | undefined => {
+    return recommendations.find((r) => r.instrumentId === instrumentId && r.disposition !== "dismissed");
+  };
 
   return (
     <section>
@@ -87,12 +98,14 @@ export function PositionDecisionCard({
             const meta = ACTION_META[item.decision];
             const Icon = meta.icon;
             const holding = item.holding!;
-            const rec = item.recommendation;
-            const amountMin = rec?.suggestedAmountMin;
-            const amountMax = rec?.suggestedAmountMax;
-            const changePct = rec?.positionChangePct;
-            const trigger = rec?.triggerReason ?? "当前未触发任何加减仓/卖出条件，系统默认建议继续持有。";
-            const riskNote = rec?.riskNote ?? "每交易日 14:45 会自动复核条件，任何条件变化都会生成新的行动卡。";
+            const rec = usePrecomputed
+              ? (recommendations.find((r) => r.instrumentId === holding.instrumentId && r.disposition !== "dismissed"))
+              : item.recommendation;
+            const amountMin = rec?.suggestedAmountMin ?? (usePrecomputed ? positionDecisions!.find((pd) => pd.positionId === holding.id)?.suggestedAmountMin : null);
+            const amountMax = rec?.suggestedAmountMax ?? (usePrecomputed ? positionDecisions!.find((pd) => pd.positionId === holding.id)?.suggestedAmountMax : null);
+            const changePct = rec?.positionChangePct ?? (usePrecomputed ? positionDecisions!.find((pd) => pd.positionId === holding.id)?.positionChangePct : null);
+            const trigger = rec?.triggerReason ?? (usePrecomputed ? positionDecisions!.find((pd) => pd.positionId === holding.id)?.triggerReason ?? "当前未触发任何加减仓/卖出条件，系统默认建议继续持有。" : "当前未触发任何加减仓/卖出条件，系统默认建议继续持有。");
+            const riskNote = rec?.riskNote ?? (usePrecomputed ? positionDecisions!.find((pd) => pd.positionId === holding.id)?.riskNote ?? "每交易日 14:45 会自动复核条件，任何条件变化都会生成新的行动卡。" : "每交易日 14:45 会自动复核条件，任何条件变化都会生成新的行动卡。");
             const marketValue = holding.marketValue ?? holding.costBasis;
             const unrealized = holding.unrealizedPnl;
             return (

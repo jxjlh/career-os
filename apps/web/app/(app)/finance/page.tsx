@@ -153,6 +153,7 @@ export default function FinancePage() {
       <PositionDecisionCard
         positions={dashboard.data?.data.positions ?? []}
         recommendations={recommendations.data?.data ?? []}
+        positionDecisions={dashboard.data?.data.positionDecisions}
         baseCurrency={baseCurrency}
         onDismiss={(id) => dismissRecommendation.mutate(id)}
         isDismissing={dismissRecommendation.isPending}

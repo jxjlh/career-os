@@ -162,13 +162,43 @@ export interface NewFundBuyCard {
   recommendation: NewFundBuyRecommendation | null;
 }
 
+export interface PositionDecisionRow {
+  positionId: string;
+  instrumentId: string;
+  instrumentName: string;
+  instrumentSymbol: string | null;
+  accountName: string;
+  decision: "buy_more" | "reduce" | "sell" | "hold";
+  action: RecommendationAction;
+  suggestedAmountMin: string | null;
+  suggestedAmountMax: string | null;
+  positionChangePct: string | null;
+  triggerReason: string;
+  riskNote: string;
+  evidence: FinanceEvidence[] | null;
+  holding: FinanceHolding;
+}
+
+export interface FinanceAnalysisSummary {
+  id: string;
+  status: string;
+  runOn: string;
+  dataFreshAt: string | null;
+  completedAt: string | null;
+  explanation: string | null;
+  dataStatus: { state: string; reason: string } | null;
+}
+
 export interface FinanceDashboard {
   profile: FinanceProfile;
   summary: FinanceDashboardSummary;
   positions: FinanceHolding[];
+  positionDecisions?: PositionDecisionRow[];
+  pendingActionCount?: number;
   marketDaily?: FinanceMarketDaily;
   newFundBuyCard?: NewFundBuyCard;
-  dataStatus: "manual_only" | string;
+  dataStatus: string;
+  analysisRun?: FinanceAnalysisSummary | null;
 }
 
 export interface FinanceEvidence {

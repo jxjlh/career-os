@@ -44,8 +44,12 @@ export function FinanceDashboardView({
     );
   }
   const summary = dashboard.summary;
-  const dataState = analysis?.dataStatus.state ?? "未运行";
+  const effectivePending = pendingActionCount ?? dashboard.pendingActionCount ?? 0;
+  const dataStatus = dashboard.dataStatus;
+  const analysisData = dashboard.analysisRun ?? analysis;
+  const dataState = analysisData?.dataStatus?.state ?? (dataStatus === "fresh" ? "fresh" : dataStatus === "stale" ? "stale" : "未运行");
   const isFresh = dataState === "fresh" || dataState === "available";
+  const freshAt = analysisData?.dataFreshAt ?? analysis?.dataFreshAt;
 
   return (
     <div className="space-y-5">
@@ -54,10 +58,10 @@ export function FinanceDashboardView({
         subtitle="规则决定行动，AI 只解释已满足的规则条件；所有建议绝不自动下单。"
         action={
           <div className="flex items-center gap-2">
-            {pendingActionCount && pendingActionCount > 0 ? (
+            {effectivePending > 0 ? (
               <Badge variant="danger">
                 <Bell className="mr-1 h-3 w-3" />
-                {pendingActionCount} 条未读行动卡
+                {effectivePending} 条未读行动卡
               </Badge>
             ) : null}
             <Button variant="outline" size="sm" onClick={onRunAnalysis} disabled={isRunning}>
@@ -76,9 +80,9 @@ export function FinanceDashboardView({
               <Badge variant={isFresh ? "success" : "warning"}>{isFresh ? "行情可用" : "仅手工数据"}</Badge>
             </div>
             <p className="mt-1 text-xs text-text-tertiary">
-              {analysis?.dataFreshAt
-                ? `最新行情：${new Date(analysis.dataFreshAt).toLocaleString("zh-CN")}`
-                : `数据状态：${analysis?.dataStatus.reason || "尚未获取授权行情"}`}
+              {freshAt
+                ? `最新行情：${new Date(freshAt).toLocaleString("zh-CN")}`
+                : `数据状态：${analysisData?.dataStatus?.reason || "尚未获取授权行情"}`}
             </p>
             <p className="mt-1 text-[11px] text-text-tertiary">
               固定每日北京时间 14:45 自动生成分析（确保在 15:00 收盘前推送未读行动卡通知）。
@@ -86,12 +90,12 @@ export function FinanceDashboardView({
           </div>
           <div className="flex items-center gap-2 rounded-xl bg-surface-muted px-3 py-2 text-xs text-text-secondary">
             <Database className="h-4 w-4 text-primary" />
-            {dashboard.dataStatus === "manual_only" ? "持仓来自手工记账" : dashboard.dataStatus}
+            {dataStatus === "manual_only" ? "持仓来自手工记账" : dataStatus}
           </div>
         </div>
       </Card>
 
-      <AssetSummaryCard summary={summary} latestAt={analysis?.dataFreshAt ?? analysis?.completedAt} />
+      <AssetSummaryCard summary={summary} latestAt={freshAt} />
     </div>
   );
 }

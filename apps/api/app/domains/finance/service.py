@@ -901,34 +901,82 @@ class FinanceService:
             "styleAndSectorChanges": style_shift_notes,
             "portfolioImpact": portfolio_impact_notes,
         }
+        # --- 分析状态与未读行动卡 ---
+        latest_analysis = self.repository.get_latest_analysis(user_id)
+        pending_recs = self.repository.list_pending_recommendations(user_id)
+        non_hold_actions = {"build_position", "add_position", "reduce_risk", "rebalance", "exit_review", "build", "add"}
+        pending_action_count = sum(
+            1 for r in pending_recs if r.action not in ("hold", "observe", "pause")
+        )
+        if latest_analysis is not None:
+            data_status = latest_analysis.status if latest_analysis.status in ("fresh", "stale", "unavailable") else "manual_only"
+            analysis_summary = {
+                "id": latest_analysis.id,
+                "status": latest_analysis.status,
+                "runOn": latest_analysis.run_on.isoformat(),
+                "dataFreshAt": _iso_string(latest_analysis.data_fresh_at),
+                "completedAt": _iso_string(latest_analysis.completed_at),
+                "explanation": latest_analysis.explanation,
+                "dataStatus": latest_analysis.rule_results.get("dataStatus", {}) if isinstance(latest_analysis.rule_results, dict) else {},
+            }
+        else:
+            data_status = "manual_only"
+            analysis_summary = None
+
+        # --- 持仓决策卡：预计算每只持仓的动作 ---
+        rec_by_instrument: dict[str, FinanceRecommendation] = {}
+        for rec in pending_recs:
+            if rec.instrument_id and rec.action not in ("hold", "observe", "pause"):
+                rec_by_instrument[rec.instrument_id] = rec
+        position_decisions: list[dict[str, Any]] = []
+        for sp in serialized_positions:
+            if sp.get("assetClass") == "cash":
+                continue
+            rec = rec_by_instrument.get(sp["instrumentId"])
+            if rec is not None:
+                decision = _decision_from_action(rec.action)
+            else:
+                decision = "hold"
+            position_decisions.append({
+                "positionId": sp["id"],
+                "instrumentId": sp["instrumentId"],
+                "instrumentName": sp["instrument"]["name"],
+                "instrumentSymbol": sp["instrument"].get("symbol"),
+                "accountName": sp.get("accountName"),
+                "decision": decision,
+                "action": rec.action if rec is not None else "hold",
+                "suggestedAmountMin": decimal_string(rec.suggested_amount_min) if rec is not None else None,
+                "suggestedAmountMax": decimal_string(rec.suggested_amount_max) if rec is not None else None,
+                "positionChangePct": decimal_string(rec.position_change_pct) if rec is not None else None,
+                "triggerReason": rec.trigger_reason if rec is not None else "当前未触发任何加减仓/卖出条件，系统默认建议继续持有。",
+                "riskNote": rec.risk_note if rec is not None else "每交易日 14:45 会自动复核条件，任何条件变化都会生成新的行动卡。",
+                "evidence": rec.evidence if rec is not None else None,
+                "holding": sp,
+            })
         return {
             "profile": serialize_profile(profile),
             "summary": {
                 "baseCurrency": base_currency,
                 "positionCount": len(positions),
                 "pricedPositionCount": priced_count,
-                # 持仓成本（不含现金）
                 "costBasis": decimal_string(total_positions_cost) if (len(cost_basis_by_currency) <= 1) else {currency: decimal_string(value) for currency, value in cost_basis_by_currency.items()},
-                # 总仓位金额 = 持仓市值（不含现金）
                 "totalPositionValue": decimal_string(total_positions_market_value) if (positions and priced_count == len(positions) and len(market_value_by_currency) <= 1) else None,
-                # 今日收益（估算）
                 "dayChange": decimal_string(total_day_change),
-                # 累计收益
                 "cumulativeReturn": decimal_string(cumulative_return),
-                # 收益率
                 "returnRate": decimal_string(return_rate),
-                # 可用现金比例
                 "cashRatio": decimal_string(cash_ratio),
                 "availableCash": decimal_string(cash_value),
-                # 保留原字段以兼容旧前端
                 "marketValue": decimal_string(total_market_value) if positions and priced_count == len(positions) and len(market_value_by_currency) <= 1 else None,
                 "costBasisByCurrency": {currency: decimal_string(value) for currency, value in cost_basis_by_currency.items()},
                 "marketValueByCurrency": {currency: decimal_string(value) for currency, value in market_value_by_currency.items()},
             },
             "positions": serialized_positions,
+            "positionDecisions": position_decisions,
+            "pendingActionCount": pending_action_count,
             "marketDaily": market_daily,
             "newFundBuyCard": buy_card,
-            "dataStatus": "manual_only",
+            "dataStatus": data_status,
+            "analysisRun": analysis_summary,
         }
 
 
@@ -940,6 +988,17 @@ def decimal_string(value: Decimal | None) -> str | None:
 
 def iso_string(value) -> str | None:
     return value.isoformat() if value else None
+
+
+def _decision_from_action(action: str) -> str:
+    """Map rule action to a simple decision label for the position decision card."""
+    if action in ("build_position", "add_position", "build", "add"):
+        return "buy_more"
+    if action in ("reduce_risk", "rebalance"):
+        return "reduce"
+    if action == "exit_review":
+        return "sell"
+    return "hold"
 
 
 def serialize_profile(profile: FinanceProfile) -> dict:
