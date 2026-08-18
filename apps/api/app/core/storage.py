@@ -144,7 +144,17 @@ async def resolve_object_url(path: str) -> str | None:
 
     if cloud_configured:
         bucket = settings.supabase_storage_bucket
-        return f"{settings.supabase_url.rstrip('/')}/storage/v1/object/public/{bucket}/{path}"
+        sign_url = f"{settings.supabase_url.rstrip('/')}/storage/v1/object/sign/{bucket}/{path}"
+        headers = _storage_headers(settings.supabase_service_role_key)
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.post(sign_url, headers=headers, json={"expiresIn": 3600})
+        except httpx.HTTPError:
+            return None
+        if response.status_code < 400:
+            signed = response.json().get("signedURL")
+            if signed:
+                return f"{settings.supabase_url.rstrip('/')}{signed}" if signed.startswith("/") else signed
 
     if _cloud_storage_required(settings.app_env):
         return None

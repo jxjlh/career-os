@@ -16,19 +16,18 @@ export interface GoalRowProps {
 /**
  * 单行 Goal —— 极轻量 Row，不是巨大 Card。
  * 序号 01 + 标题 + 百分比 + 进度条（width 动画 250ms ease-out）。
- * 使用 Next.js Link 实现客户端导航，避免整页刷新触发 AuthGuard 重定向。
+ * 使用 Next.js Link 进行客户端导航, 避免全页刷新.
  */
 export function GoalRow({ index, title, progress, href = "#" }: GoalRowProps) {
   return (
-    <Link
-      href={href}
-      className="group flex items-center gap-4 py-3 transition-colors hover:bg-surface-elevated/30"
+    <motion.div
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.25, ease: "easeOut", delay: index * 0.04 }}
     >
-      <motion.div
-        initial={{ opacity: 0, x: -8 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.25, ease: "easeOut", delay: index * 0.04 }}
-        className="flex flex-1 items-center gap-4"
+      <Link
+        href={href}
+        className="group flex items-center gap-4 py-3 transition-colors hover:bg-surface-elevated/30"
       >
         {/* 序号 —— editorial 数字 */}
         <span className="font-display w-8 shrink-0 text-[13px] font-medium tabular-nums text-text-tertiary">
@@ -64,7 +63,7 @@ export function GoalRow({ index, title, progress, href = "#" }: GoalRowProps) {
             )}
           />
         </div>
-      </motion.div>
-    </Link>
+      </Link>
+    </motion.div>
   );
 }

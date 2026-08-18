@@ -91,14 +91,19 @@ class StorageService:
             raise ValueError("日记图片过大，请上传 8MB 以内的图片")
         content_type = self._guess_content_type(ext)
 
-        if self._supabase_configured():
-            try:
-                self._ensure_bucket("journal-images")
-                self._upload_supabase(path, content, content_type, bucket="journal-images")
-                return f"{self.settings.supabase_url}/storage/v1/object/public/journal-images/{path}"
-            except Exception:
-                pass
-        return self._upload_local(path, content)
+        if not self._supabase_configured():
+            if self._cloud_storage_required():
+                raise RuntimeError("云端存储尚未配置，无法保存图片，请联系管理员后重试")
+            return self._upload_local(path, content)
+
+        try:
+            self._ensure_bucket("journal-images")
+            self._upload_supabase(path, content, content_type, bucket="journal-images")
+            return f"{self.settings.supabase_url}/storage/v1/object/public/journal-images/{path}"
+        except Exception as exc:
+            if self._cloud_storage_required():
+                raise RuntimeError("云端存储上传失败，请稍后重试") from exc
+            return self._upload_local(path, content)
 
     def _supabase_configured(self) -> bool:
         """检查 Supabase 是否完整配置."""

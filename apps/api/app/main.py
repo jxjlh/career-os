@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
-from app.core.database import SessionLocal, engine, ensure_columns
+from app.core.database import SessionLocal, engine, ensure_columns, migrate_journal_constraints
 from app.core.errors import AppError, app_error_handler, unhandled_error_handler
 from app.core.logging import setup_logging
 from app.core.middleware import RateLimitMiddleware, RequestContextMiddleware
@@ -18,6 +18,8 @@ from app.domains.analytics.router import router as analytics_router
 from app.domains.auth.router import router as auth_router
 from app.domains.bucket.router import router as bucket_router
 from app.domains.bucket.seed import seed_bucket_data
+from app.domains.english.router import router as english_router
+from app.domains.english.seed import seed_word_books
 from app.domains.career.router import router as career_router
 from app.domains.dashboard.router import router as dashboard_router
 from app.domains.explorer.router import router as explorer_router
@@ -40,31 +42,44 @@ from app.domains.salary.router import router as salary_router
 from app.domains.skills.router import router as skills_router
 from app.domains.social.router import router as social_router
 
+from app.domains.chat.router import router as chat_router
+
 settings = get_settings()
 logger = logging.getLogger("app.main")
+_lifespan_initialized = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _lifespan_initialized
+
     setup_logging()
-    if settings.app_env in ("dev", "test"):
-        ensure_columns()
-        Base.metadata.create_all(bind=engine)
-        # 幂等写入 Bucket List 种子目录, 保证页面有可消费内容
-        with SessionLocal() as db:
-            seed_bucket_data(db)
-    else:
-        # 生产自愈：补建缺失的表 + 补已存在表缺失的列。
-        # 根因：Alembic 从未在生产跑过（alembic_version 表不存在），早期表由更早版本
-        # 的 create_all 建好，但后续 ORM 新增的表（life_goals、user_profiles 等）从未
-        # 被创建 → /life/* 与 /profile 查询报 "relation does not exist" → 500。
-        # create_all 仅 CREATE IF NOT EXISTS（不改已有表/列），ensure_columns 再幂等补
-        # 已有表缺失的列。两者都对已存在对象 no-op，安全重复执行。
-        try:
-            Base.metadata.create_all(bind=engine)
+    if not _lifespan_initialized:
+        if settings.app_env in ("dev", "test"):
             ensure_columns()
-        except Exception as e:  # noqa: BLE001
-            logger.error("production schema self-heal failed: %s", e, exc_info=True)
+            migrate_journal_constraints()
+            Base.metadata.create_all(bind=engine)
+            # 幂等写入 Bucket List 和英语种子数据。
+            with SessionLocal() as db:
+                seed_bucket_data(db)
+                seed_word_books(db)
+        else:
+            # 生产自愈：补建缺失的表 + 补已存在表缺失的列。
+            # 根因：Alembic 从未在生产跑过（alembic_version 表不存在），早期表由更早版本
+            # 的 create_all 建好，但后续 ORM 新增的表（life_goals、user_profiles 等）从未
+            # 被创建 → /life/* 与 /profile 查询报 "relation does not exist" → 500。
+            # create_all 仅 CREATE IF NOT EXISTS（不改已有表/列），ensure_columns 再幂等补
+            # 已有表缺失的列。两者都对已存在对象 no-op，安全重复执行。
+            try:
+                Base.metadata.create_all(bind=engine)
+                ensure_columns()
+                migrate_journal_constraints()
+                # 幂等写入英语种子词库
+                with SessionLocal() as db:
+                    seed_word_books(db)
+            except Exception as e:  # noqa: BLE001
+                logger.error("production schema self-heal failed: %s", e, exc_info=True)
+        _lifespan_initialized = True
     yield
 
 
@@ -77,6 +92,8 @@ app = FastAPI(
 
 # 本地媒体回退目录: 未配置 Supabase 或上传失败时, 图片/视频落盘于此.
 media_dir = Path(settings.media_dir)
+if not media_dir.is_absolute():
+    media_dir = Path(__file__).resolve().parent.parent / media_dir
 media_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/media", StaticFiles(directory=media_dir), name="media")
 
@@ -122,6 +139,10 @@ app.include_router(interviews_router, prefix=settings.api_prefix)
 app.include_router(salary_router, prefix=settings.api_prefix)
 app.include_router(social_router, prefix=settings.api_prefix)
 
+app.include_router(english_router, prefix=settings.api_prefix)
+
+app.include_router(chat_router, prefix=settings.api_prefix)
+
 # ---------- 前端静态文件托管 ----------
 # 将 Next.js 构建产物 (apps/web/out) 作为静态资源提供服务，
 # 使 Render 后端同时托管前端 SPA，省去独立的 Cloudflare Pages 部署。
@@ -152,6 +173,9 @@ if frontend_dir.exists():
         candidate = frontend_dir / full_path
         if candidate.is_file():
             return FileResponse(candidate)
+        route_index = candidate / "index.html"
+        if route_index.is_file():
+            return FileResponse(route_index)
         # 其他所有路径 → index.html（SPA fallback）
         index_file = frontend_dir / "index.html"
         return FileResponse(index_file)

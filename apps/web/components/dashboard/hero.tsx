@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { PencilLine } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import KineticGrid from "../../../../components/originkit/ui/kineticgrid";
 import { useI18n } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
 
@@ -54,21 +53,6 @@ export function Hero() {
 
   return (
     <section className="relative overflow-hidden rounded-[20px] px-1 py-8 sm:px-4 sm:py-12">
-      <KineticGrid
-        background="transparent"
-        dotColor="#c084fc"
-        lineColor="#8b5cf6"
-        trailColor="#f472b6"
-        spacing={36}
-        radius={180}
-        strength={3}
-        trail
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity: 0.3,
-        }}
-      />
       {/* ambient glow —— 三个 radial 光晕，极淡 */}
       <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-primary/15 blur-[100px]" />
       <div className="pointer-events-none absolute -left-32 bottom-0 h-64 w-64 rounded-full bg-info/8 blur-[80px]" />

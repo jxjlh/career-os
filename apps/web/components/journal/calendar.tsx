@@ -4,9 +4,10 @@ import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
 
 import type { Journal } from "@/lib/journal";
+import { MOODS } from "@/lib/journal";
 import { useI18n } from "@/lib/i18n";
 
-const MOOD_EMOJIS = ["😵", "😐", "🙂", "😎", "✨"] as const;
+const MOOD_EMOJIS = MOODS.map((m) => m.emoji);
 const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
 
 interface CalendarProps {
@@ -36,11 +37,13 @@ export function Calendar({
   const { t } = useI18n();
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
 
-  // 将 journals 转为 Map for O(1) lookup
+  // 将 journals 转为 Map<date, Journal[]> for O(1) lookup
   const journalMap = useMemo(() => {
-    const map = new Map<string, Journal>();
+    const map = new Map<string, Journal[]>();
     for (const j of journals) {
-      map.set(j.journalDate, j);
+      const list = map.get(j.journalDate) ?? [];
+      list.push(j);
+      map.set(j.journalDate, list);
     }
     return map;
   }, [journals]);
@@ -187,11 +190,14 @@ export function Calendar({
         {grid.map((cell, idx) => {
           if (!cell) return <div key={idx} />;
 
-          const journal = journalMap.get(cell.date);
+          const dayJournals = journalMap.get(cell.date) ?? [];
           const isSelected = selectedDate === cell.date;
           const isHovered = hoveredDate === cell.date;
           const isToday = cell.isToday;
-          const hasMood = journal !== undefined;
+          const hasMood = dayJournals.length > 0;
+          const latestMood = dayJournals.length > 0
+            ? dayJournals[dayJournals.length - 1].moodIndex
+            : null;
 
           return (
             <motion.button
@@ -221,16 +227,28 @@ export function Calendar({
                 {cell.day}
               </span>
 
-              {/* 心情 emoji */}
-              {hasMood && (
+              {/* 心情 emoji + 时间段标记 */}
+              {hasMood && latestMood !== null && (
                 <motion.span
                   initial={{ scale: 0.5, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ duration: 0.3, ease: "easeOut" }}
                   className="mt-0.5 text-base leading-none"
                 >
-                  {MOOD_EMOJIS[journal!.moodIndex]}
+                  {MOOD_EMOJIS[latestMood]}
                 </motion.span>
+              )}
+
+              {/* 时间段小圆点 (最多4个) */}
+              {hasMood && (
+                <div className="mt-0.5 flex gap-0.5">
+                  {dayJournals.slice(0, 4).map((_, i) => (
+                    <span
+                      key={i}
+                      className="h-1 w-1 rounded-full bg-primary/60"
+                    />
+                  ))}
+                </div>
               )}
 
               {/* 今日标记 */}

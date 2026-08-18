@@ -51,6 +51,9 @@ def _match_score(
         return 120 if normalized_author_query else 100
     if normalized_query in normalized_title or normalized_title in normalized_query:
         return 95 if normalized_author_query else 85
+    overlap = set(normalized_query) & set(normalized_title)
+    if len(overlap) >= 2:
+        return 40
     return 0
 
 
@@ -65,7 +68,7 @@ def _download_info(access: dict[str, Any]) -> tuple[str | None, str | None]:
 async def search_book_sources(query: str, limit: int = 10, language: str = "zh") -> dict[str, Any]:
     normalized_query = _normalize(query)
     title_query, author_query = _split_title_author_query(query)
-    search_query = f"isbn:{query}" if _is_isbn(query) else f'intitle:"{title_query}"'
+    search_query = f"isbn:{query}" if _is_isbn(query) else title_query
     if author_query:
         search_query = f'{search_query} inauthor:"{author_query}"'
     params = {"q": search_query, "maxResults": min(limit * 3, 40), "printType": "books"}
@@ -86,7 +89,7 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
         identifiers = volume.get("industryIdentifiers") or []
         authors = [str(author) for author in volume.get("authors") or []]
         score = _match_score(title_query, author_query, title, authors, identifiers)
-        if score < 60:
+        if score < 20:
             continue
         access = raw.get("accessInfo") or {}
         download_url, download_format = _download_info(access)
