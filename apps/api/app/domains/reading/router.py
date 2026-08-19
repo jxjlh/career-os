@@ -220,25 +220,90 @@ def delete_reading_book(
 @router.post("/library/reading/recommendations")
 async def reading_recommendations(
     current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> dict:
+    """AI 推荐好书：每次随机推荐，且不与用户已添加/已读书籍重复。"""
+    # 获取用户已添加书籍（标题+作者），用于排除重复推荐
+    existing_books = db.query(ReadingBook).filter(ReadingBook.user_id == current_user.id).all()
+    existing_titles = [
+        f"《{b.title}》" + (f"({b.author})" if b.author else "")
+        for b in existing_books
+    ]
+    # 随机选取主题方向，确保每次推荐有差异
+    import random
+    theme_pool = [
+        "思维认知与决策科学",
+        "文学经典与人性洞察",
+        "自我成长与习惯养成",
+        "历史文明与社会演变",
+        "哲学思辨与人生智慧",
+        "心理学与情绪管理",
+        "经济学与财商启蒙",
+        "科学技术与未来趋势",
+        "传记与人物传奇",
+        "艺术审美与生活美学",
+    ]
+    selected_themes = random.sample(theme_pool, k=min(4, len(theme_pool)))
+    themes_text = "、".join(selected_themes)
+    # 随机选取推荐数量（6-8本），增加变化
+    recommend_count = random.randint(6, 8)
+    # 构建排除列表（最多传 30 本，避免 prompt 过长）
+    exclude_text = ""
+    if existing_titles:
+        exclude_text = f"\n严格禁止推荐以下用户已添加/已读的书籍：{', '.join(existing_titles[:30])}"
     prompt = (
-        "你是专业阅读顾问。推荐 6 本适合长期阅读的完整出版书籍，优先经典、权威、可查到正式版本的书，"
-        "不要推荐文章、摘要、课程或只有节选的内容。严格返回 JSON："
-        '{"books":[{"title":"","author":"","description":"","reason":"","category":"","isComplete":true,"searchQuery":""}]}。'
+        f"你是专业阅读顾问。本次请围绕以下主题方向随机推荐 {recommend_count} 本适合长期阅读的完整出版书籍：{themes_text}。"
+        "要求：\n"
+        "1. 必须是正式出版的完整书籍，优先经典、权威、可查到正式版本的书；\n"
+        "2. 不要推荐文章、摘要、课程或只有节选的内容；\n"
+        "3. 每次推荐需覆盖不同类别，确保多样性；\n"
+        "4. 尽量推荐不同作者的作品，避免同一作者多本；\n"
+        "5. 可包含中外书籍混合，适合用户语言阅读。"
+        f"{exclude_text}\n"
+        "严格返回 JSON："
+        '{"books":[{"title":"","author":"","description":"","reason":"","category":"","isComplete":true,"searchQuery":""}]}'
         f"用户语言: {current_user.language}"
     )
     provider = ai_registry.get_ai_provider()
     try:
-        parsed = extract_json(await provider.complete([{"role": "user", "content": prompt}], temperature=0.4, max_tokens=1200))
-    except Exception:
+        parsed = extract_json(await provider.complete(
+            [{"role": "user", "content": prompt}],
+            temperature=0.85,  # 提高随机性
+            max_tokens=1500,
+        ))
+    except Exception as exc:
+        logger.error("Reading recommendation failed: %s", exc, exc_info=True)
         parsed = None
     books = parsed.get("books", []) if isinstance(parsed, dict) else []
+    # 二次过滤：移除与用户已添加书籍重复的推荐（标题或作者匹配）
+    if books and existing_books:
+        existing_keys = {
+            f"{b.title.strip().lower()}_{(b.author or '').strip().lower()}"
+            for b in existing_books
+        }
+        existing_title_keys = {b.title.strip().lower() for b in existing_books}
+        filtered = []
+        for book in books:
+            title = (book.get("title") or "").strip()
+            author = (book.get("author") or "").strip()
+            key = f"{title.lower()}_{author.lower()}"
+            # 标题或标题+作者匹配则跳过
+            if title.lower() in existing_title_keys or key in existing_keys:
+                continue
+            filtered.append(book)
+        books = filtered
     if not books:
-        books = [
+        # 仅当 AI 完全失败时才使用兜底，且随机打乱
+        fallback_pool = [
             {"title": "The 7 Habits of Highly Effective People", "author": "Stephen R. Covey", "description": "建立个人效能与长期成长系统。", "reason": "适合建立目标、计划和复盘习惯。", "category": "成长", "isComplete": True, "searchQuery": "The 7 Habits of Highly Effective People full book publisher"},
             {"title": "深度工作", "author": "Cal Newport", "description": "训练专注力，减少浅层忙碌。", "reason": "适合需要长期学习和输出的人。", "category": "效率", "isComplete": True, "searchQuery": "深度工作 Cal Newport 正式出版书籍"},
             {"title": "思考，快与慢", "author": "Daniel Kahneman", "description": "理解判断、决策与认知偏差。", "reason": "帮助提升分析和决策质量。", "category": "思维", "isComplete": True, "searchQuery": "思考快与慢 丹尼尔·卡尼曼 正式出版书籍"},
+            {"title": "活出生命的意义", "author": "维克多·弗兰克尔", "description": "在苦难中寻找意义。", "reason": "建立内在力量。", "category": "心理学", "isComplete": True, "searchQuery": "活出生命的意义 弗兰克尔"},
+            {"title": "原子习惯", "author": "詹姆斯·克利尔", "description": "微小改变带来巨大成就。", "reason": "适合培养长期习惯。", "category": "成长", "isComplete": True, "searchQuery": "原子习惯 詹姆斯克利尔"},
+            {"title": "百年孤独", "author": "加西亚·马尔克斯", "description": "魔幻现实主义经典。", "reason": "文学经典必读。", "category": "文学", "isComplete": True, "searchQuery": "百年孤独 马尔克斯"},
         ]
+        random.shuffle(fallback_pool)
+        books = fallback_pool[:6]
     return {"data": {"books": books[:8], "provider": "ai" if parsed else "fallback"}}
 
 
@@ -464,13 +529,14 @@ async def populate_classic_books(
     added = []
     skipped = []
     downloadable = []
+    # 批量查询用户已存在书籍，避免 126 次单独查询
+    existing_books = db.query(ReadingBook).filter(ReadingBook.user_id == current_user.id).all()
+    existing_keys = {f"{b.title}_{b.author or ''}" for b in existing_books}
+    new_books_to_add = []
+    download_jobs = []
     for item in books_data:
-        existing = db.query(ReadingBook).filter(
-            ReadingBook.user_id == current_user.id,
-            ReadingBook.title == item["t"],
-            ReadingBook.author == item["a"],
-        ).first()
-        if existing:
+        key = f"{item['t']}_{item['a']}"
+        if key in existing_keys:
             skipped.append(item["t"])
             continue
         gutenberg_id = item.get("g")
@@ -492,20 +558,29 @@ async def populate_classic_books(
             is_complete=False,
             ai_recommended=False,
         )
-        db.add(book)
-        db.flush()
+        new_books_to_add.append(book)
         added.append(item["t"])
-        # 公版书：后台下载
         if gutenberg_id:
-            asyncio.create_task(
-                _download_book_file_job(
-                    book.id,
-                    f"https://www.gutenberg.org/ebooks/{gutenberg_id}.epub.images",
-                    "epub",
-                )
-            )
+            download_jobs.append((book, gutenberg_id))
             downloadable.append(item["t"])
+    # 批量添加并一次性 flush 获取 id
+    if new_books_to_add:
+        db.add_all(new_books_to_add)
+        db.flush()
+    # 公版书：后台下载（flush 后 book.id 已可用）
+    for book, gutenberg_id in download_jobs:
+        asyncio.create_task(
+            _download_book_file_job(
+                book.id,
+                f"https://www.gutenberg.org/ebooks/{gutenberg_id}.epub.images",
+                "epub",
+            )
+        )
     db.commit()
+    logger.info(
+        "populate_classics user=%s added=%d skipped=%d downloadable=%d",
+        current_user.id, len(added), len(skipped), len(downloadable),
+    )
     return {"data": {
         "added": added,
         "skipped": skipped,

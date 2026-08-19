@@ -800,12 +800,16 @@ class FinanceService:
                 total_positions_cost += cost_basis
                 total_positions_market_value += market_value
             # 估算今日收益：如有估值数据 day_change_percent
+            # FinancialInstrument/FinancePosition 模型暂无 metadata/is_index 字段，
+            # 通过 getattr 安全访问，避免 AttributeError 导致整个 dashboard 失败。
             day_change_pct = None
+            instrument_metadata = getattr(instrument, "metadata", None)
+            position_metadata = getattr(position, "metadata", None)
             try:
-                if instrument.metadata and isinstance(instrument.metadata, dict):
-                    day_change_pct = instrument.metadata.get("dayChangePct") or instrument.metadata.get("day_change_pct")
-                if day_change_pct is None and position.metadata and isinstance(position.metadata, dict):
-                    day_change_pct = position.metadata.get("dayChangePct") or position.metadata.get("day_change_pct")
+                if instrument_metadata and isinstance(instrument_metadata, dict):
+                    day_change_pct = instrument_metadata.get("dayChangePct") or instrument_metadata.get("day_change_pct")
+                if day_change_pct is None and position_metadata and isinstance(position_metadata, dict):
+                    day_change_pct = position_metadata.get("dayChangePct") or position_metadata.get("day_change_pct")
             except Exception:
                 day_change_pct = None
             if day_change_pct is not None:
@@ -815,7 +819,7 @@ class FinanceService:
                     pass
             if position.market_value is not None:
                 priced_count += 1
-                if instrument.is_index:
+                if getattr(instrument, "is_index", False):
                     index_observations.append({
                         "name": instrument.name,
                         "symbol": instrument.symbol,
