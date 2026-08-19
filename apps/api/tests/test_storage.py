@@ -46,12 +46,12 @@ async def test_upload_creates_public_bucket_and_retries_object_upload(monkeypatc
             calls.append((url, kwargs))
             if "/storage/v1/object/" in url:
                 self.upload_attempts += 1
+                if self.upload_attempts == 1:
+                    return SimpleNamespace(status_code=400, json=lambda: {"code": "NoSuchBucket"})
                 return SimpleNamespace(status_code=200, json=lambda: {})
+            if "/storage/v1/bucket" in url:
+                return SimpleNamespace(status_code=201, json=lambda: {})
             return SimpleNamespace(status_code=201)
-
-        async def put(self, url, **kwargs):
-            calls.append((url, kwargs))
-            return SimpleNamespace(status_code=200, json=lambda: {})
 
     settings = SimpleNamespace(
         app_env="production",
@@ -65,8 +65,8 @@ async def test_upload_creates_public_bucket_and_retries_object_upload(monkeypatc
 
     path = "user/goal/watermark/photo.jpg"
     assert await storage.upload_object(path, b"image", "image/jpeg") == path
-    # 确保桶被修补为公开
-    assert any("/storage/v1/bucket/life-records" in url for url, _ in calls)
+    # 第一次上传失败（桶不存在），创建桶后重试成功
+    assert any("/storage/v1/bucket" in url for url, _ in calls)
 
 
 @pytest.mark.asyncio
@@ -94,9 +94,6 @@ async def test_production_upload_does_not_fall_back_to_local_storage_after_cloud
             return False
 
         async def post(self, *args, **kwargs):
-            return SimpleNamespace(status_code=500)
-
-        async def put(self, *args, **kwargs):
             return SimpleNamespace(status_code=500)
 
     settings = SimpleNamespace(

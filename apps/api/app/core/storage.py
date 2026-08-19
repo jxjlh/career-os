@@ -51,6 +51,22 @@ async def _ensure_bucket_public(bucket: str) -> None:
         )
 
 
+async def _create_bucket(client: httpx.AsyncClient, storage_url: str, bucket: str) -> None:
+    """创建公开桶，已存在时静默忽略."""
+    settings = get_settings()
+    response = await client.post(
+        f"{storage_url}/bucket",
+        headers=_storage_headers(settings.supabase_service_role_key, "application/json"),
+        json={"id": bucket, "name": bucket, "public": True},
+    )
+    if response.status_code not in {200, 201, 409}:
+        raise AppError(
+            code="MEDIA_UPLOAD_FAILED",
+            message="存储桶创建失败，请稍后重试",
+            status=503,
+        )
+
+
 async def upload_object(path: str, content: bytes, content_type: str) -> str:
     settings = get_settings()
     if not _cloud_storage_is_configured(settings.supabase_url, settings.supabase_service_role_key):
@@ -67,9 +83,11 @@ async def upload_object(path: str, content: bytes, content_type: str) -> str:
     object_url = f"{storage_url}/object/{bucket}/{path}"
     headers = _storage_headers(settings.supabase_service_role_key, content_type)
     try:
-        await _ensure_bucket_public(bucket)
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(object_url, headers=headers, content=content)
+            if _bucket_is_missing(response):
+                await _create_bucket(client, storage_url, bucket)
+                response = await client.post(object_url, headers=headers, content=content)
     except httpx.HTTPError as exc:
         raise AppError(
             code="MEDIA_UPLOAD_FAILED",
