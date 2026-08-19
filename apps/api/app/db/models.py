@@ -611,6 +611,8 @@ class ReadingBook(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     is_complete: Mapped[bool] = mapped_column(Boolean, default=False)
     ai_recommended: Mapped[bool] = mapped_column(Boolean, default=False)
+    file_path: Mapped[str | None] = mapped_column(Text)  # Supabase Storage 路径
+    file_format: Mapped[str | None] = mapped_column(String(16))  # epub/pdf/txt
     last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

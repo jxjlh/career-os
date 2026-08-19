@@ -1,7 +1,7 @@
-"""Book discovery using Open Library (free, no API key required).
+"""Book discovery using Open Library + Project Gutenberg (free, no API key required).
 
-Open Library is the primary and only search source - no Google dependency.
-Supports Chinese and English book searches with intelligent query handling.
+Open Library: 搜索 + 元数据
+Project Gutenberg: 7万+公版书全文下载（EPUB/PDF/TXT）
 """
 
 import logging
@@ -13,6 +13,7 @@ import httpx
 logger = logging.getLogger("app.reading.sources")
 
 OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json"
+GUTENDEX_SEARCH_URL = "https://gutendex.com/books"
 
 
 def _normalize(value: str | None) -> str:
@@ -154,14 +155,68 @@ async def _open_library_search(search_query: str, limit: int) -> list[dict[str, 
         return []
 
 
+async def _gutenberg_search(search_query: str, limit: int) -> list[dict[str, Any]]:
+    """Search Project Gutenberg via Gutendex API (free, public domain books only)."""
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            response = await client.get(GUTENDEX_SEARCH_URL, params={"search": search_query})
+        response.raise_for_status()
+        data = response.json()
+        results = []
+        for book in (data.get("results") or [])[:limit]:
+            formats = book.get("formats") or {}
+            # 优先 EPUB，其次 PDF，最后 TXT/HTML
+            download_url = None
+            download_format = None
+            for fmt_key, fmt_label in [
+                ("application/epub+zip", "epub"),
+                ("application/pdf", "pdf"),
+                ("text/plain; charset=us-ascii", "txt"),
+                ("text/plain; charset=utf-8", "txt"),
+                ("text/html; charset=utf-8", "html"),
+            ]:
+                if fmt_key in formats and formats[fmt_key].startswith("https://"):
+                    download_url = formats[fmt_key]
+                    download_format = fmt_label
+                    break
+            authors = [a.get("name", "") for a in book.get("authors") or []]
+            cover_url = None
+            if book.get("formats", {}).get("image/jpeg"):
+                cover_url = book["formats"]["image/jpeg"]
+            results.append({
+                "id": f"gutenberg_{book.get('id', '')}",
+                "volumeInfo": {
+                    "title": book.get("title", ""),
+                    "authors": authors,
+                    "description": f"公版书 · Project Gutenberg #{book.get('id', '')} · 下载量 {book.get('download_count', 0)}",
+                    "imageLinks": {"thumbnail": cover_url} if cover_url else {},
+                    "infoLink": f"https://www.gutenberg.org/ebooks/{book.get('id', '')}",
+                    "previewLink": download_url,
+                },
+                "accessInfo": {
+                    "downloadLink": download_url,
+                    "downloadFormat": download_format,
+                    "isAvailable": bool(download_url),
+                },
+                "_gutenberg_id": book.get("id"),
+                "_download_url": download_url,
+                "_download_format": download_format,
+            })
+        return results
+    except httpx.HTTPError as exc:
+        logger.warning("Gutenberg search failed for query %r: %s", search_query, exc)
+        return []
+
+
 async def search_book_sources(query: str, limit: int = 10, language: str = "zh") -> dict[str, Any]:
-    """Search books using Open Library only (no Google dependency).
-    
+    """Search books using Open Library + Project Gutenberg.
+
     Supports:
     - Direct title search
     - Title + author search (e.g., "三体 刘慈欣")
     - ISBN search
     - Short queries (padded to meet minimum length)
+    - Project Gutenberg public domain book downloads
     """
     normalized_query = _normalize(query)
     title_query, author_query = _split_title_author_query(query)
@@ -179,6 +234,7 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
     all_raw_items: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
 
+    # 1. Open Library 搜索
     for sq in search_queries:
         raw_items = await _open_library_search(sq, limit)
         for raw in raw_items:
@@ -189,6 +245,14 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
         if all_raw_items:
             break
 
+    # 2. Project Gutenberg 搜索（公版书，可下载）
+    gutenberg_items = await _gutenberg_search(title_query, limit)
+    for raw in gutenberg_items:
+        rid = raw.get("id", "")
+        if rid and rid not in seen_ids:
+            seen_ids.add(rid)
+            all_raw_items.append(raw)
+
     items: list[dict[str, Any]] = []
     for raw in all_raw_items:
         volume = raw.get("volumeInfo") or {}
@@ -196,10 +260,17 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
         identifiers = volume.get("industryIdentifiers") or []
         authors = [str(author) for author in volume.get("authors") or []]
         score = _match_score(title_query, author_query, title, authors, identifiers)
-        if score < 30:
+        # Gutenberg 结果匹配分数稍低也可接受（因为是公版书，质量有保障）
+        is_gutenberg = raw.get("_gutenberg_id") is not None
+        if score < 30 and not is_gutenberg:
+            continue
+        if is_gutenberg and score < 20:
             continue
         access = raw.get("accessInfo") or {}
-        download_url, download_format = _download_info(access)
+        download_url = raw.get("_download_url") or access.get("downloadLink")
+        download_format = raw.get("_download_format") or access.get("downloadFormat")
+        if not download_url:
+            download_url, download_format = _download_info(access)
         image_links = volume.get("imageLinks") or {}
         items.append(
             {
@@ -213,26 +284,37 @@ async def search_book_sources(query: str, limit: int = 10, language: str = "zh")
                 "downloadUrl": download_url,
                 "downloadFormat": download_format,
                 "canDownload": bool(download_url),
-                "downloadPolicy": "provider_authorized" if download_url else None,
+                "downloadPolicy": "public_domain" if is_gutenberg else ("provider_authorized" if download_url else None),
                 "matchScore": score,
                 "isExactMatch": score >= 100,
-                "sourceKey": "open_library",
-                "sourceName": "Open Library",
+                "sourceKey": "gutenberg" if is_gutenberg else "open_library",
+                "sourceName": "Project Gutenberg" if is_gutenberg else "Open Library",
                 "isBookSource": True,
                 "isComplete": bool(download_url),
             }
         )
 
     items.sort(key=lambda item: (-item["matchScore"], item["title"]))
+    gutenberg_count = sum(1 for i in items if i["sourceKey"] == "gutenberg")
+    open_lib_count = sum(1 for i in items if i["sourceKey"] == "open_library")
+    sources = [
+        {
+            "key": "open_library",
+            "name": "Open Library",
+            "status": "succeeded",
+            "resultCount": open_lib_count,
+            "query": normalized_query,
+        }
+    ]
+    if gutenberg_count > 0:
+        sources.append({
+            "key": "gutenberg",
+            "name": "Project Gutenberg",
+            "status": "succeeded",
+            "resultCount": gutenberg_count,
+            "query": normalized_query,
+        })
     return {
         "items": items[:limit],
-        "sources": [
-            {
-                "key": "open_library",
-                "name": "Open Library",
-                "status": "succeeded",
-                "resultCount": len(items),
-                "query": normalized_query,
-            }
-        ],
+        "sources": sources,
     }
