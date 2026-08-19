@@ -139,8 +139,10 @@ async def _upload_local(path: str, content: bytes, content_type: str) -> str:
     return f"/media/{path}"
 
 
-async def resolve_object_url(path: str) -> str | None:
+def resolve_object_url(path: str) -> str | None:
     """把存储对象解析成可访问 URL (http / /media / Supabase 公共 URL)."""
+    if not path:
+        return path
     if path.startswith(("http://", "https://")):
         return path
 

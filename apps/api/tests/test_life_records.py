@@ -60,8 +60,8 @@ def test_life_record_media_endpoint(monkeypatch) -> None:
     async def fake_upload(user_id, goal_id, filename, content, content_type):
         return f"{user_id}/{goal_id}/watermark/{filename}"
 
-    async def fake_resolve(path: str) -> str | None:
-        return f"https://cdn.example.com/{path}"
+    def fake_resolve(path: str) -> str | None:
+        return f"https://cdn.example.com/{path}" if path else path
 
     monkeypatch.setattr(life_service, "upload_record_file", fake_upload)
     monkeypatch.setattr("app.domains.life.router.resolve_object_url", fake_resolve)

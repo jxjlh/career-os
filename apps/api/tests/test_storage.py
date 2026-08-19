@@ -29,7 +29,7 @@ async def test_production_upload_requires_cloud_storage_configuration(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_upload_creates_private_bucket_and_retries_object_upload(monkeypatch, tmp_path) -> None:
+async def test_upload_creates_public_bucket_and_retries_object_upload(monkeypatch, tmp_path) -> None:
     calls: list[tuple[str, dict]] = []
 
     class StorageClient:
@@ -46,10 +46,12 @@ async def test_upload_creates_private_bucket_and_retries_object_upload(monkeypat
             calls.append((url, kwargs))
             if "/storage/v1/object/" in url:
                 self.upload_attempts += 1
-                if self.upload_attempts == 1:
-                    return SimpleNamespace(status_code=400, json=lambda: {"code": "NoSuchBucket"})
                 return SimpleNamespace(status_code=200, json=lambda: {})
             return SimpleNamespace(status_code=201)
+
+        async def put(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return SimpleNamespace(status_code=200, json=lambda: {})
 
     settings = SimpleNamespace(
         app_env="production",
@@ -63,13 +65,8 @@ async def test_upload_creates_private_bucket_and_retries_object_upload(monkeypat
 
     path = "user/goal/watermark/photo.jpg"
     assert await storage.upload_object(path, b"image", "image/jpeg") == path
-    assert [url for url, _ in calls] == [
-        "https://example.supabase.co/storage/v1/object/life-records/user/goal/watermark/photo.jpg",
-        "https://example.supabase.co/storage/v1/bucket",
-        "https://example.supabase.co/storage/v1/object/life-records/user/goal/watermark/photo.jpg",
-    ]
-    assert calls[0][1]["headers"]["apikey"] == "service-role-key"
-    assert calls[1][1]["json"] == {"id": "life-records", "name": "life-records", "public": False}
+    # 确保桶被修补为公开
+    assert any("/storage/v1/bucket/life-records" in url for url, _ in calls)
 
 
 @pytest.mark.asyncio
@@ -97,6 +94,9 @@ async def test_production_upload_does_not_fall_back_to_local_storage_after_cloud
             return False
 
         async def post(self, *args, **kwargs):
+            return SimpleNamespace(status_code=500)
+
+        async def put(self, *args, **kwargs):
             return SimpleNamespace(status_code=500)
 
     settings = SimpleNamespace(

@@ -243,7 +243,7 @@ async def project_file_download(
     )
     if row is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Project file not found"})
-    url = await resolve_object_url(row.storage_path)
+    url = resolve_object_url(row.storage_path)
     if url is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Project file not found"})
     return {"data": {"url": url}}

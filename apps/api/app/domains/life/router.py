@@ -383,7 +383,7 @@ async def life_record_media(
         logger.error("life_record_media: record not found", extra={"path": path})
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Media not found"})
 
-    url = await resolve_object_url(path)
+    url = resolve_object_url(path)
     if url is None:
         # 尝试从 record 中找可用的 URL
         for field_name, field_value in [
