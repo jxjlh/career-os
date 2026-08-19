@@ -435,6 +435,54 @@ def list_skill_weekly_tasks(
     }
 
 
+class BulkSkillAdd(BaseModel):
+    skills: list[dict] = Field(min_length=1, max_length=20)
+
+
+@router.post("/skills/bulk", status_code=201)
+def bulk_add_skills(
+    payload: BulkSkillAdd,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """批量添加技能到用户矩阵，已存在的技能自动跳过。"""
+    added = []
+    skipped = []
+    for item in payload.skills:
+        name = str(item.get("name", "")).strip()[:120]
+        if not name:
+            continue
+        existing = db.query(Skill).filter(Skill.name == name).first()
+        if existing is not None:
+            user_row = db.query(UserSkill).filter(
+                UserSkill.user_id == current_user.id,
+                UserSkill.skill_id == existing.id,
+            ).first()
+            if user_row is not None:
+                skipped.append(name)
+                continue
+            skill = existing
+        else:
+            skill = Skill(
+                name=name,
+                category=str(item.get("category", "JD 提取")).strip()[:80],
+                is_ai_generated=True,
+            )
+            db.add(skill)
+            db.flush()
+        row = UserSkill(
+            user_id=current_user.id,
+            skill_id=skill.id,
+            current_level=1,
+            target_level=max(1, min(10, int(item.get("suggestedLevel", 5)))),
+            learning_status="not_started",
+        )
+        db.add(row)
+        added.append(name)
+    db.commit()
+    return {"data": {"added": added, "skipped": skipped}}
+
+
 @router.post("/skills/from-jd")
 async def extract_skills_from_jd(
     payload: JdExtractRequest,

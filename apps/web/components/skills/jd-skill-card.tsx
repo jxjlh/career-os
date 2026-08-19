@@ -34,11 +34,20 @@ export function JdSkillCard() {
   });
 
   const addSkills = useMutation({
-    mutationFn: (names: string[]) =>
-      apiFetch("/jobs/target-role/skills", {
+    mutationFn: (names: string[]) => {
+      const skillItems = names
+        .map((n) => skills.find((s) => s.name === n))
+        .filter((s): s is ExtractedSkill => s !== undefined)
+        .map((s) => ({
+          name: s.name,
+          category: s.category,
+          suggestedLevel: s.suggestedLevel,
+        }));
+      return apiFetch("/skills/bulk", {
         method: "POST",
-        body: JSON.stringify({ skills: names }),
-      }),
+        body: JSON.stringify({ skills: skillItems }),
+      });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["skill-matrix"] });
       setSkills((prev) => prev.map((s) => ({ ...s, alreadyAdded: true })));
