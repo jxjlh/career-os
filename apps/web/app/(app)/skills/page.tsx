@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { EChart } from "@/components/chart";
 import { TargetRoleCard } from "@/components/skills/target-role-card";
+import { JdSkillCard } from "@/components/skills/jd-skill-card";
 import { Badge, Button, Card, Input, SectionHeader, Skeleton, Textarea } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
 
@@ -104,6 +105,7 @@ export default function SkillsPage() {
     <div className="space-y-5">
       <SectionHeader title="技能矩阵" subtitle="先看全局能力结构，再进入任意技能制定学习路径。" />
       <TargetRoleCard />
+      <JdSkillCard />
       <Card className="p-4">
         {matrix.isLoading ? <Skeleton className="h-[300px]" /> : <EChart option={radarOption} height={320} />}
       </Card>

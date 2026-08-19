@@ -56,6 +56,10 @@ class SkillResourceSearchRequest(BaseModel):
     limit: int = Field(default=12, ge=1, le=20)
 
 
+class JdExtractRequest(BaseModel):
+    jd: str = Field(min_length=20, max_length=8000)
+
+
 @router.get("/skills")
 def list_skills(
     current_user: Annotated[Profile, Depends(get_current_user)],
@@ -429,3 +433,48 @@ def list_skill_weekly_tasks(
             ],
         }
     }
+
+
+@router.post("/skills/from-jd")
+async def extract_skills_from_jd(
+    payload: JdExtractRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """从 JD 文本中用 AI 提取所需技能列表，供用户选择性加入技能矩阵。"""
+    existing_names = {s.name for s in db.query(Skill).all()}
+    prompt = (
+        "你是技术招聘专家。从以下职位描述（JD）中提取所需的技能清单。"
+        "只提取明确或隐含需要的专业技能，忽略通用软技能（如沟通、团队合作）。"
+        "严格返回 JSON："
+        '{"skills":[{"name":"技能名","category":"分类","suggestedLevel":5,"reason":"为什么需要"]]}'
+        "。suggestedLevel 取 1-10，初级岗 3-5，中级岗 5-7，高级岗 7-9。"
+        "category 从以下选：编程语言、框架、工具、数据库、云平台、方法论、领域知识。"
+        f"\n\nJD 内容：\n{payload.jd}"
+    )
+    provider = ai_registry.get_ai_provider()
+    try:
+        parsed = extract_json(
+            await provider.complete(
+                [{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=1500,
+            )
+        )
+    except Exception:
+        parsed = None
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("skills"), list):
+        return {"data": {"skills": [], "provider": "fallback"}}
+    skills = []
+    for item in parsed["skills"][:20]:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        name = str(item["name"]).strip()[:120]
+        skills.append({
+            "name": name,
+            "category": str(item.get("category", "JD 提取")).strip()[:80],
+            "suggestedLevel": max(1, min(10, int(item.get("suggestedLevel", 5)))),
+            "reason": str(item.get("reason", "")).strip()[:200],
+            "alreadyAdded": name in existing_names,
+        })
+    return {"data": {"skills": skills, "provider": "ai"}}
