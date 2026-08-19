@@ -18,10 +18,24 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("reading_books", sa.Column("file_path", sa.Text(), nullable=True))
-    op.add_column("reading_books", sa.Column("file_format", sa.String(16), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if "reading_books" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("reading_books")}
+    if "file_path" not in columns:
+        op.add_column("reading_books", sa.Column("file_path", sa.Text(), nullable=True))
+    if "file_format" not in columns:
+        op.add_column("reading_books", sa.Column("file_format", sa.String(16), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("reading_books", "file_format")
-    op.drop_column("reading_books", "file_path")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if "reading_books" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("reading_books")}
+    if "file_format" in columns:
+        op.drop_column("reading_books", "file_format")
+    if "file_path" in columns:
+        op.drop_column("reading_books", "file_path")
