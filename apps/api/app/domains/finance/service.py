@@ -57,6 +57,52 @@ def _conflict(message: str) -> HTTPException:
     return HTTPException(status_code=409, detail={"code": "CONFLICT", "message": message})
 
 
+def _get_finance_ai_provider():
+    """返回理财决策专用 AI provider。
+
+    优先使用 FINANCE_AI_API_KEY（DeepSeek），未配置时回退到通用 provider。
+    """
+    from app.core.config import get_settings
+    from app.providers.ai.base import AIProvider
+    from app.providers.ai.registry import get_ai_provider
+    from typing import Any
+
+    settings = get_settings()
+    if settings.finance_ai_api_key:
+        return _DeepSeekProvider(
+            base_url=settings.finance_ai_base_url,
+            api_key=settings.finance_ai_api_key,
+            model=settings.finance_ai_model,
+        )
+    return get_ai_provider()
+
+
+class _DeepSeekProvider:
+    """轻量 DeepSeek/OpenAI 兼容 provider，仅用于理财决策。"""
+
+    def __init__(self, base_url: str, api_key: str, model: str) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+
+    async def complete(self, messages, response_format=None, **kwargs: Any) -> str:
+        import httpx
+
+        payload: dict[str, Any] = {
+            "model": kwargs.get("model", self.model),
+            "messages": messages,
+            "temperature": float(kwargs.get("temperature", 0.5)),
+        }
+        if response_format:
+            payload["response_format"] = {"type": response_format}
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        async with httpx.AsyncClient(timeout=60, headers=headers) as client:
+            resp = await client.post(f"{self.base_url}/chat/completions", json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+        return data["choices"][0]["message"]["content"]
+
+
 class FinanceService:
     def __init__(self, db: Session):
         self.db = db
@@ -658,9 +704,7 @@ class FinanceService:
             return run
         fallback = _deterministic_summary_from_run(run)
         try:
-            from app.providers.ai.registry import get_ai_provider
-
-            response = await get_ai_provider().complete(
+            response = await _get_finance_ai_provider().complete(
                 [
                     {"role": "system", "content": "仅根据给定的理财规则草案写简短说明；不得新增、删除或改变任何动作。"},
                     {"role": "user", "content": str(run.rule_results)},

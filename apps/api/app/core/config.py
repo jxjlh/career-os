@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     finance_ocr_api_key: str = ""
     finance_ocr_model: str = "gpt-4o-mini"
     finance_scheduler_token: str = ""
+    # 理财决策 AI（独立于 OCR 用的阿里云配置）
+    finance_ai_api_key: str = ""
+    finance_ai_base_url: str = "https://api.deepseek.com/v1"
+    finance_ai_model: str = "deepseek-chat"
 
 
 def normalize_db_url(url: str) -> str:
