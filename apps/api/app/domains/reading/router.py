@@ -323,38 +323,169 @@ async def populate_classic_books(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    """预装经典公版书籍到用户书单，并自动下载文件。"""
-    classics = [
-        {"title": "Pride and Prejudice", "author": "Jane Austen", "gutenberg_id": 1342, "category": "经典文学"},
-        {"title": "Alice's Adventures in Wonderland", "author": "Lewis Carroll", "gutenberg_id": 11, "category": "经典文学"},
-        {"title": "A Tale of Two Cities", "author": "Charles Dickens", "gutenberg_id": 98, "category": "经典文学"},
-        {"title": "The Adventures of Sherlock Holmes", "author": "Arthur Conan Doyle", "gutenberg_id": 1661, "category": "推理小说"},
-        {"title": "The Art of War", "author": "Sun Tzu", "gutenberg_id": 132, "category": "经典哲学"},
-        {"title": "Meditations", "author": "Marcus Aurelius", "gutenberg_id": 2680, "category": "经典哲学"},
-        {"title": "The Time Machine", "author": "H. G. Wells", "gutenberg_id": 35, "category": "科幻小说"},
-        {"title": "Frankenstein", "author": "Mary Wollstonecraft Shelley", "gutenberg_id": 84, "category": "经典文学"},
-        {"title": "Dracula", "author": "Bram Stoker", "gutenberg_id": 345, "category": "经典文学"},
-        {"title": "The Prince", "author": "Niccolò Machiavelli", "gutenberg_id": 1232, "category": "经典哲学"},
-        {"title": "Narrative of the Life of Frederick Douglass", "author": "Frederick Douglass", "gutenberg_id": 23, "category": "传记"},
-        {"title": "The Yellow Wallpaper", "author": "Charlotte Perkins Gilman", "gutenberg_id": 1952, "category": "经典文学"},
+    """批量导入必读书单（126本），公版书自动搜索下载。"""
+    # 必读书单：category, title, author, gutenberg_id(可选，已知公版书ID)
+    books_data = [
+        # 思想认知
+        {"t": "人类简史", "a": "尤瓦尔·赫拉利", "c": "思想认知"},
+        {"t": "枪炮、病菌与钢铁", "a": "贾雷德·戴蒙德", "c": "思想认知"},
+        {"t": "穷查理宝典", "a": "彼得·考夫曼", "c": "思想认知"},
+        {"t": "思考，快与慢", "a": "丹尼尔·卡尼曼", "c": "思想认知"},
+        {"t": "乌合之众", "a": "古斯塔夫·勒庞", "c": "思想认知"},
+        {"t": "自私的基因", "a": "理查德·道金斯", "c": "思想认知"},
+        {"t": "影响力", "a": "罗伯特·西奥迪尼", "c": "思想认知"},
+        {"t": "原则", "a": "瑞·达利欧", "c": "思想认知"},
+        {"t": "批判性思维", "a": "布鲁克·诺埃尔·摩尔", "c": "思想认知"},
+        {"t": "学会提问", "a": "尼尔·布朗", "c": "思想认知"},
+        {"t": "乡土中国", "a": "费孝通", "c": "思想认知"},
+        {"t": "基因传", "a": "悉达多·穆克吉", "c": "思想认知"},
+        {"t": "事实", "a": "汉斯·罗斯林", "c": "思想认知"},
+        {"t": "反脆弱", "a": "纳西姆·塔勒布", "c": "思想认知"},
+        {"t": "随机漫步的傻瓜", "a": "纳西姆·塔勒布", "c": "思想认知"},
+        {"t": "娱乐至死", "a": "尼尔·波兹曼", "c": "思想认知"},
+        {"t": "童年的消逝", "a": "尼尔·波兹曼", "c": "思想认知"},
+        {"t": "技术与文明", "a": "刘易斯·芒福德", "c": "思想认知"},
+        {"t": "巨变", "a": "托尼·朱特", "c": "思想认知"},
+        {"t": "身份与暴力", "a": "阿马蒂亚·森", "c": "思想认知"},
+        # 文学经典
+        {"t": "红楼梦", "a": "曹雪芹", "c": "文学经典", "g": None},
+        {"t": "活着", "a": "余华", "c": "文学经典"},
+        {"t": "平凡的世界", "a": "路遥", "c": "文学经典"},
+        {"t": "围城", "a": "钱钟书", "c": "文学经典"},
+        {"t": "白鹿原", "a": "陈忠实", "c": "文学经典"},
+        {"t": "我与地坛", "a": "史铁生", "c": "文学经典"},
+        {"t": "一句顶一万句", "a": "刘震云", "c": "文学经典"},
+        {"t": "人生海海", "a": "麦家", "c": "文学经典"},
+        {"t": "黄金时代", "a": "王小波", "c": "文学经典"},
+        {"t": "边城", "a": "沈从文", "c": "文学经典"},
+        {"t": "百年孤独", "a": "加西亚·马尔克斯", "c": "文学经典"},
+        {"t": "月亮与六便士", "a": "毛姆", "c": "文学经典", "g": 42168},
+        {"t": "局外人", "a": "加缪", "c": "文学经典"},
+        {"t": "鼠疫", "a": "加缪", "c": "文学经典"},
+        {"t": "悉达多", "a": "黑塞", "c": "文学经典", "g": 2500},
+        {"t": "荒原狼", "a": "黑塞", "c": "文学经典", "g": 9217},
+        {"t": "了不起的盖茨比", "a": "菲茨杰拉德", "c": "文学经典", "g": 64317},
+        {"t": "杀死一只知更鸟", "a": "哈珀·李", "c": "文学经典"},
+        {"t": "简·爱", "a": "夏洛蒂·勃朗特", "c": "文学经典", "g": 1260},
+        {"t": "呼啸山庄", "a": "艾米莉·勃朗特", "c": "文学经典", "g": 768},
+        {"t": "悲惨世界", "a": "雨果", "c": "文学经典", "g": 135},
+        {"t": "红与黑", "a": "司汤达", "c": "文学经典", "g": 49047},
+        {"t": "安娜·卡列尼娜", "a": "托尔斯泰", "c": "文学经典", "g": 1399},
+        {"t": "复活", "a": "托尔斯泰", "c": "文学经典", "g": 2529},
+        {"t": "老人与海", "a": "海明威", "c": "文学经典"},
+        {"t": "小王子", "a": "圣埃克苏佩里", "c": "文学经典"},
+        {"t": "人间失格", "a": "太宰治", "c": "文学经典"},
+        {"t": "瓦尔登湖", "a": "梭罗", "c": "文学经典", "g": 205},
+        {"t": "双城记", "a": "狄更斯", "c": "文学经典", "g": 98},
+        {"t": "卡拉马佐夫兄弟", "a": "陀思妥耶夫斯基", "c": "文学经典", "g": 28054},
+        # 自我成长
+        {"t": "被讨厌的勇气", "a": "岸见一郎", "c": "自我成长"},
+        {"t": "非暴力沟通", "a": "马歇尔·卢森堡", "c": "自我成长"},
+        {"t": "高效能人士的七个习惯", "a": "史蒂芬·柯维", "c": "自我成长"},
+        {"t": "少有人走的路", "a": "M·斯科特·派克", "c": "自我成长"},
+        {"t": "活出生命的意义", "a": "维克多·弗兰克尔", "c": "自我成长"},
+        {"t": "认知觉醒", "a": "周岭", "c": "自我成长"},
+        {"t": "刻意练习", "a": "安德斯·艾利克森", "c": "自我成长"},
+        {"t": "深度工作", "a": "卡尔·纽波特", "c": "自我成长"},
+        {"t": "心流", "a": "米哈里·契克森米哈赖", "c": "自我成长"},
+        {"t": "人性的弱点", "a": "戴尔·卡耐基", "c": "自我成长", "g": 6700},
+        {"t": "关键对话", "a": "科里·帕特森", "c": "自我成长"},
+        {"t": "也许你该找个人聊聊", "a": "洛莉·戈特利布", "c": "自我成长"},
+        {"t": "情绪急救", "a": "盖伊·温奇", "c": "自我成长"},
+        {"t": "当下的力量", "a": "埃克哈特·托利", "c": "自我成长"},
+        {"t": "曾国藩家书", "a": "曾国藩", "c": "自我成长"},
+        {"t": "你当像鸟飞往你的山", "a": "塔拉·韦斯特弗", "c": "自我成长"},
+        {"t": "把时间当作朋友", "a": "李笑来", "c": "自我成长"},
+        {"t": "终身成长", "a": "卡罗尔·德韦克", "c": "自我成长"},
+        {"t": "原子习惯", "a": "詹姆斯·克利尔", "c": "自我成长"},
+        {"t": "人生设计课", "a": "比尔·博内特", "c": "自我成长"},
+        # 历史
+        {"t": "史记", "a": "司马迁", "c": "历史"},
+        {"t": "资治通鉴", "a": "司马光", "c": "历史"},
+        {"t": "万历十五年", "a": "黄仁宇", "c": "历史"},
+        {"t": "中国通史", "a": "吕思勉", "c": "历史"},
+        {"t": "全球通史", "a": "斯塔夫里阿诺斯", "c": "历史"},
+        {"t": "文明的冲突", "a": "亨廷顿", "c": "历史"},
+        {"t": "秦制两千年", "a": "谌旭彬", "c": "历史"},
+        {"t": "东晋门阀政治", "a": "田余庆", "c": "历史"},
+        {"t": "长安的荔枝", "a": "马伯庸", "c": "历史"},
+        {"t": "显微镜下的大明", "a": "马伯庸", "c": "历史"},
+        {"t": "你一定爱读的极简欧洲史", "a": "约翰·赫斯特", "c": "历史"},
+        {"t": "叫魂", "a": "孔飞力", "c": "历史"},
+        {"t": "草原帝国", "a": "勒内·格鲁塞", "c": "历史"},
+        {"t": "战国歧途", "a": "刘勃", "c": "历史"},
+        {"t": "失败者的春秋", "a": "刘勃", "c": "历史"},
+        {"t": "菊与刀", "a": "鲁思·本尼迪克特", "c": "历史"},
+        # 哲学
+        {"t": "苏菲的世界", "a": "乔斯坦·贾德", "c": "哲学"},
+        {"t": "刘擎西方现代思想讲义", "a": "刘擎", "c": "哲学"},
+        {"t": "大问题：简明哲学导论", "a": "罗伯特·所罗门", "c": "哲学"},
+        {"t": "沉思录", "a": "马可·奥勒留", "c": "哲学", "g": 2680},
+        {"t": "人生的智慧", "a": "叔本华", "c": "哲学", "g": 6043},
+        {"t": "理想国", "a": "柏拉图", "c": "哲学", "g": 55201},
+        {"t": "查拉图斯特拉如是说", "a": "尼采", "c": "哲学", "g": 7205},
+        {"t": "道德经", "a": "老子", "c": "哲学"},
+        {"t": "论语", "a": "孔子及其弟子", "c": "哲学"},
+        {"t": "传习录", "a": "王阳明", "c": "哲学"},
+        {"t": "西方哲学史", "a": "罗素", "c": "哲学"},
+        {"t": "打开：周濂的100堂西方哲学课", "a": "周濂", "c": "哲学"},
+        {"t": "存在主义是一种人道主义", "a": "萨特", "c": "哲学"},
+        {"t": "何为良好生活", "a": "陈嘉映", "c": "哲学"},
+        # 心理学
+        {"t": "心理学与生活", "a": "理查德·格里格", "c": "心理学"},
+        {"t": "自卑与超越", "a": "阿德勒", "c": "心理学"},
+        {"t": "我们时代的神经症人格", "a": "卡伦·霍妮", "c": "心理学"},
+        {"t": "依恋", "a": "鲍尔比", "c": "心理学"},
+        {"t": "贪婪的多巴胺", "a": "丹尼尔·利伯曼", "c": "心理学"},
+        {"t": "社会性动物", "a": "埃利奥特·阿伦森", "c": "心理学"},
+        {"t": "内在小孩", "a": "伊贺列卡拉", "c": "心理学"},
+        {"t": "情绪勒索", "a": "周慕姿", "c": "心理学"},
+        {"t": "发展心理学", "a": "林崇德", "c": "心理学"},
+        {"t": "躁郁之心", "a": "凯·雷德菲尔德", "c": "心理学"},
+        {"t": "身份的焦虑", "a": "阿兰·德波顿", "c": "心理学"},
+        {"t": "幸福的勇气", "a": "岸见一郎", "c": "心理学"},
+        {"t": "自我、群体与社会", "a": "埃利奥特·阿伦森", "c": "心理学"},
+        # 经济学
+        {"t": "经济学原理", "a": "曼昆", "c": "经济学"},
+        {"t": "小岛经济学", "a": "希夫", "c": "经济学"},
+        {"t": "纳瓦尔宝典", "a": "埃里克·乔根森", "c": "经济学"},
+        {"t": "富爸爸穷爸爸", "a": "罗伯特·清崎", "c": "经济学"},
+        {"t": "国富论", "a": "亚当·斯密", "c": "经济学", "g": 3300},
+        {"t": "道德情操论", "a": "亚当·斯密", "c": "经济学", "g": 9750},
+        {"t": "经济学的思维方式", "a": "保罗·海恩", "c": "经济学"},
+        {"t": "牛奶可乐经济学", "a": "罗伯特·弗兰克", "c": "经济学"},
+        {"t": "贫穷的本质", "a": "班纳吉", "c": "经济学"},
+        {"t": "置身事内", "a": "兰小欢", "c": "经济学"},
+        {"t": "灰犀牛", "a": "米歇尔·渥克", "c": "经济学"},
+        {"t": "货币简史", "a": "卡比尔·塞加尔", "c": "经济学"},
+        {"t": "竞争战略", "a": "迈克尔·波特", "c": "经济学"},
     ]
+    import asyncio
     added = []
     skipped = []
-    for item in classics:
+    downloadable = []
+    for item in books_data:
         existing = db.query(ReadingBook).filter(
             ReadingBook.user_id == current_user.id,
-            ReadingBook.title == item["title"],
-            ReadingBook.author == item["author"],
+            ReadingBook.title == item["t"],
+            ReadingBook.author == item["a"],
         ).first()
         if existing:
-            skipped.append(item["title"])
+            skipped.append(item["t"])
             continue
+        gutenberg_id = item.get("g")
+        source_url = f"https://www.gutenberg.org/ebooks/{gutenberg_id}" if gutenberg_id else None
+        desc = f"{item['c']}必读"
+        if gutenberg_id:
+            desc += " · Project Gutenberg 公版书（可下载）"
+        else:
+            desc += " · 受版权保护，需自行购买"
         book = ReadingBook(
             user_id=current_user.id,
-            title=item["title"],
-            author=item["author"],
-            description=f"{item['category']} · Project Gutenberg 公版书",
-            source_url=f"https://www.gutenberg.org/ebooks/{item['gutenberg_id']}",
+            title=item["t"],
+            author=item["a"],
+            description=desc,
+            source_url=source_url,
             status="want",
             current_page=0,
             progress_percent=0,
@@ -363,16 +494,23 @@ async def populate_classic_books(
         )
         db.add(book)
         db.flush()
-        added.append(item["title"])
-        # 后台下载书籍文件
-        import asyncio
-        gutenberg_id = item["gutenberg_id"]
-        asyncio.create_task(
-            _download_book_file_job(
-                book.id,
-                f"https://www.gutenberg.org/ebooks/{gutenberg_id}.epub.images",
-                "epub",
+        added.append(item["t"])
+        # 公版书：后台下载
+        if gutenberg_id:
+            asyncio.create_task(
+                _download_book_file_job(
+                    book.id,
+                    f"https://www.gutenberg.org/ebooks/{gutenberg_id}.epub.images",
+                    "epub",
+                )
             )
-        )
+            downloadable.append(item["t"])
     db.commit()
-    return {"data": {"added": added, "skipped": skipped, "total": len(added) + len(skipped)}}
+    return {"data": {
+        "added": added,
+        "skipped": skipped,
+        "total": len(added) + len(skipped),
+        "downloadable": downloadable,
+        "downloadableCount": len(downloadable),
+        "copyrightProtected": len(added) - len(downloadable),
+    }}
