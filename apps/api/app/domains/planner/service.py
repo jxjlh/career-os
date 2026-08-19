@@ -4,6 +4,7 @@
 调用 AI 生成详细的本周计划, 持久化任务到 PlanTask, 支持 sourceId 校验和 fallback.
 """
 
+import logging
 from datetime import date, timedelta
 from typing import Any
 
@@ -24,6 +25,8 @@ from app.domains.ai.repository import AIContentRepository
 from app.domains.ai.service import AIService
 from app.providers.ai.base import extract_json
 from app.providers.ai.registry import get_ai_provider
+
+logger = logging.getLogger("app.planner")
 
 
 # 任务类型常量, 与前端 i18n key 对齐
@@ -248,18 +251,22 @@ class PlannerService:
             raw = await ai.complete(
                 [
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": f"请基于上面的档案生成本周（{week_start.isoformat()} 开始）计划"},
+                    {"role": "user", "content": f"请基于上面的档案生成本周（{week_start.isoformat()} 开始）计划，严格输出 JSON"},
                 ],
                 response_format="json_object",
                 temperature=0.5,
+                max_tokens=4000,
             )
+            logger.info("Weekly plan AI response length: %d", len(raw or ""))
             parsed = extract_json(raw)
             if parsed is None:
+                logger.warning("Weekly plan: extract_json returned None. Raw: %s", (raw or "")[:500])
                 raise AppError(code="AI_OUTPUT_INVALID", message="AI output is not valid JSON", status=422)
             self._persist_ai_plan(plan, parsed, whitelist, user_id, ai_generated=True)
             plan.ai_content_id = None  # 不强制落 ai_content, 减少 DB 写入
-        except Exception:
+        except Exception as exc:
             # fallback: 占位计划
+            logger.error("Weekly plan AI failed, using fallback: %s", exc, exc_info=True)
             self._fallback_plan(plan, user_id, weekly_minutes, priority_skills or [])
 
         # 重算统计 + 落库

@@ -490,28 +490,35 @@ async def extract_skills_from_jd(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
     """从 JD 文本中用 AI 提取所需技能列表，供用户选择性加入技能矩阵。"""
+    import logging
+    logger = logging.getLogger("app.skills.jd")
     existing_names = {s.name for s in db.query(Skill).all()}
     prompt = (
         "你是技术招聘专家。从以下职位描述（JD）中提取所需的技能清单。"
         "只提取明确或隐含需要的专业技能，忽略通用软技能（如沟通、团队合作）。"
         "严格返回 JSON："
-        '{"skills":[{"name":"技能名","category":"分类","suggestedLevel":5,"reason":"为什么需要"]]}'
+        '{"skills":[{"name":"技能名","category":"分类","suggestedLevel":5,"reason":"为什么需要"}]}'
         "。suggestedLevel 取 1-10，初级岗 3-5，中级岗 5-7，高级岗 7-9。"
         "category 从以下选：编程语言、框架、工具、数据库、云平台、方法论、领域知识。"
         f"\n\nJD 内容：\n{payload.jd}"
     )
     provider = ai_registry.get_ai_provider()
     try:
-        parsed = extract_json(
-            await provider.complete(
-                [{"role": "user", "content": prompt}],
-                temperature=0.2,
-                max_tokens=1500,
-            )
+        raw = await provider.complete(
+            [{"role": "user", "content": prompt}],
+            response_format="json_object",
+            temperature=0.2,
+            max_tokens=1500,
         )
-    except Exception:
-        parsed = None
+        logger.info("JD extraction raw response length: %d", len(raw or ""))
+        parsed = extract_json(raw)
+        if parsed is None:
+            logger.warning("JD extraction: extract_json returned None. Raw: %s", (raw or "")[:500])
+    except Exception as exc:
+        logger.error("JD extraction AI call failed: %s", exc, exc_info=True)
+        return {"data": {"skills": [], "provider": "error", "error": str(exc)}}
     if not isinstance(parsed, dict) or not isinstance(parsed.get("skills"), list):
+        logger.warning("JD extraction: invalid parsed structure: %s", str(parsed)[:300])
         return {"data": {"skills": [], "provider": "fallback"}}
     skills = []
     for item in parsed["skills"][:20]:

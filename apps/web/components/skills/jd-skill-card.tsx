@@ -23,13 +23,24 @@ export function JdSkillCard() {
 
   const extract = useMutation({
     mutationFn: () =>
-      apiFetch<{ data: { skills: ExtractedSkill[]; provider: string } }>("/skills/from-jd", {
+      apiFetch<{ data: { skills: ExtractedSkill[]; provider: string; error?: string } }>("/skills/from-jd", {
         method: "POST",
         body: JSON.stringify({ jd }),
       }),
     onSuccess: (res) => {
+      if (res.data.skills.length === 0) {
+        const msg = res.data.error
+          ? `AI 提取失败：${res.data.error}`
+          : res.data.provider === "fallback"
+            ? "AI 返回格式异常，请重试或简化 JD 内容"
+            : "未提取到技能，请检查 JD 内容是否包含明确的技术要求";
+        alert(msg);
+      }
       setSkills(res.data.skills);
       setSelected(new Set(res.data.skills.filter((s) => !s.alreadyAdded).map((s) => s.name)));
+    },
+    onError: (err: any) => {
+      alert(`请求失败：${err?.message || "网络错误，请稍后重试"}`);
     },
   });
 
