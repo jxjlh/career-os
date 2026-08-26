@@ -1,6 +1,4 @@
 """Basic tests for the AI aggregation backend."""
-import pytest
-
 from app.core.config import get_settings
 
 

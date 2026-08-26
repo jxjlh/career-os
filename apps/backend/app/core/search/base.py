@@ -8,7 +8,6 @@ from __future__ import annotations
 import abc
 import asyncio
 import logging
-from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)

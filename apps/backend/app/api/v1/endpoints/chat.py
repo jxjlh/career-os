@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,12 +55,12 @@ def _resolve_provider(provider_name: str | None) -> BaseLLMProvider:
     name = provider_name or settings.default_llm_provider
     try:
         return LLMProviderFactory.create(name)
-    except ValueError:
+    except ValueError as e:
         raise HTTPException(
             status_code=400,
             detail=f"Unknown provider: {name}. "
             f"Available: {list(LLMProviderFactory._registry.keys())}",
-        )
+        ) from e
 
 
 # ── Endpoints ──────────────────────────────────────────────────
