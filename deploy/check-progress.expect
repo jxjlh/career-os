@@ -1,0 +1,28 @@
+#!/usr/bin/expect -f
+set timeout 300
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== 检查服务器构建进程状态 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  echo --- top CPU ---
+  ps -eo pid,ppid,pcpu,pmem,etime,cmd --sort=-pcpu | head -15
+  echo --- docker processes ---
+  ps aux | grep -E 'docker|buildkit|uv|pip' | grep -v grep | head -10
+  echo --- docker images ---
+  sg docker -c 'docker images 2>&1 | head -10'
+  echo --- running containers ---
+  sg docker -c 'docker ps -a 2>&1 | head -10'
+  echo --- free mem ---
+  free -h
+  echo --- disk / ---
+  df -h /
+  echo CHECK_DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "CHECK_DONE" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

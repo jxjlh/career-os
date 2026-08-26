@@ -1,0 +1,23 @@
+#!/usr/bin/expect -f
+set timeout 900
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "cd $REMOTE && sg docker -c 'docker compose build api' 2>&1 | tail -40"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    timeout { puts "TIMEOUT build" }
+    eof { }
+}
+expect eof
+puts "\n\n=== BUILD DONE ===\n"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "cd $REMOTE && sg docker -c 'docker compose up -d api' 2>&1 | tail -10 && sleep 6 && sg docker -c 'docker compose ps' && echo --- && curl -s -o /dev/null -w 'health: %{http_code}\\n' http://127.0.0.1:8000/health && curl -s -o /dev/null -w 'ready: %{http_code}\\n' http://127.0.0.1:8000/ready && curl -s -o /dev/null -w 'static: %{http_code}\\n' http://127.0.0.1:8000/_next/static/chunks/webpack-59f02ba726e744ac.js && echo --- && sg docker -c 'docker compose logs --tail 30 api'"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    timeout { puts "TIMEOUT run" }
+    eof { }
+}
+expect eof
+puts "\n=== ALL DONE ==="

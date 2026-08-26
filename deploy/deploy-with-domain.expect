@@ -1,0 +1,88 @@
+#!/usr/bin/expect -f
+set timeout 300
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== Step 1: 本地打包 static =====\n"
+spawn bash -c "cd /Users/liheng/Documents/AI职业发展路径规划 && COPYFILE_DISABLE=1 tar czf /tmp/static-new.tar.gz -C apps/api static && echo PACKED"
+expect {
+    "PACKED" { }
+    timeout { puts "TIMEOUT pack"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 2: SCP 上传 =====\n"
+spawn scp -o StrictHostKeyChecking=no /tmp/static-new.tar.gz $SERVER:$REMOTE/
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 3: 更新静态文件 + 域名 + CORS =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  cd $REMOTE
+  rm -rf build/static
+  tar xzf static-new.tar.gz -C build/
+  rm -f static-new.tar.gz
+  echo --- static files updated ---
+  ls build/static/index.html
+
+  echo --- update .env: add FRONTEND_URL and CORS ---
+  sed -i '/^FRONTEND_URL=/d' .env
+  sed -i '/^CORS_ORIGINS=/d' .env
+  echo 'FRONTEND_URL=http://growlog.club' >> .env
+  echo 'CORS_ORIGINS=http://growlog.club,https://growlog.club,http://124.223.183.102,http://localhost:3000' >> .env
+  grep -E 'FRONTEND_URL|CORS_ORIGINS' .env
+
+  echo --- update nginx for domain ---
+  sudo bash -c 'cat > /etc/nginx/sites-available/ai-life-os <<NGINXEOF
+server {
+    listen 80;
+    server_name growlog.club www.growlog.club 124.223.183.102 _;
+
+    client_max_body_size 50M;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \\\$host;
+        proxy_set_header X-Real-IP \\\$remote_addr;
+        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \\\$scheme;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+NGINXEOF'
+  sudo nginx -t && sudo systemctl restart nginx
+  echo --- nginx updated ---
+
+  echo --- copy static to container ---
+  sg docker -c 'docker cp build/static ai-life-os-api:/app/static'
+  echo --- restart container ---
+  sg docker -c 'docker compose restart api'
+  sleep 8
+  echo --- health ---
+  curl -s http://127.0.0.1:8000/health
+  echo
+  echo --- login page ---
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/login
+  echo
+  echo --- redirect check ---
+  curl -sI http://127.0.0.1:8000/ 2>&1 | grep -i 'location\|HTTP'
+  echo ---
+  echo --- ext check ---
+  curl -s -o /dev/null -w '%{http_code}' http://124.223.183.102/login
+  echo
+  echo ALLDONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "ALLDONE" { puts "\n全部完成" }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

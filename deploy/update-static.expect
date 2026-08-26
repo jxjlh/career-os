@@ -1,0 +1,48 @@
+#!/usr/bin/expect -f
+set timeout 300
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== Step 1: 本地打包更新后的 static 目录 =====\n"
+spawn bash -c "cd /Users/liheng/Documents/AI职业发展路径规划 && tar czf /tmp/static-update.tar.gz -C apps/api static && echo PACKED"
+expect {
+    "PACKED" { }
+    timeout { puts "TIMEOUT pack"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 2: SCP 上传 =====\n"
+spawn scp -o StrictHostKeyChecking=no /tmp/static-update.tar.gz $SERVER:$REMOTE/
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 3: 服务器上解压并更新容器 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  cd $REMOTE
+  rm -rf build/static
+  tar xzf static-update.tar.gz -C build/
+  rm -f static-update.tar.gz
+  ls build/static/index.html | head -1
+  echo ---
+  sg docker -c 'docker cp build/static ai-life-os-api:/app/static'
+  echo COPIED
+  sg docker -c 'docker compose restart api'
+  echo RESTARTED
+  sleep 5
+  curl -s http://127.0.0.1:8000/health
+  echo
+  echo --- verify no old URL ---
+  grep -r 'onrender' build/static/_next/ 2>/dev/null | head -3 || echo 'CLEAN - no old URLs'
+  echo ALLDONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "ALLDONE" { puts "\n更新完成" }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

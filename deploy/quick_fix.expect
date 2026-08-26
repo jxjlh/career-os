@@ -1,0 +1,46 @@
+#!/usr/bin/expect -f
+# 快速修复：杀掉卡住的 uv sync；使用带缓存的 docker build；验证健康检查
+set timeout 600
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== STEP 1: 杀掉卡住的 docker build / uv sync 进程 ========"
+run_cmd "pkill -9 -f 'uv sync' 2>/dev/null; pkill -9 -f 'docker compose build' 2>/dev/null; sleep 2; echo 'Done'"
+run_cmd "ps aux | grep -E 'uv sync|docker compose build' | grep -v grep | head -5"
+
+puts "\n======== STEP 2: 检查 build 目录文件完整性 ========"
+run_cmd "cd /opt/ai-life-os && echo '--- build/app ---' && ls build/app | head -10 && echo '--- build/static ---' && ls build/static | head -5 && echo '--- build/Dockerfile ---' && head -20 build/Dockerfile"
+
+puts "\n======== STEP 3: 带缓存的构建（利用已有镜像层） ========"
+run_cmd "cd /opt/ai-life-os && docker compose build api 2>&1 | tail -30"
+
+puts "\n======== STEP 4: 启动容器 ========"
+run_cmd "cd /opt/ai-life-os && docker compose up -d api 2>&1 | tail -10"
+
+puts "\n======== STEP 5: 等待 80s（start_period=60s）======== STEP 5: 等待 80s（start_period=60s）"
+run_cmd "sleep 80 && echo '等待完成'"
+
+puts "\n======== STEP 6: 验证 ========"
+run_cmd "cd /opt/ai-life-os && docker ps -a --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'"
+run_cmd "echo '--- health ---' && curl -s -w '\\nHTTP %{http_code}\\n' http://127.0.0.1:8000/health"
+run_cmd "echo '--- ready ---' && curl -s http://127.0.0.1:8000/ready; echo ''"
+run_cmd "echo '--- 外网验证（growlog.club）---' && curl -s -w '\\nHTTP %{http_code}\\n' -k https://growlog.club/health"
+
+puts "\n\n============ 🎉 完成 ============"
+run_cmd "exit\r"

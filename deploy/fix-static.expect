@@ -1,0 +1,41 @@
+#!/usr/bin/expect -f
+set timeout 120
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  cd $REMOTE
+  echo --- check container static dir ---
+  sg docker -c 'docker exec ai-life-os-api ls /app/static/ | head -5'
+  echo ---
+  echo --- check if nested ---
+  sg docker -c 'docker exec ai-life-os-api ls /app/static/static/ 2>&1 | head -3'
+  echo ---
+  echo --- fix: remove old, copy new correctly ---
+  sg docker -c 'docker exec ai-life-os-api rm -rf /app/static'
+  sg docker -c 'docker cp build/static ai-life-os-api:/app/static'
+  echo COPIED
+  echo --- verify ---
+  sg docker -c 'docker exec ai-life-os-api ls /app/static/index.html'
+  sg docker -c 'docker exec ai-life-os-api grep -c odthfgmjgutpsfjkmvto /app/static/_next/static/chunks/app/\(auth\)/login/page-*.js 2>/dev/null || echo 0'
+  echo ---
+  echo --- restart ---
+  sg docker -c 'docker compose restart api'
+  sleep 10
+  echo --- health ---
+  curl -s http://127.0.0.1:8000/health
+  echo
+  echo --- login page ---
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/login
+  echo
+  echo --- check supabase in served JS ---
+  curl -s http://127.0.0.1:8000/_next/static/chunks/app/\(auth\)/login/page-216217f509b09303.js 2>/dev/null | grep -c odthfgmjgutpsfjkmvto
+  echo DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "DONE" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

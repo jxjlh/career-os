@@ -1,0 +1,140 @@
+#!/usr/bin/expect -f
+set timeout 600
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== 补跑：.env + docker-compose.yml + Nginx + 用户组 =====\n"
+
+# 注意：这里 bash 里 HEREDOC 要小心 expect 的解释。用 base64 传文件内容更可靠。
+
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "sudo mkdir -p $REMOTE && sudo chown ubuntu:ubuntu $REMOTE && cd $REMOTE && echo DIR_OK"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "DIR_OK" { }
+    timeout { puts "TIMEOUT mkdir"; exit 1 }
+}
+expect eof
+
+puts "--- 创建 .env ---"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "cat > $REMOTE/.env <<'ENVEOF'
+APP_ENV=production
+API_PREFIX=/api/v1
+PORT=8000
+
+SUPABASE_URL=https://odthfgmjgutpsfjkmvto.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9kdGhmZ21qZ3V0cHNmamttdnRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0NjIxNTcsImV4cCI6MjEwMTAzODE1N30.ORovjxkwm74Jpc-_cp6oK60k16--WF6ttcKqzobRkbE
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9kdGhmZ21qZ3V0cHNmamttdnRvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTQ2MjE1NywiZXhwIjoyMTAxMDM4MTU3fQ.s3UL2Jpi7eMmE9AAh5d08WuDzNcUsSupjOu8ja81KNQ
+SUPABASE_JWKS_URL=https://odthfgmjgutpsfjkmvto.supabase.co/auth/v1/.well-known/jwks.json
+
+XFYUN_API_KEY=309bcffee01285f0b319e2e7a72a0dca
+XFYUN_API_SECRET=OTBjMmY5ZmUxZTI1MjAwMjMwM2ZjMTU4
+XFYUN_APP_ID=a1ff432b
+SPARK_MODEL=Spark-Lite
+SPARK_WS_URL=wss://spark-api.xf-yun.com/v1.1/chat
+SPARK_DOMAIN=lite
+
+OPENAI_API_KEY=sk-ws-H.EPRHMDI.hFq6.MEUCIQCkmDdebYtzTWkkhOMHUtXFzMhbM6e6wPBAbGMz0vyWaAIgfmj_5Z5ZU2UOf3fwhXd6SGapQbrNSQ2TW90hQVFvf6U
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+FINANCE_OCR_MODEL=qwen3.5-ocr
+
+FINANCE_AI_API_KEY=sk-d67c849d7d04426fb797826f918dd9c9
+FINANCE_AI_BASE_URL=https://api.deepseek.com/v1
+FINANCE_AI_MODEL=deepseek-chat
+ENVEOF
+echo ENV_OK"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "ENV_OK" { puts ".env 已创建" }
+    timeout { puts "TIMEOUT env"; exit 1 }
+}
+expect eof
+
+puts "\n--- 创建 docker-compose.yml（用 docker compose plugin，无独立二进制） ---"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "cat > $REMOTE/docker-compose.yml <<'DCEOF'
+services:
+  api:
+    build:
+      context: ./build
+      dockerfile: Dockerfile
+    container_name: ai-life-os-api
+    restart: unless-stopped
+    ports:
+      - \"8000:8000\"
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=production
+      - PORT=8000
+    volumes:
+      - api-data:/data
+    healthcheck:
+      test: [\"CMD\", \"curl\", \"-f\", \"http://localhost:8000/health\"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  api-data:
+DCEOF
+echo DC_OK"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "DC_OK" { puts "docker-compose.yml 已创建" }
+    timeout { puts "TIMEOUT dc"; exit 1 }
+}
+expect eof
+
+puts "\n--- 配置 Nginx 反向代理 ---"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "sudo bash -c 'cat > /etc/nginx/sites-available/ai-life-os <<\"NGINXEOF\"
+server {
+    listen 80;
+    server_name _;
+
+    client_max_body_size 50M;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \\\$host;
+        proxy_set_header X-Real-IP \\\$remote_addr;
+        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \\\$scheme;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+NGINXEOF
+\"
+sudo ln -sf /etc/nginx/sites-available/ai-life-os /etc/nginx/sites-enabled/ai-life-os
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl restart nginx && sudo systemctl enable nginx
+echo NGINX_OK"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "NGINX_OK" { puts "Nginx 配置完成并重启" }
+    timeout { puts "TIMEOUT nginx"; exit 1 }
+}
+expect eof
+
+puts "\n--- ubuntu 加入 docker 组 ---"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "sudo usermod -aG docker ubuntu && echo '---' && id ubuntu | grep docker && echo GROUP_OK"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "GROUP_OK" { puts "用户已加入 docker 组" }
+    timeout { puts "TIMEOUT group"; exit 1 }
+}
+expect eof
+
+puts "\n--- 验证 build 目录（后端源代码） ---"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "ls -la $REMOTE/src/Dockerfile $REMOTE/src/pyproject.toml 2>&1 && echo SRC_OK"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "SRC_OK" { puts "源代码目录 OK" }
+    timeout { puts "TIMEOUT src"; exit 1 }
+}
+expect eof
+
+puts "\n===== 01-server-setup 剩余步骤完成！现在可以构建后端了 =====\n"

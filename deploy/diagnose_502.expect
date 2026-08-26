@@ -1,0 +1,55 @@
+#!/usr/bin/expect -f
+set timeout 300
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc sudo_s {cmd} {
+    global PASS
+    send "sudo -S bash -c '$cmd' <<< '$PASS'\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        "sudo:" { send "$PASS\r"; exp_continue }
+        timeout { puts "TIMEOUT sudo_s: $cmd"; exit 1 }
+    }
+}
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+    timeout { puts "===> SSH 连不上服务器 22 端口 (或 IP 被临时 ban)，先尝试过 10 分钟再访问或重启 Wi-Fi <==="; exit 1 }
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n============================\n=== 第 1 层：容器状态 ===\n============================"
+run_cmd "cd /opt/ai-life-os && docker ps -a --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'"
+run_cmd "echo '--- docker compose config ---' && cat docker-compose.yml 2>&1 | grep -n -E 'healthcheck|ports|test:|start_period|interval' | head -20"
+
+puts "\n============================\n=== 第 2 层：端口监听 + 本地 curl 8000 ===\n============================"
+run_cmd "echo '--- ss -ltnp LISTEN ---' && ss -ltnp 2>/dev/null | grep -E ':(80|443|8000)' | head -10"
+run_cmd "echo '--- 127.0.0.1:8000/health ---' && curl -s -o /tmp/health.txt -w 'HTTP %{http_code} time=%{time_total}s\\n' --max-time 8 http://127.0.0.1:8000/health; echo '内容:'; cat /tmp/health.txt; echo"
+run_cmd "echo '--- 127.0.0.1:8000/ready ---' && curl -s -o /tmp/ready.txt -w 'HTTP %{http_code} time=%{time_total}s\\n' --max-time 8 http://127.0.0.1:8000/ready; echo '内容:'; cat /tmp/ready.txt; echo"
+
+puts "\n============================\n=== 第 3 层：Nginx 错误日志 (最近 40 行) ===\n============================"
+sudo_s "tail -50 /var/log/nginx/error.log 2>&1"
+sudo_s "echo '--- 最近 20 条 502 upstream 错误 ---' && grep -E 'connect\\(\\) failed|upstream prematurely' /var/log/nginx/error.log 2>&1 | tail -20"
+
+puts "\n============================\n=== 第 4 层：容器日志 (启动报错 / 崩溃) ===\n============================"
+run_cmd "sudo -S sg docker -c 'docker logs ai-life-os-api --tail 120 2>&1 | tail -140' <<< '$PASS'"
+
+puts "\n============================\n=== 第 5 层：如果容器 unhealthy 就重启并现场看启动过程 ===\n============================"
+run_cmd "echo '--- inspect health ---' && sudo -S sg docker -c 'docker inspect ai-life-os-api --format \"{{.State.Status}} Health:{{.State.Health.Status}} Started:{{.State.StartedAt}} ExitCode:{{.State.ExitCode}}\"' 2>&1 <<< '$PASS'"
+
+puts "\n============================\n=== 第 6 层：本地直接访问 Nginx 443 (绕过外面网络) ===\n============================"
+run_cmd "echo '--- 本地 curl 443 /health ---' && curl -s -o /dev/null -w 'HTTP %{http_code} time=%{time_total}s\\n' -k --max-time 10 --resolve growlog.club:443:127.0.0.1 https://growlog.club/health"
+run_cmd "echo '--- 本地 curl 80 (应该 301 到 https) ---' && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} time=%{time_total}s\\n' --max-time 8 http://127.0.0.1:80/"
+
+run_cmd "exit\r"

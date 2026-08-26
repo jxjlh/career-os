@@ -1,0 +1,45 @@
+#!/usr/bin/expect -f
+# 极速模式：用已有镜像直接 up -d，不构建
+set timeout 300
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== STEP 1: 确认现有镜像存在 ========"
+run_cmd "docker images 'ai-life-os-api:*' --format 'table {{.Repository}}\\t{{.Tag}}\\t{{.Size}}'"
+
+puts "\n======== STEP 2: 先清理可能的 build 锁 + docker compose 清理 ========"
+run_cmd "cd /opt/ai-life-os && (docker compose down || true) 2>&1 | tail -5"
+run_cmd "docker ps -a"
+
+puts "\n======== STEP 3: docker compose up -d（不构建，直接用现有镜像） ========"
+run_cmd "cd /opt/ai-life-os && docker compose up -d --no-build api 2>&1 | tail -10"
+
+puts "\n======== STEP 4: 等待 80s（start_period=60s） ========"
+run_cmd "sleep 80 && echo '等待完成'"
+
+puts "\n======== STEP 5: 验证 ========"
+run_cmd "docker ps -a --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'"
+run_cmd "echo '--- 127.0.0.1 health ---' && curl -s -w '\\nHTTP %{http_code}\\n' http://127.0.0.1:8000/health"
+run_cmd "echo '--- 127.0.0.1 ready ---' && curl -s http://127.0.0.1:8000/ready; echo ''"
+run_cmd "echo '--- 外网 growlog.club health ---' && curl -s -w '\\nHTTP %{http_code}\\n' -k https://growlog.club/health"
+run_cmd "echo '--- 外网 growlog.club / ---' && curl -s -o /dev/null -w 'HTTP %{http_code} size=%{size_download}\\n' -k https://growlog.club/"
+run_cmd "echo '--- user_skills 数量验证 ---' && cd /opt/ai-life-os && sqlite3 build/career_os.db 'SELECT COUNT(*) FROM user_skills; SELECT COUNT(*) FROM skills;' 2>/dev/null || echo 'sqlite3 不可用，跳过'"
+
+puts "\n\n============ 🎉 容器已启动 ============"
+run_cmd "exit\r"

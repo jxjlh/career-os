@@ -1,0 +1,155 @@
+#!/usr/bin/expect -f
+# 修复：docker-compose 健康检查 + 技能恢复 + 容器重启
+set timeout -1
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+proc in_dir_cmd {dir cmd} {
+    send "cd $dir && $cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT ind: $cmd"; exit 1 }
+    }
+}
+
+proc sudo_in_dir {dir cmd} {
+    global PASS
+    send "cd $dir && sudo -S bash -c '$cmd' <<< '$PASS'\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        -re ".*assword.*" { send "$PASS\r"; exp_continue }
+        timeout { puts "TIMEOUT sudoind: $cmd"; exit 1 }
+    }
+}
+
+# ---- SSH ----
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== STEP 1: 修复 docker-compose.yml（healthcheck 用 python） ========"
+run_cmd {cat > /tmp/patch_compose.sh << 'SH'
+cd /opt/ai-life-os
+cp docker-compose.yml docker-compose.yml.bak
+echo "备份已创建：docker-compose.yml.bak"
+# 使用 python heredoc 替换，避免 sed 转义地狱
+python3 << 'PY'
+path = 'docker-compose.yml'
+with open(path) as f:
+    c = f.read()
+old_hc = """    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s"""
+new_hc = """    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=5); sys.exit(0 if r.status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s"""
+if old_hc in c:
+    c = c.replace(old_hc, new_hc)
+    with open(path, 'w') as f:
+        f.write(c)
+    print('✅ docker-compose.yml healthcheck 已替换')
+else:
+    print('⚠️ 未找到要替换的 healthcheck 片段，打印当前内容：')
+    print(c)
+PY
+echo '--- 当前 docker-compose.yml ---'
+cat docker-compose.yml
+SH
+bash /tmp/patch_compose.sh}
+
+puts "\n======== STEP 2: 修复技能恢复脚本（uv run python）并执行 ========"
+run_cmd {cat > /tmp/restore_skills2.py << 'PYEOF'
+import sys
+sys.path.insert(0, '/app')
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.db.models import Skill, UserSkill, Profile
+from app.core.config import settings
+
+print(f'DATABASE_URL = {settings.DATABASE_URL}')
+engine = create_engine(settings.DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
+db = SessionLocal()
+
+SEED = [
+    ("Marketing", "Marketing", "品牌与营销基础"),
+    ("Growth", "Growth Marketing", "增长营销与 A/B 测试"),
+    ("Data", "SQL", "数据分析查询"),
+    ("Data", "Power BI", "数据可视化"),
+    ("Data", "Python", "数据处理与自动化"),
+    ("Data", "GA4", "网站数据分析"),
+    ("AI", "AI Agent", "智能体应用开发"),
+    ("Marketing", "Product Marketing", "产品上市与定位"),
+    ("Ops", "Marketing Ops", "营销运营与自动化"),
+    ("CRM", "HubSpot", "CRM 管理与自动化"),
+    ("Engineering", "System Design", "系统设计"),
+    ("Product", "Product Planning", "产品规划"),
+]
+
+user = db.query(Profile).first()
+if not user:
+    print('ERROR: 没有用户 Profile')
+    sys.exit(1)
+print(f'用户: id={user.id} email={getattr(user,"email","?")}')
+
+added, skipped = [], []
+for category, name, desc in SEED:
+    skill = db.query(Skill).filter(Skill.name == name).first()
+    if skill is None:
+        skill = Skill(name=name, category=category, description=desc)
+        db.add(skill); db.flush()
+        print(f'  + 新增 Skill: {name}')
+    us = db.query(UserSkill).filter_by(user_id=user.id, skill_id=skill.id).first()
+    if us:
+        skipped.append(name)
+    else:
+        db.add(UserSkill(user_id=user.id, skill_id=skill.id,
+            current_level=1, target_level=5, confidence=0.5, learning_status='learning', notes=''))
+        added.append(name)
+db.commit()
+print(f'✅ 完成: 新增 {len(added)} 关联, 跳过 {len(skipped)} 个')
+print(f'新增: {added}')
+print(f'跳过: {skipped}')
+PYEOF
+echo 'restore_skills2.py 已写入'}
+
+run_cmd "sudo -S sg docker -c 'docker cp /tmp/restore_skills2.py ai-life-os-api:/tmp/restore_skills2.py' 2>&1 <<< '$PASS'"
+puts "\n⏳ 执行技能恢复脚本（uv run python）..."
+run_cmd "sudo -S sg docker -c 'docker exec ai-life-os-api uv run python /tmp/restore_skills2.py 2>&1' <<< '$PASS'"
+
+puts "\n======== STEP 3: 重新 build & 重启容器（应用 docker-compose.yml 修复） ========"
+puts "⚠️ 构建需要 3-8 分钟..."
+sudo_in_dir "/opt/ai-life-os" "sg docker -c 'docker compose down 2>&1 | tail -5'"
+sudo_in_dir "/opt/ai-life-os" "sg docker -c 'docker compose build --no-cache api 2>&1 | tail -30'"
+sudo_in_dir "/opt/ai-life-os" "sg docker -c 'docker compose up -d api 2>&1 | tail -10'"
+
+puts "\n======== STEP 4: 等待 60s + 验证 ========"
+run_cmd "sleep 60 && echo '等待完成'"
+sudo_in_dir "/opt/ai-life-os" "sg docker -c 'docker ps -a --format \"table {{.Names}}\\t{{.Status}}\\t{{.Ports}}\"'"
+run_cmd "echo '--- health ---' && curl -s -w '\\nHTTP %{http_code}\\n' http://127.0.0.1:8000/health 2>&1"
+run_cmd "echo '--- ready ---' && curl -s http://127.0.0.1:8000/ready 2>&1; echo ''"
+run_cmd "echo '--- skills 验证 ---' && curl -s -o /dev/null -w 'skills/matrix HTTP %{http_code}\\n' http://127.0.0.1:8000/api/v1/skills/matrix 2>&1"
+
+puts "\n\n============================================="
+puts "🎉 服务器修复完成"
+puts "============================================="
+
+run_cmd "exit\r"

@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+set timeout 90
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "echo '=== nginx error log (recent 30 lines) ==='; sudo tail -30 /var/log/nginx/error.log; echo '---'; echo '=== nginx worker_connections ==='; sudo nginx -T 2>&1 | grep -E 'worker_|keepalive|proxy_|use '|head -30; echo '---'; echo '=== container status ==='; sudo docker ps --filter name=ai-life-os-api --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'; echo '---'; echo '=== test concurrent requests ==='; for i in 1 2 3 4 5; do curl -s -o /dev/null -w \"req$i: %{http_code} %{time_total}s\\n\" -H 'Authorization: Bearer dev' http://127.0.0.1:8000/api/v1/skills/matrix & done; wait; echo '---'; echo '=== Test via Nginx HTTPS ==='; for i in 1 2 3 4 5; do curl -s -o /dev/null -w \"req$i: %{http_code} %{time_total}s\\n\" -H 'Authorization: Bearer dev' -k --resolve growlog.club:443:127.0.0.1 https://growlog.club/api/v1/skills/matrix & done; wait; echo '---'; echo '=== ulimit ==='; ulimit -n; sudo cat /etc/security/limits.conf 2>&1 | grep -v '^#' | grep -v '^$' | head -10; echo '---'; echo '=== nginx process limits ==='; sudo cat /proc/\$(pgrep -f 'nginx: master' | head -1)/limits 2>&1 | grep -i 'open\\|process'; echo SCRIPT_EXIT_OK"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "SCRIPT_EXIT_OK" { }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

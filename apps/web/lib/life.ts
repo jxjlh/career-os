@@ -1,9 +1,7 @@
 import { apiFetch } from "@/lib/api";
 
-// 媒体文件（图片/视频）直接从 Render 后端加载，跨域 img/video 标签无需 CORS
-// 生产环境 API_BASE 是 /api/v1（同源代理），媒体不能走代理（二进制性能差）
-// 所以媒体固定走 Render 绝对 URL
-const BACKEND_ORIGIN = "https://ai-life-os-api-4y3x.onrender.com";
+// 媒体文件（图片/视频）同源加载，不再走外部后端
+const BACKEND_ORIGIN = "";
 const MEDIA_ORIGIN = BACKEND_ORIGIN;
 
 export interface LifeGoal {

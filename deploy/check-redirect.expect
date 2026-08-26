@@ -1,0 +1,26 @@
+#!/usr/bin/expect -f
+set timeout 60
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  echo --- redirect headers port 8000 ---
+  curl -sI http://127.0.0.1:8000/ 2>&1 | head -15
+  echo ---
+  echo --- redirect headers port 80 ---
+  curl -sI http://127.0.0.1/ 2>&1 | head -15
+  echo ---
+  echo --- check for render.com in static files ---
+  grep -r 'onrender.com' /opt/ai-life-os/build/static/ 2>/dev/null | head -5 || echo 'NOT FOUND in static'
+  echo ---
+  echo --- check next config ---
+  grep -r 'onrender\|render.com' /opt/ai-life-os/src/app/ 2>/dev/null | head -5 || echo 'NOT FOUND in app'
+  grep -r 'onrender\|render.com' /opt/ai-life-os/src/next.config* 2>/dev/null | head -5 || echo 'NOT FOUND in next.config'
+  echo DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "DONE" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+set timeout 60
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "echo '=== Nginx error log (recent 40 lines) ==='; sudo tail -40 /var/log/nginx/error.log 2>&1; echo '---'; echo '=== Nginx access log - filter skills/matrix (recent 20) ==='; sudo grep 'skills/matrix\\|jobs/target-role' /var/log/nginx/access.log 2>&1 | tail -20; echo '---'; echo '=== Test API from server ==='; curl -s -o /dev/null -w 'matrix_via_nginx: %{http_code}\\n' -H 'Authorization: Bearer dev' https://growlog.club/api/v1/skills/matrix --resolve growlog.club:443:127.0.0.1 -k; curl -s -o /dev/null -w 'skills_via_nginx: %{http_code}\\n' -H 'Authorization: Bearer dev' https://growlog.club/api/v1/skills --resolve growlog.club:443:127.0.0.1 -k; curl -s -o /dev/null -w 'target_role: %{http_code}\\n' -H 'Authorization: Bearer dev' https://growlog.club/api/v1/jobs/target-role --resolve growlog.club:443:127.0.0.1 -k; echo '---'; echo '=== nginx -V ==='; sudo nginx -V 2>&1 | head -2; echo '---'; echo '=== nginx config /api/ location ==='; sudo grep -A 10 'location /api/' /etc/nginx/sites-available/ai-life-os; echo SCRIPT_EXIT_OK"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "SCRIPT_EXIT_OK" { }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

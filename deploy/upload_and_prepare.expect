@@ -1,0 +1,52 @@
+#!/usr/bin/expect -f
+# 用 expect 自动输入密码上传文件 + 执行服务器脚本
+set timeout 300
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+# === Step 1: 打包 apps/api ===
+spawn bash -c "cd /Users/liheng/Documents/AI职业发展路径规划 && tar czf /tmp/api-src.tar.gz -C apps api && tar czf /tmp/deploy-scripts.tar.gz -C . deploy && echo DONE_PACK"
+expect eof
+
+# === Step 2: SSH 准备目录 ===
+spawn ssh -o StrictHostKeyChecking=no $SERVER "sudo mkdir -p $REMOTE && sudo chown -R ubuntu:ubuntu $REMOTE && sudo rm -rf $REMOTE/src $REMOTE/build $REMOTE/api $REMOTE/deploy && rm -f $REMOTE/api-src.tar.gz $REMOTE/deploy-scripts.tar.gz && echo DONE_DIR"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "DONE_DIR" { }
+    timeout { puts "TIMEOUT ssh mkdir"; exit 1 }
+}
+expect eof
+
+# === Step 3: SCP api-src.tar.gz ===
+spawn scp -o StrictHostKeyChecking=no /tmp/api-src.tar.gz $SERVER:$REMOTE/
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp api"; exit 1 }
+}
+expect eof
+
+# === Step 4: SCP deploy-scripts.tar.gz ===
+spawn scp -o StrictHostKeyChecking=no /tmp/deploy-scripts.tar.gz $SERVER:$REMOTE/
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp deploy"; exit 1 }
+}
+expect eof
+
+# === Step 5: SSH 解压，执行 01-server-setup.sh（安装 Docker Nginx + 配置） ===
+spawn ssh -o StrictHostKeyChecking=no $SERVER "cd $REMOTE && tar xzf api-src.tar.gz && mv api src && rm -f api-src.tar.gz && tar xzf deploy-scripts.tar.gz && rm -f deploy-scripts.tar.gz && cp deploy/01-server-setup.sh deploy/02-build-and-deploy.sh . && chmod +x 01-server-setup.sh 02-build-and-deploy.sh deploy/*.sh && echo DONE_UPLOAD"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "DONE_UPLOAD" { }
+    timeout { puts "TIMEOUT ssh unpack"; exit 1 }
+}
+expect eof
+
+puts "\n===== 上传完成！下一步：在 OrcaTerm 网页终端执行 =====\n"
+puts "  cd /opt/ai-life-os"
+puts "  sudo bash 01-server-setup.sh    # 安装 Docker + Nginx + 配置环境（约 3-8 分钟）"
+puts "  newgrp docker                   # 让 docker 组权限生效"
+puts "  bash 02-build-and-deploy.sh     # 构建镜像并启动后端（约 5-15 分钟）"

@@ -1,0 +1,26 @@
+#!/usr/bin/expect -f
+set timeout 300
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== SCP upload start-and-verify.sh =====\n"
+spawn scp -o StrictHostKeyChecking=no /Users/liheng/Documents/AI职业发展路径规划/deploy/start-and-verify.sh $SERVER:$REMOTE/
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+puts "\n===== SSH execute =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "cd $REMOTE && chmod +x start-and-verify.sh && bash start-and-verify.sh 2>&1; echo EXITCODE=$?"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "ALLDONE" { puts "\n验证完成" }
+    "EXITCODE=" { }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

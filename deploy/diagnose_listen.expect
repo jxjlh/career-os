@@ -1,0 +1,49 @@
+#!/usr/bin/expect -f
+set timeout 300
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc sudo_s {cmd} {
+    global PASS
+    send "sudo -S bash -c '$cmd' <<< '$PASS'\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        "sudo:" { send "$PASS\r"; exp_continue }
+        timeout { puts "TIMEOUT sudo_s: $cmd"; exit 1 }
+    }
+}
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+    timeout { puts "SSH 连接失败"; exit 1 }
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== 1. 监听端口确认 ========"
+run_cmd "echo '--- ss -ltnp ---' && ss -ltnp 2>/dev/null | head -20"
+run_cmd "echo '--- /etc/nginx/sites-enabled 目录 ---' && ls -la /etc/nginx/sites-enabled/ 2>/dev/null"
+run_cmd "echo '--- grep listen ---' && sudo -S grep -R -Hn 'listen ' /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>&1 | head -20 <<< '$PASS'"
+
+puts "\n======== 2. 腾讯云/云厂商安全组: 只能从外部手动开启，但先检查本机 iptables YJ-FIREWALL 规则 ========"
+sudo_s "iptables -S YJ-FIREWALL-INPUT 2>&1 | head -30"
+sudo_s "iptables -n -L INPUT 2>&1 | head -30"
+
+puts "\n======== 3. 公网 IP + eth0 地址 + 临时用 curl 从公网视角（由脚本用外部 curl 接口检测）========"
+run_cmd "echo '--- 公网出口 IP (不会等于 124.223...) ---' && curl -s -m 5 https://ifconfig.me 2>&1; echo"
+run_cmd "echo '--- 腾讯云内网地址 ---' && ip -4 a 2>/dev/null | grep -E 'inet |inet ' | head -5"
+
+puts "\n======== 4. 重启 Nginx + 再检查一次监听 ========"
+sudo_s "systemctl restart nginx ; sleep 2 ; systemctl --no-pager status nginx | head -10"
+run_cmd "echo '--- 重启后 ss -ltnp ---' && ss -ltnp 2>/dev/null | head -15"
+
+run_cmd "exit\r"

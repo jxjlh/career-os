@@ -1,0 +1,102 @@
+#!/usr/bin/expect -f
+# 最后修复：真正 restart 容器 + 正确的技能恢复脚本
+set timeout -1
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== STEP 1: 修复技能恢复脚本（get_settings()） ========"
+run_cmd {cat > /tmp/restore_skills3.py << 'PYEOF'
+import sys
+sys.path.insert(0, '/app')
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.db.models import Skill, UserSkill, Profile
+from app.core.config import get_settings
+
+settings = get_settings()
+print(f'DATABASE_URL = {settings.database_url}')
+engine = create_engine(settings.database_url)
+SessionLocal = sessionmaker(bind=engine)
+db = SessionLocal()
+
+SEED = [
+    ("Marketing", "Marketing", "品牌与营销基础"),
+    ("Growth", "Growth Marketing", "增长营销与 A/B 测试"),
+    ("Data", "SQL", "数据分析查询"),
+    ("Data", "Power BI", "数据可视化"),
+    ("Data", "Python", "数据处理与自动化"),
+    ("Data", "GA4", "网站数据分析"),
+    ("AI", "AI Agent", "智能体应用开发"),
+    ("Marketing", "Product Marketing", "产品上市与定位"),
+    ("Ops", "Marketing Ops", "营销运营与自动化"),
+    ("CRM", "HubSpot", "CRM 管理与自动化"),
+    ("Engineering", "System Design", "系统设计"),
+    ("Product", "Product Planning", "产品规划"),
+]
+
+user = db.query(Profile).first()
+if not user:
+    print('ERROR: 没有用户 Profile')
+    sys.exit(1)
+print(f'用户: id={user.id} email={getattr(user,"email","?")}')
+
+added, skipped = [], []
+for category, name, desc in SEED:
+    skill = db.query(Skill).filter(Skill.name == name).first()
+    if skill is None:
+        skill = Skill(name=name, category=category, description=desc)
+        db.add(skill); db.flush()
+        print(f'  + 新增 Skill: {name}')
+    us = db.query(UserSkill).filter_by(user_id=user.id, skill_id=skill.id).first()
+    if us:
+        skipped.append(name)
+    else:
+        db.add(UserSkill(user_id=user.id, skill_id=skill.id,
+            current_level=1, target_level=5, confidence=0.5, learning_status='learning', notes=''))
+        added.append(name)
+db.commit()
+# 验证
+count = db.query(UserSkill).filter_by(user_id=user.id).count()
+print(f'✅ 完成: 新增 {len(added)} 关联, 跳过 {len(skipped)} 个. 当前 user_skills 共 {count} 条')
+print(f'新增: {added}')
+print(f'跳过: {skipped}')
+PYEOF
+echo 'restore_skills3.py 写入完成'}
+
+run_cmd "sudo -S sg docker -c 'docker cp /tmp/restore_skills3.py ai-life-os-api:/tmp/restore_skills3.py' 2>&1 <<< '$PASS'"
+puts "⏳ 执行技能恢复..."
+run_cmd "sudo -S sg docker -c 'docker exec ai-life-os-api uv run python /tmp/restore_skills3.py 2>&1' <<< '$PASS'"
+
+puts "\n======== STEP 2: 重启容器（应用新 docker-compose.yml 健康检查） ========"
+run_cmd "cd /opt/ai-life-os"
+# sg docker 不需要 sudo？直接试试，因为用户在 docker 组里
+run_cmd "docker compose down 2>&1 | tail -5"
+puts "⏳ 构建镜像（3-8 分钟）..."
+run_cmd "docker compose build --no-cache api 2>&1 | tail -30"
+puts "⏳ 启动容器..."
+run_cmd "docker compose up -d api 2>&1 | tail -10"
+
+puts "\n======== STEP 3: 等待 + 验证健康检查 ========"
+run_cmd "sleep 75 && echo '等待 75s 完成（start_period=60s）'"
+run_cmd "docker ps -a --format 'table {{.Names}}\t{{.Status}}'"
+run_cmd "echo '--- health ---' && curl -s -w '\nHTTP %{http_code}\n' http://127.0.0.1:8000/health"
+run_cmd "echo '--- ready ---' && curl -s http://127.0.0.1:8000/ready; echo ''"
+
+puts "\n\n============ 🎉 全部修复完成 ============"
+run_cmd "exit\r"

@@ -1,0 +1,115 @@
+#!/usr/bin/expect -f
+set timeout 3600
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== Step 1: 准备 build 目录（复制 apps/api 源码） =====\n"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  cd $REMOTE
+  rm -rf build
+  mkdir -p build
+  if [ ! -d src ]; then echo SRC_MISSING; exit 1; fi
+  cp -r src/* build/
+  for f in Dockerfile pyproject.toml uv.lock alembic.ini; do
+    if [ ! -f build/\$f ]; then echo \"MISSING: build/\$f\"; ls build/; exit 1; fi
+  done
+  echo BUILD_DIR_OK
+  ls build/Dockerfile build/pyproject.toml
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "BUILD_DIR_OK" { puts "build 目录准备完成" }
+    "SRC_MISSING" { puts "ERROR: src 目录不存在！"; exit 1 }
+    timeout { puts "TIMEOUT build dir"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 2: 停止旧容器，构建镜像（5-15 分钟） =====\n"
+puts "构建 Docker 镜像需要下载 Python 基础镜像 + 依赖，比较慢，耐心等...\n"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "
+  cd $REMOTE
+  sg docker -c 'docker compose down 2>&1 | tail -5'
+  echo ---
+  sg docker -c 'docker compose build --no-cache api 2>&1 | tail -80'
+  echo BUILD_EXIT_\$?
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    -re "BUILD_EXIT_(\\d+)" {
+        set ec $expect_out(1,string)
+        puts "\n构建 exit code: $ec"
+        if {$ec != 0} {
+            puts "构建失败！查看完整日志："
+            spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "cd $REMOTE && sg docker -c 'docker compose build api 2>&1 | tail -100'"
+            expect {
+                "password:" { send "$PASS\r"; exp_continue }
+                eof { }
+            }
+            exit 1
+        }
+    }
+    timeout { puts "TIMEOUT build"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 3: 启动容器 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  cd $REMOTE
+  sg docker -c 'docker compose up -d api 2>&1'
+  echo START_DONE
+  sleep 3
+  sg docker -c 'docker compose ps'
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "START_DONE" { }
+    timeout { puts "TIMEOUT start"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 4: 轮询 health 端点（约 60-120 秒） =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+    sleep 5
+    STATUS=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health 2>/dev/null || echo '000')
+    echo \"[\$i] health status: \$STATUS\"
+    if [ \"\$STATUS\" = \"200\" ]; then
+      echo HEALTHY
+      curl -s http://127.0.0.1:8000/health
+      echo
+      break
+    fi
+  done
+  echo LAST_LOGS
+  cd $REMOTE && sg docker -c 'docker compose logs --tail 30 api' 2>&1
+  echo END
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "END" { }
+    timeout { puts "TIMEOUT health"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 5: 外网验证 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  sleep 2
+  echo -- port 8000 direct --
+  curl -s -o /dev/null -w '%{http_code}' http://124.223.183.102:8000/health || echo FAIL
+  echo
+  echo -- nginx 80 proxy --
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/health || echo FAIL
+  echo
+  echo FINAL_DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "FINAL_DONE" { }
+    timeout { puts "TIMEOUT final"; exit 1 }
+}
+expect eof
+
+puts "\n===== 后端部署完成 =====\n"

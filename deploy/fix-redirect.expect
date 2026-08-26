@@ -1,0 +1,47 @@
+#!/usr/bin/expect -f
+set timeout 120
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+# 上传修改后的 config.py
+puts "===== SCP config.py =====\n"
+spawn scp -o StrictHostKeyChecking=no /Users/liheng/Documents/AI职业发展路径规划/apps/api/app/core/config.py $SERVER:$REMOTE/src/app/core/config.py
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+# 在服务器上更新 build 目录中的 config.py，更新 .env，重启容器
+puts "\n===== 更新容器配置并重启 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  cd $REMOTE
+  cp src/app/core/config.py build/app/core/config.py
+  echo --- config.py updated ---
+  grep frontend_url build/app/core/config.py
+  echo ---
+  echo 'FRONTEND_URL=' >> .env
+  echo --- .env updated ---
+  sg docker -c 'docker cp build/app/core/config.py ai-life-os-api:/app/app/core/config.py'
+  sg docker -c 'docker compose restart api'
+  echo RESTARTED
+  sleep 5
+  echo --- health ---
+  curl -s http://127.0.0.1:8000/health
+  echo
+  echo --- redirect check ---
+  curl -sI http://127.0.0.1:8000/ 2>&1 | head -10
+  echo ---
+  echo --- login page ---
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/login
+  echo
+  echo ALLDONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "ALLDONE" { puts "\n完成" }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

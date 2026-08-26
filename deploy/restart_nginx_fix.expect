@@ -1,0 +1,57 @@
+#!/usr/bin/expect -f
+set timeout 120
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== STEP 1: 彻底 restart Nginx (非 reload) ========"
+send "sudo systemctl restart nginx\r"
+expect {
+    "*==== AUTHENTICATING*" {}
+    "*assword*" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect {
+    "*==== AUTHENTICATING*" {}
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " { send "$PASS\r"; exp_continue }
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+run_cmd "systemctl --no-pager status nginx 2>&1 | head -8"
+
+puts "\n======== STEP 2: curl 验证 HTTPS 域名（从服务器本地） ========"
+run_cmd "echo --- HTTPS /health --- && curl -s -w '\\nHTTP %{http_code}\\n' --resolve growlog.club:443:127.0.0.1 -k https://growlog.club/health"
+run_cmd "echo --- HTTPS /api/v1/skills/matrix --- && curl -s -o /dev/null -w 'HTTP %{http_code}\\n' --resolve growlog.club:443:127.0.0.1 -k https://growlog.club/api/v1/skills/matrix"
+run_cmd "echo --- HTTPS /dashboard 非 RSC（导航请求，模拟无 rsc 头）--- && curl -s -o /dev/null -w 'HTTP %{http_code} size=%{size_download} redirect=%{redirect_url}\\n' --resolve growlog.club:443:127.0.0.1 -k https://growlog.club/dashboard"
+run_cmd "echo --- HTTPS /dashboard/index.txt （无 RSC 请求头）模拟导航 --- && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} size=%{size_download}\\n' --resolve growlog.club:443:127.0.0.1 -k https://growlog.club/dashboard/index.txt"
+
+puts "\n======== STEP 3: 修复 FRONTEND_URL 为 https (main.py 重定向用) ========"
+run_cmd "cd /opt/ai-life-os && grep -n 'FRONTEND_URL=' .env"
+run_cmd "sed -i.bak 's|^FRONTEND_URL=http://growlog.club$|FRONTEND_URL=https://growlog.club|; s|^CORS_ORIGINS=.*$|CORS_ORIGINS=https://growlog.club,http://growlog.club,http://124.223.183.102,http://localhost:3000|' .env && echo '✅ .env 已修复' && grep -n 'FRONTEND_URL=\\|CORS_ORIGINS=' .env"
+
+puts "\n======== STEP 4: 重启容器（.env 生效）======== STEP 4: 重启容器 ========"
+run_cmd "cd /opt/ai-life-os && docker compose restart api 2>&1 | tail -5"
+run_cmd "sleep 80 && echo '等待 80s 健康检查'"
+run_cmd "docker ps -a --format 'table {{.Names}}\\t{{.Status}}'"
+
+puts "\n======== STEP 5: 最终验证（从服务器） ========"
+run_cmd "echo '--- /health ---' && curl -s -w '\\nHTTP %{http_code}\\n' --resolve growlog.club:443:127.0.0.1 -k https://growlog.club/health"
+run_cmd "echo '--- 外网 HTTPS /dashboard/ (非 RSC) ---' && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url}\\n' -k https://growlog.club/dashboard/"
+
+puts "\n\n============ 🎉 Nginx 彻底重启完成 ============"
+run_cmd "exit\r"

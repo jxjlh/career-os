@@ -1,0 +1,28 @@
+#!/usr/bin/expect -f
+set timeout 3600
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== Step 1: SCP rebuild.sh 到服务器 =====\n"
+spawn scp -o StrictHostKeyChecking=no /Users/liheng/Documents/AI职业发展路径规划/deploy/rebuild.sh $SERVER:$REMOTE/
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 2: SSH 执行重建 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "cd $REMOTE && chmod +x rebuild.sh && bash rebuild.sh 2>&1; echo SCRIPT_EXIT_\$?"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    -re "SCRIPT_EXIT_(\\d+)" {
+        set rc $expect_out(1,string)
+        puts "\n\n===== Script exit: $rc ====="
+    }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

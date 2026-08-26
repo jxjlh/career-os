@@ -1,0 +1,24 @@
+#!/usr/bin/expect -f
+set timeout 120
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+puts "===== Step 1: SCP check-ssl-config.sh 到服务器 =====\n"
+spawn scp -o StrictHostKeyChecking=no /Users/liheng/Documents/AI职业发展路径规划/deploy/check-ssl-config.sh $SERVER:/tmp/check-ssl-config.sh
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 2: 执行检查脚本 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "sudo bash /tmp/check-ssl-config.sh 2>&1; echo SCRIPT_EXIT_OK"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "SCRIPT_EXIT_OK" { }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

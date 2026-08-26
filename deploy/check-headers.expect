@@ -1,0 +1,22 @@
+#!/usr/bin/expect -f
+set timeout 60
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  echo --- curl -v port 8000 / ---
+  curl -v http://127.0.0.1:8000/ 2>&1 | head -30
+  echo ==
+  echo --- curl -v port 80 / ---
+  curl -v http://127.0.0.1/ 2>&1 | head -30
+  echo ==
+  echo --- check sw.js ---
+  head -20 /opt/ai-life-os/build/static/sw.js 2>/dev/null || echo 'no sw.js'
+  echo DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "DONE" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

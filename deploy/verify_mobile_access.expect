@@ -1,0 +1,26 @@
+#!/usr/bin/expect -f
+set timeout 300
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+proc run_cmd {cmd} { send "$cmd\r"; expect { -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {} timeout { puts "TIMEOUT run: $cmd"; exit 1 } } }
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 $USER@$HOST
+expect { "*assword:" { send "$PASS\r" } -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {} timeout { puts "SSH FAIL"; exit 1 } }
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== 用不同的 UA + 不同的 IP 协议模拟'正常手机用户'访问 HTTPS 外网 (腾讯云内网 curl 经过 NAT 的出口) ========"
+run_cmd "echo '--- 普通 curl (模拟手机 Chrome UA) ---' && curl -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' -s -o /tmp/index.html -w 'HTTPS / HTTP %{http_code} size=%{size_download} time=%{time_total}s TLS=%{ssl_verify_result}\\n' --max-time 15 -k https://growlog.club/ 2>&1"
+run_cmd "echo '--- 看一眼 index.html 是否正常 (head) ---' && head -c 500 /tmp/index.html 2>&1"
+run_cmd "echo '--- /skills/ (SPA 路由) 返回 HTML 吗 ---' && curl -s -o /tmp/skills.html -w 'HTTPS /skills/ HTTP %{http_code} size=%{size_download} ct=%{content_type}\\n' --max-time 15 -k -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' https://growlog.club/skills/ 2>&1"
+run_cmd "head -c 300 /tmp/skills.html 2>&1"
+
+puts "\n======== 检查 SSL 证书到期时间 + 协议(正常应该 OK) ========"
+run_cmd "echo 'Q' | openssl s_client -servername growlog.club -connect 127.0.0.1:443 2>&1 | grep -E 'subject=|issuer=|NotBefore|NotAfter|Verify return|Protocol|Cipher' | head -10"
+
+puts "\n======== 关键：模拟外部手机用户 IP 的请求（从服务器自己发起，经过 127.0.0.1 已经验证过 OK，这里验证域名 HTTPS 配置） ========"
+run_cmd "echo '--- /dashboard/index.txt 导航请求 (无 RSC 头) ---' && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} size=%{size_download} ct=%{content_type}\\n' -k --resolve growlog.club:443:127.0.0.1 -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' https://growlog.club/dashboard/index.txt 2>&1"
+run_cmd "echo '--- /dashboard/index.txt RSC 请求 (带 RSC 头) ---' && curl -s -o /dev/null -w 'HTTP %{http_code} size=%{size_download} ct=%{content_type}\\n' -H 'RSC: 1' -k --resolve growlog.club:443:127.0.0.1 https://growlog.club/dashboard/index.txt 2>&1"
+run_cmd "echo '--- /skills/ SPA 路由最终返回 HTML ---' && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} size=%{size_download} ct=%{content_type}\\n' -k --resolve growlog.club:443:127.0.0.1 https://growlog.club/skills/ 2>&1"
+
+run_cmd "exit\r"

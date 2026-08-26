@@ -1,0 +1,40 @@
+#!/usr/bin/expect -f
+set timeout 600
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== Step 1: SCP 上传脚本和 middleware.py =====\n"
+spawn scp -o StrictHostKeyChecking=no \
+  /Users/liheng/Documents/AI职业发展路径规划/deploy/update-middleware.sh \
+  /Users/liheng/Documents/AI职业发展路径规划/apps/api/app/core/middleware.py \
+  $SERVER:/tmp/
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 2: 移动 middleware.py 到 build 目录 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "cp /tmp/middleware.py $REMOTE/build/app/core/middleware.py && cp /tmp/update-middleware.sh $REMOTE/ && chmod +x $REMOTE/update-middleware.sh && echo MOVED"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "MOVED" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 3: 执行更新脚本 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "cd $REMOTE && bash update-middleware.sh 2>&1; echo SCRIPT_EXIT_\$?"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    -re "SCRIPT_EXIT_(\\d+)" {
+        set rc $expect_out(1,string)
+        puts "\n\n===== Script exit: $rc ====="
+    }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

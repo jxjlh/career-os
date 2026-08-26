@@ -1,0 +1,24 @@
+#!/usr/bin/expect -f
+set timeout 60
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+puts "===== SCP optimize-nginx.sh =====\n"
+spawn scp -o StrictHostKeyChecking=no /Users/liheng/Documents/AI职业发展路径规划/deploy/optimize-nginx.sh $SERVER:/tmp/optimize-nginx.sh
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { exit 1 }
+}
+expect eof
+
+puts "\n===== 执行优化脚本 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "sudo bash /tmp/optimize-nginx.sh 2>&1; echo SCRIPT_EXIT_OK"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "SCRIPT_EXIT_OK" { }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

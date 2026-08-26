@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+set timeout 60
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "echo '=== DNS resolve ==='; dig +short growlog.club; echo '---'; echo '=== Local HTTPS test ==='; curl -s -o /dev/null -w 'root: %{http_code}\\n' https://growlog.club/ --resolve growlog.club:443:127.0.0.1 -k; curl -s -o /dev/null -w 'static: %{http_code}\\n' 'https://growlog.club/_next/static/chunks/webpack-59f02ba726e744ac.js' --resolve growlog.club:443:127.0.0.1 -k; curl -s -o /dev/null -w 'login: %{http_code}\\n' https://growlog.club/login --resolve growlog.club:443:127.0.0.1 -k; curl -s https://growlog.club/ready --resolve growlog.club:443:127.0.0.1 -k; echo ''; echo '---'; echo '=== Public DNS test ==='; curl -s -o /dev/null -w 'root: %{http_code}\\n' --resolve growlog.club:443:124.223.183.102 https://growlog.club/ -k; curl -s -o /dev/null -w 'static: %{http_code}\\n' --resolve growlog.club:443:124.223.183.102 'https://growlog.club/_next/static/chunks/webpack-59f02ba726e744ac.js' -k; echo '---'; echo '=== Nginx config check ==='; sudo nginx -t 2>&1; echo '---'; echo '=== Cert check ==='; sudo certbot certificates 2>&1 | head -30; echo SCRIPT_EXIT_OK"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "SCRIPT_EXIT_OK" { }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

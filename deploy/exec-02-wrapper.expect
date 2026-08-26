@@ -1,0 +1,33 @@
+#!/usr/bin/expect -f
+set timeout 3600
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== Step 1: SCP build-and-run.sh 到服务器 =====\n"
+spawn scp -o StrictHostKeyChecking=no /Users/liheng/Documents/AI职业发展路径规划/deploy/build-and-run.sh $SERVER:$REMOTE/
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 2: SSH 执行构建（5-20 分钟，请耐心等待） =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "cd $REMOTE && chmod +x build-and-run.sh && bash build-and-run.sh 2>&1; echo SCRIPT_FINAL_EXIT_\$?;"
+
+set timeout 3600
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    -re "SCRIPT_FINAL_EXIT_(\\d+)" {
+        set ec $expect_out(1,string)
+        puts "\n===== Final exit code: $ec ====="
+        if {$ec != 0} {
+            puts "后端部署失败"
+            exit 1
+        }
+        puts "后端部署成功！"
+    }
+    timeout { puts "TIMEOUT overall"; exit 1 }
+}
+expect eof

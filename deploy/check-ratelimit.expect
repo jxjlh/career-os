@@ -1,0 +1,15 @@
+#!/usr/bin/expect -f
+set timeout 30
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+puts "===== 检查后端限流配置 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "grep -rn 'RateLimit\\|rate_limit\\|RATE_LIMITED' /opt/ai-life-os/build/app --include='*.py' | head -20; echo '---'; docker logs ai-life-os-api --tail 30 2>&1 | head -40"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "RATE_LIMITED" { }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

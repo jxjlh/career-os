@@ -1,0 +1,24 @@
+#!/usr/bin/expect -f
+set timeout 120
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  echo --- buildx alive ---
+  ps aux | grep -E 'buildx|compose build|docker build' | grep -v grep | head -5
+  echo --- images ---
+  sg docker -c 'docker images 2>&1'
+  echo --- containers ---
+  sg docker -c 'docker ps -a 2>&1'
+  echo --- build cache ---
+  sg docker -c 'docker buildx du 2>&1 | tail -5'
+  echo --- disk ---
+  df -h / | tail -1
+  echo CHECK2_DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "CHECK2_DONE" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

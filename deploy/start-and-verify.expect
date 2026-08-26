@@ -1,0 +1,44 @@
+#!/usr/bin/expect -f
+set timeout 300
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== 启动后端容器并验证 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "
+  cd $REMOTE
+  sg docker -c 'docker compose up -d api 2>&1'
+  echo STARTED
+  sleep 5
+  sg docker -c 'docker compose ps 2>&1'
+  echo ---
+  echo Waiting for health check...
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    sleep 5
+    STATUS=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health 2>/dev/null || echo '000')
+    echo \"\[$i\] health: $STATUS\"
+    if \[ \"\$STATUS\" = \"200\" \]; then
+      echo HEALTHY
+      curl -s http://127.0.0.1:8000/health
+      echo
+      break
+    fi
+  done
+  echo ---
+  echo -- container logs --
+  sg docker -c 'docker compose logs --tail 30 api 2>&1'
+  echo ---
+  echo -- ext port 8000 --
+  curl -s -o /dev/null -w '%{http_code}' http://124.223.183.102:8000/health 2>/dev/null || echo FAIL
+  echo
+  echo -- nginx port 80 --
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/health 2>/dev/null || echo FAIL
+  echo
+  echo ALLDONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "ALLDONE" { puts "\n验证完成" }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

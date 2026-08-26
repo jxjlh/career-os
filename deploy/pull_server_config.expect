@@ -1,0 +1,29 @@
+#!/usr/bin/expect -f
+set timeout 300
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+proc run_cmd {cmd} { send "$cmd\r"; expect { -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {} timeout { puts "TIMEOUT run: $cmd"; exit 1 } } }
+proc sudo_s {cmd} {
+    global PASS
+    send "sudo -S bash -c '$cmd' <<< '$PASS'\r"
+    expect { -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {} "sudo:" { send "$PASS\r"; exp_continue } timeout { puts "TIMEOUT sudo_s: $cmd"; exit 1 } }
+}
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 $USER@$HOST
+expect { "*assword:" { send "$PASS\r" } -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {} timeout { puts "SSH_FAIL"; exit 1 } }
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n================ 1. 下载服务器当前 docker-compose.yml 内容 ================"
+run_cmd "echo '=== DOCKER-COMPOSE.YML START ===' && cat -n /opt/ai-life-os/docker-compose.yml 2>&1 && echo '=== DOCKER-COMPOSE.YML END ==='"
+
+puts "\n================ 2. 下载 Nginx ai-life-os 站点配置 ================"
+sudo_s "echo '=== NGINX SITE CONFIG START ===' && cat -n /etc/nginx/sites-available/ai-life-os 2>&1 && echo '=== NGINX SITE CONFIG END ==='"
+
+puts "\n================ 3. 下载 /etc/nginx/nginx.conf (events + http 块) ================"
+sudo_s "cat -n /etc/nginx/nginx.conf 2>&1"
+
+puts "\n================ 4. 当前 docker inspect Ports 端口映射 ================"
+run_cmd "sudo -S sg docker -c 'docker inspect ai-life-os-api --format \"{{json .NetworkSettings.Ports}}\"' 2>&1 <<< '$PASS'"
+
+run_cmd "exit\r"

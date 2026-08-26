@@ -1,0 +1,27 @@
+#!/usr/bin/expect -f
+set timeout 120
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== Step 1: SCP middleware.py 到服务器 =====\n"
+spawn scp -o StrictHostKeyChecking=no /Users/liheng/Documents/AI职业发展路径规划/apps/api/app/core/middleware.py $SERVER:/tmp/middleware.py
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 2: docker cp 直接更新容器内文件并重启 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "sudo docker cp /tmp/middleware.py ai-life-os-api:/app/app/core/middleware.py 2>&1; echo CP_DONE; sudo docker restart ai-life-os-api 2>&1; echo RESTART_DONE; sleep 6; sudo docker ps --filter name=ai-life-os-api --format 'table {{.Names}}\t{{.Status}}'; echo ---; curl -s -o /dev/null -w 'health: %{http_code}\\n' http://127.0.0.1:8000/health; curl -s -o /dev/null -w 'ready: %{http_code}\\n' http://127.0.0.1:8000/ready; curl -s -o /dev/null -w 'static-chunk: %{http_code}\\n' http://127.0.0.1:8000/_next/static/chunks/webpack-59f02ba726e744ac.js; curl -s -o /dev/null -w 'login: %{http_code}\\n' http://127.0.0.1:8000/login; echo ---; sudo docker logs ai-life-os-api --tail 20 2>&1; echo SCRIPT_EXIT_OK"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "SCRIPT_EXIT_OK" {
+        puts "\n\n===== All done ====="
+    }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

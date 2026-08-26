@@ -37,13 +37,12 @@ export function LifeMapPreview() {
         </Link>
       </div>
 
-      <div className="mt-3 h-[380px] overflow-hidden rounded-[16px] border border-border-subtle bg-surface/40">
-        {markers.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
+      <div className="relative mt-3 h-[380px] overflow-hidden rounded-[16px] border border-border-subtle bg-surface/40">
+        <LifeMapClient markers={markers} showPolyline={false} useCluster={false} />
+        {markers.length === 0 && (
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center">
             <p className="text-[13px] text-text-tertiary">{t("common.empty")}</p>
           </div>
-        ) : (
-          <LifeMapClient markers={markers} showPolyline={false} useCluster={false} />
         )}
       </div>
     </section>

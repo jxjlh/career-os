@@ -182,13 +182,25 @@ if frontend_dir.exists():
         api_prefix = settings.api_prefix.strip("/")
         if full_path == api_prefix or full_path.startswith(f"{api_prefix}/"):
             raise HTTPException(status_code=404, detail="API route not found")
-        if settings.app_env == "production" and settings.frontend_url:
-            target = f"{settings.frontend_url.rstrip('/')}/{full_path.lstrip('/')}"
-            if request.url.query:
-                target = f"{target}?{request.url.query}"
-            return RedirectResponse(target, status_code=307)
         candidate = frontend_dir / full_path
         if candidate.is_file():
+            # Next.js 的 RSC payload 文件 (index.txt) 不应作为页面返回给导航请求，
+            # 否则浏览器会把 RSC 数据当纯文本显示（"显示源代码"问题）。
+            # RSC 数据请求带 "RSC" / "rsc" / Next-Router-State-Tree 请求头，正常返回文件；
+            # 普通导航请求（无 RSC 头）重定向到对应路由，让浏览器加载 index.html 正常渲染。
+            if full_path.endswith("/index.txt") and not full_path.startswith("_next"):
+                has_rsc_header = (
+                    bool(request.headers.get("rsc"))
+                    or bool(request.headers.get("RSC"))
+                    or bool(request.headers.get("next-router-state-tree"))
+                    or bool(request.headers.get("Next-Router-State-Tree"))
+                )
+                if not has_rsc_header:
+                    # 相对路径 307 重定向（不依赖 FRONTEND_URL，避免 http/https 混用）
+                    route_path = "/" + full_path[: -len("/index.txt")] + "/"
+                    if request.url.query:
+                        route_path = f"{route_path}?{request.url.query}"
+                    return RedirectResponse(route_path, status_code=307)
             return FileResponse(candidate)
         route_index = candidate / "index.html"
         if route_index.is_file():

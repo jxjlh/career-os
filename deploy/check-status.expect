@@ -1,0 +1,24 @@
+#!/usr/bin/expect -f
+set timeout 600
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== Check: 当前服务器环境状态 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  echo --- OS ---; cat /etc/os-release | head -3
+  echo --- Docker ---; (docker --version 2>&1 || echo 'MISSING')
+  echo --- Docker Compose Plugin ---; (docker compose version 2>&1 || echo 'MISSING')
+  echo --- Nginx ---; (nginx -v 2>&1 || echo 'MISSING')
+  echo --- Env File ---; (ls -la $REMOTE/.env 2>&1 || echo 'MISSING')
+  echo --- docker-compose.yml ---; (ls -la $REMOTE/docker-compose.yml 2>&1 || echo 'MISSING')
+  echo --- Nginx site ---; (ls -la /etc/nginx/sites-enabled/ 2>&1 || echo 'MISSING')
+  echo --- ubuntu in docker group? ---; (id ubuntu | grep -c docker || echo 0)
+  echo STATUS_CHECK_DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "STATUS_CHECK_DONE" { puts "检查完成" }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

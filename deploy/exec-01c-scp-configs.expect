@@ -1,0 +1,60 @@
+#!/usr/bin/expect -f
+set timeout 600
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+set LOCAL "/tmp/ailife-config"
+
+puts "===== Step 1: SCP 上传配置文件 =====\n"
+
+spawn scp -o StrictHostKeyChecking=no $LOCAL/.env $LOCAL/docker-compose.yml $LOCAL/ai-life-os $SERVER:$REMOTE/
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 2: 服务器上移动文件并配置 Nginx =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  cd $REMOTE
+  ls -la .env docker-compose.yml ai-life-os
+  echo ---
+  sudo cp ai-life-os /etc/nginx/sites-available/ai-life-os
+  sudo ln -sf /etc/nginx/sites-available/ai-life-os /etc/nginx/sites-enabled/ai-life-os
+  sudo rm -f /etc/nginx/sites-enabled/default
+  sudo nginx -t
+  sudo systemctl restart nginx
+  sudo systemctl enable nginx
+  echo NGINX_DONE
+  echo ---
+  sudo usermod -aG docker ubuntu
+  id ubuntu | grep docker
+  echo GROUP_DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "GROUP_DONE" { puts "\n配置完成" }
+    timeout { puts "TIMEOUT ssh"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 3: 验证环境 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  echo --- docker (via sg docker to skip re-login) ---
+  sg docker -c 'docker compose version'
+  echo --- nginx ---
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ 2>&1 || true
+  echo
+  echo --- src dir ---
+  ls $REMOTE/src/Dockerfile
+  echo ALL_DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "ALL_DONE" { puts "\n验证完成" }
+    timeout { puts "TIMEOUT verify"; exit 1 }
+}
+expect eof
+
+puts "\n===== 服务器环境就绪，下一步构建后端镜像 =====\n"

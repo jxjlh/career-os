@@ -28,12 +28,19 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
+    # 静态资源路径前缀：这些请求不计入限流，避免页面加载数十个 chunks 时被误伤
+    STATIC_PREFIXES = ("/_next/", "/static/", "/favicon", "/robots.txt", "/sitemap.xml")
+
     def __init__(self, app, requests_per_minute: int = 120) -> None:
         super().__init__(app)
         self.limit = requests_per_minute
         self.hits: dict[str, deque[float]] = defaultdict(deque)
 
     async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        # 静态资源直接放行
+        if path.startswith(self.STATIC_PREFIXES):
+            return await call_next(request)
         client = request.client.host if request.client else "unknown"
         now = time.monotonic()
         bucket = self.hits[client]

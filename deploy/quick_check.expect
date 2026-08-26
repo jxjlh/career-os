@@ -1,0 +1,38 @@
+#!/usr/bin/expect -f
+# 快速检查服务器状态 + 恢复 src 目录
+set timeout 180
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    "*\$ " {}
+}
+expect "ubuntu@VM-0-5-ubuntu:*\$ "
+
+send "echo '=== STEP 1: 检查目录 ===' && ls -la /opt/ai-life-os/ | head -15\r"
+expect "ubuntu@VM-0-5-ubuntu:*\$ "
+puts $expect_out(buffer)
+
+send "echo '=== STEP 2: 恢复 src 目录（如果 src-old 存在）===' && cd /opt/ai-life-os && if { \[ -d src-old/apps \] } { if { ! \[ -d src/apps \] } { mv src-empty src-broken 2>/dev/null; mv src-old src; echo 'src 已从 src-old 恢复'; } else { echo 'src 已是正常目录'; } } else { echo 'src-old 不存在或无 apps 目录'; }\r"
+expect "ubuntu@VM-0-5-ubuntu:*\$ "
+puts $expect_out(buffer)
+
+send "echo '=== STEP 3: 检查 Dockerfile 和 DB ===' && ls -la /opt/ai-life-os/src/apps/api/Dockerfile /opt/ai-life-os/src/apps/api/career_os.db 2>&1\r"
+expect "ubuntu@VM-0-5-ubuntu:*\$ "
+puts $expect_out(buffer)
+
+send "echo '=== STEP 4: 检查容器状态 ===' && sudo -S sg docker -c 'docker ps -a --format \"table {{.Names}}\\t{{.Status}}\"' <<< '$PASS'\r"
+expect {
+    "*assword*" { send "$PASS\r" }
+    "ubuntu@VM-0-5-ubuntu:*\$ " {}
+}
+expect "ubuntu@VM-0-5-ubuntu:*\$ "
+puts $expect_out(buffer)
+
+send "echo '✅ 快速检查完成'\r"
+expect "ubuntu@VM-0-5-ubuntu:*\$ "
+puts $expect_out(buffer)
+send "exit\r"

@@ -1,0 +1,25 @@
+#!/usr/bin/expect -f
+set timeout 600
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== Step 1: 上传修改后的 middleware.py =====\n"
+spawn scp -o StrictHostKeyChecking=no /Users/liheng/Documents/AI职业发展路径规划/apps/api/app/core/middleware.py $SERVER:$REMOTE/build/app/core/middleware.py
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "100%" { }
+    timeout { puts "TIMEOUT scp"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 2: 重新构建并启动后端容器 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "cd $REMOTE && sg docker -c 'docker compose build api 2>&1 | tail -30; docker compose up -d api 2>&1 | tail -10; sleep 5; docker compose ps; echo ---; curl -s -o /dev/null -w \"health: %{http_code}\\n\" http://127.0.0.1:8000/health; curl -s -o /dev/null -w \"ready: %{http_code}\\n\" http://127.0.0.1:8000/ready; curl -s -o /dev/null -w \"static: %{http_code}\\n\" http://127.0.0.1:8000/_next/static/chunks/webpack-59f02ba726e744ac.js; echo ---; docker compose logs --tail 20 api' 2>&1; echo SCRIPT_DONE"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "SCRIPT_DONE" { }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

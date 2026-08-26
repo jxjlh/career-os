@@ -1,0 +1,40 @@
+#!/usr/bin/expect -f
+set timeout 300
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== 1. 容器内静态文件目录结构 ========"
+run_cmd "sudo -S sg docker -c 'docker exec ai-life-os-api bash -c \"ls -la /app/static/ 2>&1 | head -20; echo ---; ls -la /app/static/_next/ 2>&1 | head -10; echo ---; echo HEAD index.html:; head -40 /app/static/index.html 2>&1; echo; echo Grep vite in index.html:; grep -c vite /app/static/index.html 2>&1 || echo not_found; echo ---; grep -i -n vite /app/static/index.html 2>&1 | head -20; echo; echo ======== next build 产物 =======; ls -la /app/static/_next/static/ 2>&1 | head -10\"' 2>&1 <<< '$PASS'"
+
+puts "\n======== 2. 外网 curl 首页 index.html 内容的 head  ========"
+run_cmd "curl -s -k https://growlog.club/ | head -30"
+
+puts "\n======== 3. 外网检查 /@vite/client 响应 ========"
+run_cmd "curl -s -o /dev/null -w '/@vite/client HTTP %{http_code} size=%{size_download} content-type=%{content_type}\\n' -k https://growlog.club/@vite/client"
+
+puts "\n======== 4. 外网检查真实网络资源请求（模拟浏览器 GET 首页并提取 <script src>） ========"
+run_cmd "curl -s -k https://growlog.club/ | grep -oE 'src=\"[^\"]+\"' | head -30"
+
+puts "\n======== 5. 外网检查 skills 页面 index.html 返回 ========"
+run_cmd "echo ---- 页面 /skills/ 返回 ---- && curl -s -k https://growlog.club/skills/ | head -40"
+
+puts "\n======== 6. 服务器 build/app/static 目录结构（用于下次部署的源） ========"
+run_cmd "ls -la /opt/ai-life-os/build/app/static/ 2>&1 | head -20; echo ---; echo HEAD index.html:; head -30 /opt/ai-life-os/build/app/static/index.html 2>&1; echo; echo vite 标记数:; grep -c vite /opt/ai-life-os/build/app/static/index.html 2>&1 || echo not_found"
+
+run_cmd "exit\r"

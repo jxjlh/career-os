@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+set timeout 60
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "sudo docker ps --filter name=ai-life-os-api --format 'table {{.Names}}\t{{.Status}}'; echo ---; echo 'health check:'; curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8000/health; curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8000/ready; curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8000/login; curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8000/_next/static/chunks/webpack-59f02ba726e744ac.js; echo ---; echo 'container logs (full, 60 lines):'; sudo docker logs ai-life-os-api --tail 60 2>&1; echo SCRIPT_EXIT_OK"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "SCRIPT_EXIT_OK" { }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

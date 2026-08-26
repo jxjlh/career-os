@@ -1,0 +1,62 @@
+#!/usr/bin/expect -f
+set timeout 600
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc sudo_s {cmd} {
+    global PASS
+    send "sudo -S bash -c '$cmd' <<< '$PASS'\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        "sudo:" { send "$PASS\r"; exp_continue }
+        timeout { puts "TIMEOUT sudo_s: $cmd"; exit 1 }
+    }
+}
+
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== 1. Nginx restart ========"
+sudo_s "systemctl restart nginx"
+run_cmd "systemctl --no-pager status nginx 2>&1 | head -8"
+run_cmd "echo DONE_STEP1"
+
+puts "\n======== 2. 本地 curl 验证 HTTPS 域名 ========"
+run_cmd "echo --- /health --- && curl -s -w '\\nHTTP %{http_code}\\n' --resolve growlog.club:443:127.0.0.1 -k https://growlog.club/health"
+run_cmd "echo --- /api/v1/skills/matrix --- && curl -s -o /dev/null -w 'HTTP %{http_code}\\n' --resolve growlog.club:443:127.0.0.1 -k https://growlog.club/api/v1/skills/matrix"
+run_cmd "echo --- /dashboard/index.txt 无 RSC --- && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} size=%{size_download}\\n' --resolve growlog.club:443:127.0.0.1 -k https://growlog.club/dashboard/index.txt"
+run_cmd "echo --- /dashboard/index.txt 带 RSC 头 --- && curl -s -o /dev/null -w 'HTTP %{http_code} size=%{size_download}\\n' -H 'rsc: 1' --resolve growlog.club:443:127.0.0.1 -k https://growlog.club/dashboard/index.txt"
+
+puts "\n======== 3. .env 修复 FRONTEND_URL + CORS_ORIGINS ========"
+run_cmd "cd /opt/ai-life-os && echo --- BEFORE --- && grep -E '^(FRONTEND_URL|CORS_ORIGINS)=' .env"
+run_cmd "cd /opt/ai-life-os && cp .env .env.bak && sed -i.bak2 -e 's|^FRONTEND_URL=http://growlog.club$|FRONTEND_URL=https://growlog.club|' -e 's|^CORS_ORIGINS=.*$|CORS_ORIGINS=https://growlog.club,http://growlog.club,http://124.223.183.102,http://localhost:3000|' .env && echo '✅ .env 已修复'"
+run_cmd "cd /opt/ai-life-os && echo --- AFTER --- && grep -E '^(FRONTEND_URL|CORS_ORIGINS)=' .env"
+
+puts "\n======== 4. 重启容器（.env 生效）+ 等待健康检查 ========"
+run_cmd "cd /opt/ai-life-os && docker compose restart api 2>&1 | tail -5"
+puts "⏳ 等待 80s（start_period=60s）..."
+run_cmd "sleep 80 && echo '等待完成'"
+run_cmd "docker ps -a --format 'table {{.Names}}\\t{{.Status}}'"
+
+puts "\n======== 5. 最终验证（外网） ========"
+run_cmd "echo --- HTTPS /health --- && curl -s -w '\\nHTTP %{http_code}\\n' -k https://growlog.club/health"
+run_cmd "echo --- HTTPS /dashboard/ --- && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} size=%{size_download}\\n' -k https://growlog.club/dashboard/"
+run_cmd "echo --- HTTPS /skills/ --- && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} size=%{size_download}\\n' -k https://growlog.club/skills/"
+run_cmd "echo --- HTTPS /skills/index.txt 无 RSC（导航请求）--- && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} size=%{size_download}\\n' -k https://growlog.club/skills/index.txt"
+run_cmd "echo --- HTTPS /skills/index.txt 带 RSC 头 --- && curl -s -o /dev/null -w 'HTTP %{http_code} size=%{size_download}\\n' -H 'rsc: 1' -k https://growlog.club/skills/index.txt"
+
+puts "\n\n============ 🎉 ALL DONE ============"
+run_cmd "exit\r"

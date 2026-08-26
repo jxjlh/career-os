@@ -1,0 +1,56 @@
+#!/usr/bin/expect -f
+set timeout 300
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc sudo_s {cmd} {
+    global PASS
+    send "sudo -S bash -c '$cmd' <<< '$PASS'\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        "sudo:" { send "$PASS\r"; exp_continue }
+        timeout { puts "TIMEOUT sudo_s: $cmd"; exit 1 }
+    }
+}
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+    timeout { puts "SSH 连接失败！"; exit 1 }
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== 1. 系统 & Nginx 状态 ========"
+run_cmd "echo '--- uptime ---' && uptime && echo '--- free mem ---' && free -h | head -3 && echo '--- disk ---' && df -h / | tail -1"
+sudo_s "systemctl --no-pager status nginx 2>&1 | head -15"
+sudo_s "journalctl -u nginx -n 40 --no-pager 2>&1 | tail -40"
+run_cmd "echo '--- 监听端口 ---' && (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep -E ':(80|443|8000)' | head -10"
+
+puts "\n======== 2. Nginx 错误日志（最近 50 行） ========"
+sudo_s "tail -60 /var/log/nginx/error.log 2>&1"
+
+puts "\n======== 3. iptables/UFW 检查 ========"
+sudo_s "ufw status 2>&1 | head -15 ; echo --- ; iptables -S INPUT 2>&1 | head -20"
+
+puts "\n======== 4. 本地 curl 80/443/8000 都测一下 ========"
+run_cmd "echo '127.0.0.1 :80  => ' && curl -s -o /dev/null -w '%{http_code}\\n' --max-time 5 http://127.0.0.1:80/ || echo FAIL80"
+run_cmd "echo '127.0.0.1 :443 => ' && curl -s -o /dev/null -w '%{http_code}\\n' --max-time 5 -k --resolve growlog.club:443:127.0.0.1 https://growlog.club/ || echo FAIL443"
+run_cmd "echo '127.0.0.1 :8000 => ' && curl -s -o /dev/null -w '%{http_code}\\n' --max-time 5 http://127.0.0.1:8000/health || echo FAIL8000"
+
+puts "\n======== 5. Nginx 配置检查 ========"
+sudo_s "nginx -t 2>&1"
+sudo_s "cat /etc/nginx/nginx.conf 2>&1 | grep -n -E 'worker_processes|worker_connections|keepalive' | head -10"
+
+puts "\n======== 6. 外网网卡 IP 包统计 + tcp 队列 ========"
+run_cmd "echo '--- netstat -s (TCP stats) ---' && netstat -s 2>/dev/null | grep -i -E 'reset|reset.*sent|bad.*header|reject' | head -10; echo '--- ss summary ---' && ss -s 2>/dev/null | head -15"
+
+run_cmd "exit\r"

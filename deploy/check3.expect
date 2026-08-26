@@ -1,0 +1,27 @@
+#!/usr/bin/expect -f
+set timeout 120
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  echo --- mem ---
+  free -h
+  echo --- docker build procs ---
+  ps aux | grep -E 'buildkit|docker|uv' | grep -v grep | head -5
+  echo --- images ---
+  sg docker -c 'docker images 2>&1'
+  echo --- containers ---
+  sg docker -c 'docker ps -a 2>&1'
+  echo --- build cache ---
+  sg docker -c 'docker buildx du 2>&1 | tail -5'
+  echo --- dmesg oom ---
+  sudo dmesg | grep -i 'oom\|killed' | tail -5
+  echo STATUS_DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "STATUS_DONE" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

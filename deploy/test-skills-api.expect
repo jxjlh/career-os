@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+set timeout 60
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "echo '=== health/ready ==='; curl -s -o /dev/null -w 'health: %{http_code}\\n' http://127.0.0.1:8000/health; curl -s -o /dev/null -w 'ready: %{http_code}\\n' http://127.0.0.1:8000/ready; echo '=== skills (catalog) ==='; curl -s -o /dev/null -w 'skills: %{http_code}\\n' http://127.0.0.1:8000/api/v1/skills; echo '=== skills/matrix (no auth) ==='; curl -s -o /dev/null -w 'matrix: %{http_code}\\n' http://127.0.0.1:8000/api/v1/skills/matrix; curl -s http://127.0.0.1:8000/api/v1/skills/matrix | head -c 300; echo ''; echo '=== jobs/target-role ==='; curl -s -o /dev/null -w 'target-role: %{http_code}\\n' http://127.0.0.1:8000/api/v1/jobs/target-role; curl -s http://127.0.0.1:8000/api/v1/jobs/target-role | head -c 300; echo ''; echo '=== container logs ==='; sudo docker logs ai-life-os-api --tail 30 2>&1 | tail -30; echo SCRIPT_EXIT_OK"
+
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "SCRIPT_EXIT_OK" { }
+    timeout { puts "TIMEOUT" }
+    eof { }
+}
+expect eof

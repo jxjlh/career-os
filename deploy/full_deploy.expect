@@ -1,0 +1,161 @@
+#!/usr/bin/expect -f
+# 完整部署脚本：修复 Dockerfile -> 构建镜像 -> 重启容器 -> 恢复技能
+set timeout -1
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+log_user 1
+
+proc sudo_cmd {cmd} {
+    global PASS
+    send "sudo -S $cmd <<< '$PASS'\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        "*assword*" { send "$PASS\r"; exp_continue }
+        timeout { puts "TIMEOUT sudo: $cmd"; exit 1 }
+    }
+}
+
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+# ---- 连接 SSH ----
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== STEP 0: 检查 build 目录和 docker-compose.yml ========"
+run_cmd "cd /opt/ai-life-os && ls -la build/ | head -15 && echo '--- docker-compose.yml ---' && cat docker-compose.yml"
+
+puts "\n======== STEP 1: 修复 Dockerfile 健康检查（用 python 替代 curl） ========"
+run_cmd {cat > /tmp/patch_docker.sh << 'SH'
+cd /opt/ai-life-os
+ORIG=build/Dockerfile
+BAK=build/Dockerfile.bak
+cp -f $ORIG $BAK
+echo "原 Dockerfile:"
+cat $ORIG
+
+# --- 修改 1: apt-get install 加 curl ---
+sed -i 's/apt-get install -y --no-install-recommends ca-certificates/apt-get install -y --no-install-recommends ca-certificates curl wget/' $ORIG
+
+# --- 修改 2: 替换 HEALTHCHECK 的 CMD ---
+# 先删除旧 HEALTHCHECK 行
+sed -i '/HEALTHCHECK/d' $ORIG
+# 然后在文件末尾（EXPOSE 之后，CMD 之前）追加新的 HEALTHCHECK
+# 用 python 版本，确保 100% 可用
+cat >> $ORIG << 'DOCKER_EOF'
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+  CMD python -c "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=5); sys.exit(0 if r.status==200 else 1)" || exit 1
+DOCKER_EOF
+
+echo ""
+echo "==== 修复后的 Dockerfile ===="
+cat $ORIG
+SH
+bash /tmp/patch_docker.sh}
+
+puts "\n======== STEP 2: 恢复 career_os.db 到 build 目录 ========"
+run_cmd "cd /opt/ai-life-os && cp -f career_os.db.backup.202608262018 build/career_os.db && ls -lh build/career_os.db"
+
+puts "\n======== STEP 3: 检查 .env（AI API key 等配置） ========"
+run_cmd "cd /opt/ai-life-os && cat .env"
+
+puts "\n======== STEP 4: 停止旧容器，构建新镜像（需要 3-8 分钟，请耐心等...） ========"
+sudo_cmd "cd /opt/ai-life-os && sg docker -c 'docker compose down' 2>&1 | tail -10"
+sudo_cmd "cd /opt/ai-life-os && sg docker -c 'docker compose build --no-cache api' 2>&1 | tail -40"
+
+puts "\n======== STEP 5: 启动容器 ========"
+sudo_cmd "cd /opt/ai-life-os && sg docker -c 'docker compose up -d api' 2>&1 | tail -10"
+sudo_cmd "sg docker -c 'docker ps -a --format \"table {{.Names}}\\t{{.Status}}\\t{{.Ports}}\"'"
+
+puts "\n======== STEP 6: 等待服务启动（45s），查看日志 ========"
+run_cmd "sleep 45 && echo '等待完成，查看日志...'"
+sudo_cmd "sg docker -c 'docker logs --tail 50 ai-life-os-api' 2>&1 | tail -50"
+
+puts "\n======== STEP 7: 健康检查验证 ========"
+run_cmd "curl -s --connect-timeout 10 -w '\\nHTTP %{http_code}\\n' http://127.0.0.1:8000/health 2>&1"
+run_cmd "echo '--- /ready ---' && curl -s --connect-timeout 10 http://127.0.0.1:8000/ready 2>&1"
+
+puts "\n======== STEP 8: 恢复 user_skills 12 个默认技能 ========"
+run_cmd {cat > /tmp/restore_skills.py << 'PYEOF'
+import sys
+sys.path.insert(0, '/app')
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.db.models import Skill, UserSkill, Profile
+from app.core.config import settings
+
+engine = create_engine(settings.DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
+db = SessionLocal()
+
+SEED = [
+    ("Marketing", "Marketing", "品牌与营销基础"),
+    ("Growth", "Growth Marketing", "增长营销与 A/B 测试"),
+    ("Data", "SQL", "数据分析查询"),
+    ("Data", "Power BI", "数据可视化"),
+    ("Data", "Python", "数据处理与自动化"),
+    ("Data", "GA4", "网站数据分析"),
+    ("AI", "AI Agent", "智能体应用开发"),
+    ("Marketing", "Product Marketing", "产品上市与定位"),
+    ("Ops", "Marketing Ops", "营销运营与自动化"),
+    ("CRM", "HubSpot", "CRM 管理与自动化"),
+    ("Engineering", "System Design", "系统设计"),
+    ("Product", "Product Planning", "产品规划"),
+]
+
+user = db.query(Profile).first()
+if not user:
+    print('ERROR: 没有用户 Profile，技能无法关联')
+    sys.exit(1)
+print(f'用户: id={user.id} email={getattr(user,"email","?")}')
+
+added, skipped = [], []
+for category, name, desc in SEED:
+    skill = db.query(Skill).filter(Skill.name == name).first()
+    if skill is None:
+        skill = Skill(name=name, category=category, description=description)
+        db.add(skill); db.flush()
+        print(f'  新增 Skill 表项: {name}')
+    us = db.query(UserSkill).filter_by(user_id=user.id, skill_id=skill.id).first()
+    if us:
+        skipped.append(name)
+    else:
+        db.add(UserSkill(user_id=user.id, skill_id=skill.id,
+            current_level=1, target_level=5, confidence=0.5, learning_status='learning', notes=''))
+        added.append(name)
+db.commit()
+print(f'DONE: 新增 {len(added)} 个技能关联 | 跳过 {len(skipped)} 个')
+print(f'新增: {added}')
+print(f'跳过: {skipped}')
+PYEOF
+echo 'restore_skills.py 写入完成'
+wc -l /tmp/restore_skills.py}
+
+sudo_cmd "sg docker -c 'docker cp /tmp/restore_skills.py ai-life-os-api:/tmp/restore_skills.py' 2>&1"
+sudo_cmd "sg docker -c 'docker exec ai-life-os-api python /tmp/restore_skills.py 2>&1'"
+
+puts "\n======== STEP 9: 验证 API - 技能矩阵 ========"
+run_cmd "echo '--- /api/v1/skills ---' && curl -s --connect-timeout 10 -c /tmp/ck.txt -b /tmp/ck.txt -X POST -H 'Content-Type: application/json' -d '{\"email\":\"3448511804@qq.com\",\"password\":\"LH040828@\"}' http://127.0.0.1:8000/api/v1/auth/login 2>&1 | head -c 300; echo ''"
+run_cmd "curl -s --connect-timeout 10 -b /tmp/ck.txt http://127.0.0.1:8000/api/v1/skills/matrix 2>&1 | head -c 500; echo ''"
+
+puts "\n======== STEP 10: Nginx reload ========"
+sudo_cmd "nginx -t 2>&1 && systemctl reload nginx 2>&1 && echo 'Nginx reload OK'"
+
+puts "\n\n============================================="
+puts "🎉 服务器部署完成"
+puts "============================================="
+sudo_cmd "sg docker -c 'docker ps -a --format \"table {{.Names}}\\t{{.Status}}\"'"
+
+run_cmd "exit\r"

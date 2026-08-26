@@ -1,0 +1,63 @@
+#!/usr/bin/expect -f
+# 快速同步 main.py 并重启容器
+set timeout 600
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+# 读取本地 main.py
+set f [open "/Users/liheng/Documents/AI职业发展路径规划/apps/api/app/main.py" r]
+set main_py [read $f]
+close $f
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+puts "\n======== 1. 写入 main.py 到服务器 build/app/main.py ========"
+send "cat > /opt/ai-life-os/build/app/main.py << 'MAINEOF'\r"
+expect -re "> "
+set lines [split $main_py "\n"]
+set i 0
+foreach line $lines {
+    send -- "$line\r"
+    incr i
+    if {($i % 50) == 0} { expect -re "> " }
+}
+send -- "MAINEOF\r"
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+puts "  写入完成 ($i 行)"
+
+# 验证
+run_cmd "wc -l /opt/ai-life-os/build/app/main.py && grep -n 'has_rsc_header\\|production and settings.frontend_url' /opt/ai-life-os/build/app/main.py | head -10"
+
+puts "\n======== 2. docker cp 到容器并 restart ========"
+run_cmd "sudo -S sg docker -c 'docker cp /opt/ai-life-os/build/app/main.py ai-life-os-api:/app/app/main.py' 2>&1 <<< '$PASS'"
+run_cmd "cd /opt/ai-life-os && docker compose restart api 2>&1 | tail -5"
+
+puts "⏳ 等待 75s 健康检查..."
+run_cmd "sleep 75 && echo '等待完成'"
+run_cmd "docker ps -a --format 'table {{.Names}}\\t{{.Status}}'"
+
+puts "\n======== 3. 验证（外网 + 服务器本地） ========"
+run_cmd "echo --- 本地 /skills/index.txt 无 RSC 头 (导航) 期望 307 --- && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} size=%{size_download}\\n' http://127.0.0.1:8000/skills/index.txt"
+run_cmd "echo --- 本地 /skills/index.txt 带 RSC:1 头 期望 200 --- && curl -s -o /dev/null -w 'HTTP %{http_code} size=%{size_download}\\n' -H 'RSC: 1' http://127.0.0.1:8000/skills/index.txt"
+run_cmd "echo --- 本地 /skills/index.txt 带 rsc:1 头 期望 200 --- && curl -s -o /dev/null -w 'HTTP %{http_code} size=%{size_download}\\n' -H 'rsc: 1' http://127.0.0.1:8000/skills/index.txt"
+run_cmd "echo --- 外网 HTTPS /dashboard/ 无 RSC (导航) 期望不被 307 到 http --- && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} size=%{size_download}\\n' -k https://growlog.club/dashboard/"
+run_cmd "echo --- 外网 /health --- && curl -s -w '\\nHTTP %{http_code}\\n' -k https://growlog.club/health"
+run_cmd "echo --- 外网 HTTPS /skills/index.txt 无 RSC (导航) 期望 307 到 /skills/ --- && curl -s -o /dev/null -w 'HTTP %{http_code} redirect=%{redirect_url} size=%{size_download}\\n' -k https://growlog.club/skills/index.txt"
+run_cmd "echo --- 外网 HTTPS /skills/index.txt 带 RSC:1 头 期望 200 --- && curl -s -o /dev/null -w 'HTTP %{http_code} size=%{size_download}\\n' -H 'RSC: 1' -k https://growlog.club/skills/index.txt"
+
+puts "\n\n============ 🎉 同步完成 ============"
+run_cmd "exit\r"

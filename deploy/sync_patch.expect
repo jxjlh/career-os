@@ -1,0 +1,108 @@
+#!/usr/bin/expect -f
+# 把本地修复的 main.py 和 seed.py 直接拷进容器，无需重建镜像
+set timeout 300
+set HOST "124.223.183.102"
+set USER "ubuntu"
+set PASS "LH040828@"
+set LOCAL_DIR "/Users/liheng/Documents/AI职业发展路径规划"
+
+proc run_cmd {cmd} {
+    send "$cmd\r"
+    expect {
+        -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+        timeout { puts "TIMEOUT run: $cmd"; exit 1 }
+    }
+}
+
+# 1. 先 SCP 本地文件到服务器 /tmp
+puts "\n======== STEP 1: SCP main.py + seed.py 到服务器 ========"
+spawn bash -c "cd '$LOCAL_DIR/apps/api/app' && tar -czf /tmp/ai-patch.tar.gz main.py domains/english/seed.py && echo '本地打包完成' && ls -lh /tmp/ai-patch.tar.gz"
+expect {
+    "本地打包完成" {}
+    timeout { puts "打包失败"; exit 1 }
+}
+expect eof
+
+spawn bash -c "export SSHPASS='$PASS'; which sshpass >/dev/null 2>&1 && echo HAS_SSHPASS || echo NO_SSHPASS"
+expect {
+    "HAS_SSHPASS" { set sshpass 1 }
+    "NO_SSHPASS" { set sshpass 0 }
+}
+expect eof
+
+# 2. SSH 进入服务器
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST
+expect {
+    "*assword:" { send "$PASS\r" }
+    -re "ubuntu@VM-0-5-ubuntu:.*\\\$ " {}
+}
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+
+# 把文件传到远程（需要第二个连接用 expect 传）
+# 更简单：在远程写一个空文件，之后我们用 expect 再开一个 spawn scp？
+
+# 简化方案：直接通过 base64 把 main.py 和 seed.py 内容在 expect 中通过 cat << 'EOF' 写进去
+puts "\n======== STEP 2: 把 main.py 写入服务器 build/app/main.py ========"
+# 读取本地 main.py 和 seed.py 内容
+set f1 [open "$LOCAL_DIR/apps/api/app/main.py" r]
+set main_py [read $f1]
+close $f1
+set f2 [open "$LOCAL_DIR/apps/api/app/domains/english/seed.py" r]
+set seed_py [read $f2]
+close $f2
+
+puts "  main.py 大小: [string length $main_py] 字节"
+puts "  seed.py 大小: [string length $seed_py] 字节"
+
+# 用 cat 写 main.py
+send "cat > /opt/ai-life-os/build/app/main.py << 'MAINEOF'\r"
+expect -re "> "
+# 逐行发送避免 expect buffer 问题（文件较长）
+set lines [split $main_py "\n"]
+set i 0
+foreach line $lines {
+    send -- "$line\r"
+    incr i
+    if {($i % 40) == 0} { expect -re "> " }
+}
+send -- "MAINEOF\r"
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+puts "  main.py 写入完成"
+
+# 写 seed.py（确保目录存在）
+run_cmd "mkdir -p /opt/ai-life-os/build/app/domains/english"
+puts "\n======== STEP 3: 把 seed.py 写入 build/app/domains/english/seed.py ========"
+send "cat > /opt/ai-life-os/build/app/domains/english/seed.py << 'SEEDEOF'\r"
+expect -re "> "
+set lines [split $seed_py "\n"]
+set i 0
+foreach line $lines {
+    send -- "$line\r"
+    incr i
+    if {($i % 40) == 0} { expect -re "> " }
+}
+send -- "SEEDEOF\r"
+expect -re "ubuntu@VM-0-5-ubuntu:.*\\\$ "
+puts "  seed.py 写入完成"
+
+puts "\n======== STEP 4: 验证文件 ========"
+run_cmd "wc -l /opt/ai-life-os/build/app/main.py /opt/ai-life-os/build/app/domains/english/seed.py"
+run_cmd "grep -n 'index.txt' /opt/ai-life-os/build/app/main.py | head -5"
+run_cmd "grep -n 'UnicodeDecodeError' /opt/ai-life-os/build/app/domains/english/seed.py | head -5"
+
+puts "\n======== STEP 5: docker cp 到容器内 + 重启 uvicorn ========"
+run_cmd "sudo -S sg docker -c 'docker cp /opt/ai-life-os/build/app/main.py ai-life-os-api:/app/app/main.py' 2>&1 <<< '$PASS'"
+run_cmd "sudo -S sg docker -c 'docker cp /opt/ai-life-os/build/app/domains/english/seed.py ai-life-os-api:/app/app/domains/english/seed.py' 2>&1 <<< '$PASS'"
+
+# 看容器里的启动命令是什么，重启它（或者重启容器）
+puts "  重启容器（使新代码生效）..."
+run_cmd "cd /opt/ai-life-os && docker compose restart api 2>&1 | tail -5"
+
+puts "\n======== STEP 6: 等待 75s 健康检查 ========"
+run_cmd "sleep 75 && echo '等待完成'"
+run_cmd "docker ps -a --format 'table {{.Names}}\\t{{.Status}}'"
+run_cmd "echo '--- health ---' && curl -s -w '\\nHTTP %{http_code}\\n' http://127.0.0.1:8000/health"
+run_cmd "echo '--- ready ---' && curl -s http://127.0.0.1:8000/ready; echo ''"
+
+puts "\n\n============ 🎉 代码修复同步完成 ============"
+run_cmd "exit\r"

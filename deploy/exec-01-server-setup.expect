@@ -1,0 +1,52 @@
+#!/usr/bin/expect -f
+set timeout 1800
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+set REMOTE "/opt/ai-life-os"
+
+puts "===== Step 1/3: 执行 01-server-setup.sh (Docker + Nginx + env) =====\n"
+puts "预计 3-8 分钟，请耐心等待...\n"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no -t $SERVER "cd $REMOTE && sudo bash 01-server-setup.sh 2>&1 | tee /tmp/setup-01.log; echo EXIT_CODE_\\\$?;"
+
+expect {
+    -re "password:" { send "$PASS\r"; exp_continue }
+    -re "Password:" { send "$PASS\r"; exp_continue }
+    -re "password for ubuntu" { send "$PASS\r"; exp_continue }
+    -re "EXIT_CODE_(\\d+)" {
+        set exitcode $expect_out(1,string)
+        puts "\n===== 01-server-setup.sh exit code: $exitcode ====="
+        if {$exitcode != 0} {
+            puts "ERROR! tail of log:"
+            spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "tail -80 /tmp/setup-01.log"
+            expect {
+                "password:" { send "$PASS\r"; exp_continue }
+                eof { }
+            }
+            exit 1
+        }
+    }
+    timeout { puts "TIMEOUT"; exit 1 }
+    eof { }
+}
+expect eof
+
+puts "\n===== Step 2/3: 验证 Docker =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "docker --version && docker compose version && echo DOCKER_OK"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "DOCKER_OK" { puts "\nDocker 安装成功" }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof
+
+puts "\n===== Step 3/3: ubuntu 加入 docker 组 =====\n"
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "sudo usermod -aG docker ubuntu && echo GROUP_OK"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "GROUP_OK" { puts "用户组已更新" }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof
+
+puts "\n===== DONE: 01-server-setup 完成 =====\n"

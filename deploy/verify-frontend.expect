@@ -1,0 +1,35 @@
+#!/usr/bin/expect -f
+set timeout 60
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  echo --- root page ---
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/
+  echo
+  echo --- finance page ---
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/finance
+  echo
+  echo --- library page ---
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/library
+  echo
+  echo --- dashboard ---
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/dashboard
+  echo
+  echo --- nginx root ---
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/
+  echo
+  echo --- ext root ---
+  curl -s -o /dev/null -w '%{http_code}' http://124.223.183.102/
+  echo
+  echo --- ext health ---
+  curl -s http://124.223.183.102:8000/health
+  echo
+  echo VERIFY_DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "VERIFY_DONE" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

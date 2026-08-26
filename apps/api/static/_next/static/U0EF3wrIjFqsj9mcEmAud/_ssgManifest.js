@@ -1,0 +1,1 @@
+self.__SSG_MANIFEST=new Set(["\u002Fenglish\u002Flistening\u002F[materialId]","\u002Flife\u002Fbucket\u002F[id]","\u002Flife\u002Fmap\u002F[id]","\u002Flife\u002Fpost\u002F[id]","\u002Flife\u002Frecords\u002F[id]"]);self.__SSG_MANIFEST_CB&&self.__SSG_MANIFEST_CB()

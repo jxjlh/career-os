@@ -1,0 +1,26 @@
+#!/usr/bin/expect -f
+set timeout 120
+set PASS "LH040828@"
+set SERVER "ubuntu@124.223.183.102"
+
+spawn -noecho ssh -o StrictHostKeyChecking=no $SERVER "
+  sleep 10
+  echo --- health ---
+  curl -s http://127.0.0.1:8000/health
+  echo
+  echo --- redirect check ---
+  curl -sI http://127.0.0.1:8000/ 2>&1 | grep -i 'location\|HTTP'
+  echo ---
+  echo --- login page ---
+  curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/login
+  echo
+  echo --- container logs ---
+  sg docker -c 'docker compose logs --tail 15 api' 2>&1
+  echo DONE
+"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    "DONE" { }
+    timeout { puts "TIMEOUT"; exit 1 }
+}
+expect eof

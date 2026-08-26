@@ -35,7 +35,7 @@ def seed_word_books(db: Session) -> None:
         for json_file in sorted(SEEDS_DIR.glob("*.json")):
             try:
                 data = json.loads(json_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                 continue
 
             code = data.get("code", "")
