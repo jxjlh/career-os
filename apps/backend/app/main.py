@@ -45,6 +45,10 @@ def create_app() -> FastAPI:
     app.include_router(chat_router, prefix=api_v1_prefix)
 
     # ── Health check ───────────────────────────────────────────
+    @app.get("/health")
+    async def health() -> dict:
+        return {"status": "ok", "env": settings.app_env}
+
     @app.get("/ready")
     async def readiness() -> dict:
         return {"status": "ok", "env": settings.app_env}
