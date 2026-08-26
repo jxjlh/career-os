@@ -10,11 +10,10 @@ permissions:
 
 jobs:
   # ==============================================
-  # Job 1: 在 GitHub CI 里构建前端 + 打包后端
-  # （避免服务器直接访问 GitHub 时出现 HTTP/2 错误）
+  # Job 1: Build frontend + backend in GitHub CI
   # ==============================================
   build:
-    name: Build apps/web + apps/api
+    name: Build apps/web + apps/backend
     runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
@@ -26,41 +25,50 @@ jobs:
         id: meta
         run: echo "name=deploy-artifact-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js + build frontend
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
       - name: Install dependencies
-        run: npm install
-      - name: Build frontend (Next.js static export into apps/api/static)
-        run: npm --workspace apps/web run build
+        run: pnpm install --frozen-lockfile
+      - name: Build frontend (Next.js static export)
+        run: pnpm --filter @ai-aggregation/web run build
+      - name: Copy frontend export to backend static dir
+        run: |
+          mkdir -p apps/backend/static
+          cp -r apps/web/out/* apps/backend/static/
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - name: Validate backend (compile)
-        working-directory: apps/api
+        working-directory: apps/backend
         run: |
           uv sync --frozen
           uv run python -m compileall -q app
 
-      - name: Assemble build directory（后端 + 前端静态文件 + Dockerfile）
+      - name: Assemble build directory
         run: |
           set -euxo pipefail
           TMP="deploy-assembly"
           rm -rf "$TMP" && mkdir -p "$TMP"
-          # 后端 src
-          cp -r apps/api/app "$TMP/app"
-          cp -r apps/api/migrations "$TMP/migrations"
-          cp apps/api/Dockerfile "$TMP/Dockerfile"
-          cp apps/api/pyproject.toml "$TMP/pyproject.toml"
-          cp apps/api/uv.lock "$TMP/uv.lock"
-          cp apps/api/alembic.ini "$TMP/alembic.ini"
-          # 前端静态产物（Next.js output）
-          cp -r apps/api/static "$TMP/static"
-          # 部署说明
+          # Backend src
+          cp -r apps/backend/app "$TMP/app"
+          cp -r apps/backend/alembic "$TMP/alembic"
+          cp apps/backend/Dockerfile "$TMP/Dockerfile"
+          cp apps/backend/pyproject.toml "$TMP/pyproject.toml"
+          cp apps/backend/uv.lock "$TMP/uv.lock"
+          cp apps/backend/alembic.ini "$TMP/alembic.ini"
+          # Frontend static output
+          cp -r apps/backend/static "$TMP/static"
+          # Deploy info
           echo "commit=$GITHUB_SHA" > "$TMP/version.txt"
           echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$TMP/version.txt"
           echo "actor=$GITHUB_ACTOR" >> "$TMP/version.txt"
@@ -75,7 +83,7 @@ jobs:
           retention-days: 7
 
   # ==============================================
-  # Job 2: SSH 到服务器，SCP 上传包，调用部署脚本
+  # Job 2: SSH to server, upload package, deploy
   # ==============================================
   deploy:
     name: Deploy to VPS (SSH)
@@ -114,49 +122,49 @@ jobs:
           export SSHPASS="$VPS_PASS"
           APP_DIR="/opt/ai-life-os"
 
-          echo "=== 1. SCP 上传 build_src.tar.gz ==="
+          echo "=== 1. SCP upload build_src.tar.gz ==="
           sshpass -e scp -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             build_src.tar.gz "$USER@$HOST:/tmp/build_src.tar.gz"
 
-          echo "=== 2. SSH 执行部署 ==="
+          echo "=== 2. SSH execute deploy ==="
           sshpass -e ssh -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             "$USER@$HOST" bash -s <<'REMOTE_SCRIPT'
               set -euo pipefail
               APP_DIR="/opt/ai-life-os"
               cd "$APP_DIR"
 
-              echo "--- 解压 build_src ---"
+              echo "--- Extract build_src ---"
               rm -rf "$APP_DIR/build_src"
               mkdir -p "$APP_DIR/build_src"
               tar -xzf /tmp/build_src.tar.gz -C "$APP_DIR/build_src"
               rm -f /tmp/build_src.tar.gz
-              echo "解压完成，文件数: $(find $APP_DIR/build_src -type f | wc -l)"
+              echo "Extracted, file count: $(find $APP_DIR/build_src -type f | wc -l)"
 
               if [ ! -x "$APP_DIR/deploy_on_server.sh" ]; then
-                echo "ERROR: $APP_DIR/deploy_on_server.sh 不存在或不可执行"
+                echo "ERROR: $APP_DIR/deploy_on_server.sh not found or not executable"
                 exit 1
               fi
 
-              echo "--- 运行 deploy_on_server.sh ---"
+              echo "--- Run deploy_on_server.sh ---"
               "$APP_DIR/deploy_on_server.sh"
 
-              echo "--- 最终健康检查 ---"
+              echo "--- Final health check ---"
               for i in 1 2 3 4 5 6 7 8 9 10; do
-                CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 http://127.0.0.1:8000/health || echo 000)
+                CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 http://127.0.0.1:8000/ready || echo 000)
                 if [ "$CODE" = "200" ]; then
-                  echo "✅ /health HTTP 200 (第 $i 次)"
+                  echo "OK /ready HTTP 200 (attempt $i)"
                   break
                 fi
-                echo "⏳ /health HTTP $CODE (第 $i 次)"
+                echo "Waiting /ready HTTP $CODE (attempt $i)"
                 sleep 10
               done
               if [ "$CODE" != "200" ]; then
-                echo "❌ 健康检查失败，最近 80 行日志："
+                echo "FAIL health check, last 80 lines of logs:"
                 docker logs --tail 80 ai-life-os-api || true
                 exit 1
               fi
 
-              echo "--- /ready ---"
+              echo "--- /ready response ---"
               curl -s http://127.0.0.1:8000/ready || true; echo ""
-              echo "🎉 部署完成"
+              echo "Deployment complete"
           REMOTE_SCRIPT

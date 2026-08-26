@@ -10,7 +10,7 @@
     "test": "tsc --noEmit"
   },
   "dependencies": {
-    "@career-os/utils": "*"
+    "@career-os/utils": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
