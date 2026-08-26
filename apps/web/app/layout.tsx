@@ -1,33 +1,14 @@
-import { Outfit, Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import type { Metadata, Viewport } from "next";
 
 import { Providers } from "@/components/providers";
 import { SWRegister } from "@/components/sw-register";
 import "./globals.css";
 
-// 年轻化标题字体 —— 现代圆润风格
-const outfit = Outfit({
-  subsets: ["latin"],
-  variable: "--font-display",
-  display: "swap",
-  weight: ["400", "500", "600", "700"],
-});
-
-// 年轻化正文字体 —— 清新易读
-const plusJakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-body",
-  display: "swap",
-  weight: ["400", "500", "600", "700"],
-});
-
-// 数字显示字体 —— 保留等宽数字
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-mono",
-  display: "swap",
-  weight: ["400", "500", "600", "700"],
-});
+const fontVars = {
+  "--font-display": "'Helvetica Neue', 'PingFang SC', 'Noto Sans SC', sans-serif",
+  "--font-body": "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', sans-serif",
+  "--font-mono": "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+} as React.CSSProperties;
 
 // PWA metadata —— iOS Safari "添加到主屏幕" 所需：
 //  - manifest 链接（Next.js 自动生成 /manifest.webmanifest）
@@ -70,7 +51,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="zh-CN"
-      className={`dark ${outfit.variable} ${plusJakarta.variable} ${spaceGrotesk.variable}`}
+      className="dark"
+      style={fontVars}
       suppressHydrationWarning
     >
       <body>
