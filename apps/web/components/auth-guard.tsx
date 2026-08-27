@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 /**
  * 客户端路由守卫 —— 平移自 middleware.ts（Edge middleware 在 output:"export" 下不工作）。
@@ -41,7 +41,6 @@ const AUTH_PATHS = ["/login", "/signup"];
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
 
   useEffect(() => {
     const token =
@@ -55,15 +54,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
 
     if (isAppPath && !token) {
-      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+      window.location.replace(`/login/?next=${encodeURIComponent(pathname)}`);
       return;
     }
 
     if (isAuthPath && token) {
-      router.replace("/dashboard");
+      window.location.replace("/dashboard/");
       return;
     }
-  }, [pathname, router]);
+  }, [pathname]);
 
   return <>{children}</>;
 }
