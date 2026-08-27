@@ -1,8 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Briefcase, FileText, Image as ImageIcon, Loader2, Upload, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Briefcase, FileText, Image as ImageIcon, Loader2, Trash2, Upload, X } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { Button, Card, Input, SectionHeader, Textarea } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
@@ -17,19 +17,8 @@ function formatBytes(size?: number | null): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function ProjectFileAsset({ projectId, file }: { projectId: string; file: any }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let mounted = true;
-    apiFetch<{ data: { url: string } }>(`/projects/${projectId}/files/${file.id}/download`)
-      .then((res) => {
-        if (mounted) setUrl(res.data.url);
-      })
-      .catch(() => {});
-    return () => {
-      mounted = false;
-    };
-  }, [projectId, file.id]);
+function ProjectFileAsset({ file }: { file: any }) {
+  const url = file.url || null;
 
   return (
     <a
@@ -89,6 +78,24 @@ export default function ProjectsPage() {
     },
     onError: () => {
       setUploading(false);
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (projectId: string) => apiFetch(`/projects/${projectId}`, { method: "DELETE" }),
+    onMutate: async (projectId) => {
+      await queryClient.cancelQueries({ queryKey: ["projects"] });
+      const previous = queryClient.getQueryData<Envelope>(["projects"]);
+      queryClient.setQueryData<Envelope>(["projects"], (current) =>
+        current ? { ...current, data: current.data.filter((project: any) => project.id !== projectId) } : current,
+      );
+      return { previous };
+    },
+    onError: (_error, _projectId, context) => {
+      if (context?.previous) queryClient.setQueryData(["projects"], context.previous);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
   });
 
@@ -183,7 +190,22 @@ export default function ProjectsPage() {
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {(projects.data?.data || []).map((p: any) => (
           <Card key={p.id} className="p-4">
-            <p className="truncate text-sm font-medium">{p.title}</p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="truncate text-sm font-medium">{p.title}</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="shrink-0 text-muted hover:text-danger"
+                aria-label={`删除作品 ${p.title}`}
+                disabled={remove.isPending}
+                onClick={() => {
+                  if (window.confirm(`确定删除作品“${p.title}”吗？`)) remove.mutate(p.id);
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
             <p className="mt-1 line-clamp-2 text-[13px] text-muted">{p.description || t("projects.noDesc")}</p>
             <div className="mt-3 flex items-center gap-2">
               <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-muted">{p.status}</span>
@@ -192,7 +214,7 @@ export default function ProjectsPage() {
             {(p.files || []).length > 0 && (
               <div className="mt-3 space-y-1.5">
                 {(p.files || []).map((f: any) => (
-                  <ProjectFileAsset key={f.id} projectId={p.id} file={f} />
+                  <ProjectFileAsset key={f.id} file={f} />
                 ))}
               </div>
             )}

@@ -44,3 +44,34 @@ def test_project_create_upload_and_download(monkeypatch) -> None:
             headers=USER_B,
         )
         assert denied.status_code == 404
+
+
+def test_project_can_be_deleted_and_is_user_scoped() -> None:
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/projects",
+            headers=HEADERS,
+            json={"title": "待删除作品"},
+        )
+        assert created.status_code == 201
+        project_id = created.json()["data"]["id"]
+
+        deleted = client.delete(f"/api/v1/projects/{project_id}", headers=HEADERS)
+        assert deleted.status_code == 204
+        assert client.get(f"/api/v1/projects/{project_id}", headers=HEADERS).status_code == 404
+
+
+def test_project_delete_cannot_cross_users() -> None:
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/projects",
+            headers=HEADERS,
+            json={"title": "私有作品"},
+        )
+        project_id = created.json()["data"]["id"]
+
+        deleted = client.delete(
+            f"/api/v1/projects/{project_id}",
+            headers={**HEADERS, "X-Dev-User-Id": "00000000-0000-0000-0000-000000000002"},
+        )
+        assert deleted.status_code == 404

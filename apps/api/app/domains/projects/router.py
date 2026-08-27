@@ -53,6 +53,7 @@ def project_dict(project: Project, files: list[ProjectFile] | None = None) -> di
                 "mimeType": f.mime_type,
                 "sizeBytes": f.size_bytes,
                 "storagePath": f.storage_path,
+                "url": resolve_object_url(f.storage_path),
                 "createdAt": f.created_at.isoformat() if f.created_at else None,
             }
             for f in (files or [])
