@@ -1,9 +1,11 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { PencilLine } from "lucide-react";
+import { Check, Loader2, Pencil, PencilLine, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { apiFetch, ApiError } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
 
@@ -15,9 +17,34 @@ const MOTTO_KEY = "career_os_motto";
  */
 export function Hero() {
   const { t } = useI18n();
-  const [name, setName] = useState("");
+  const queryClient = useQueryClient();
+  const [emailName, setEmailName] = useState("");
   const [motto, setMotto] = useState("");
-  const [editing, setEditing] = useState(false);
+  const [editingMotto, setEditingMotto] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [nameError, setNameError] = useState("");
+
+  const me = useQuery<{ data: { displayName: string | null; email: string } }>({
+    queryKey: ["me"],
+    queryFn: () => apiFetch("/me"),
+  });
+
+  const saveName = useMutation({
+    mutationFn: () =>
+      apiFetch("/me", {
+        method: "PATCH",
+        body: JSON.stringify({ display_name: nameInput.trim() }),
+      }),
+    onSuccess: (response) => {
+      queryClient.setQueryData(["me"], response);
+      setEditingName(false);
+      setNameError("");
+    },
+    onError: (error) => {
+      setNameError(error instanceof ApiError ? error.message : "昵称保存失败，请稍后重试");
+    },
+  });
 
   useEffect(() => {
     if (!supabase) return;
@@ -25,7 +52,7 @@ export function Hero() {
       .getUser()
       .then(({ data }) => {
         const email = data.user?.email ?? "";
-        setName(email ? email.split("@")[0] : "");
+        setEmailName(email ? email.split("@")[0] : "");
       })
       .catch(() => {});
     try {
@@ -39,6 +66,7 @@ export function Hero() {
   const greeting =
     hour < 12 ? t("dashboard.goodMorning") : hour < 18 ? t("dashboard.goodAfternoon") : t("dashboard.goodEvening");
 
+  const name = me.data?.data?.displayName || emailName;
   const displayName = name ? name.toUpperCase() : "";
   const displayMotto = motto || t("dashboard.heroMottoFallback");
 
@@ -48,7 +76,7 @@ export function Hero() {
     } catch {
       // ignore
     }
-    setEditing(false);
+    setEditingMotto(false);
   };
 
   return (
@@ -67,12 +95,81 @@ export function Hero() {
             className="font-display text-[11px] font-semibold uppercase tracking-[0.22em] text-text-secondary"
           >
             {greeting}
-            {displayName && (
-              <span className="ml-2 text-primary-glow">{displayName}.</span>
-            )}
           </motion.p>
 
-          {editing ? (
+          <div className="mt-1 flex items-center gap-2">
+            {editingName ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  autoFocus
+                  value={nameInput}
+                  onChange={(event) => setNameInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      const trimmed = nameInput.trim();
+                      if (trimmed.length < 1 || trimmed.length > 20) {
+                        setNameError(t("profilePage.nicknameLengthError"));
+                        return;
+                      }
+                      saveName.mutate();
+                    }
+                    if (event.key === "Escape") setEditingName(false);
+                  }}
+                  maxLength={20}
+                  placeholder={t("profilePage.nicknamePlaceholder")}
+                  aria-label={t("profilePage.nickname")}
+                  className="h-8 w-44 rounded-[10px] border border-border-subtle bg-surface/60 px-3 text-sm text-text outline-none focus:border-primary/40"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const trimmed = nameInput.trim();
+                    if (trimmed.length < 1 || trimmed.length > 20) {
+                      setNameError(t("profilePage.nicknameLengthError"));
+                      return;
+                    }
+                    saveName.mutate();
+                  }}
+                  disabled={saveName.isPending}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white disabled:opacity-60"
+                  aria-label={t("profilePage.saveNickname")}
+                >
+                  {saveName.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingName(false);
+                    setNameError("");
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-elevated text-muted"
+                  aria-label={t("common.cancel")}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <span className="text-primary-glow">{displayName || "YOU"}.</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNameInput(name);
+                    setNameError("");
+                    setEditingName(true);
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-text-tertiary transition-colors hover:bg-surface-elevated hover:text-text"
+                  aria-label={t("profilePage.editNickname")}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+          {nameError && <p className="mt-1 text-xs text-danger">{nameError}</p>}
+
+          {editingMotto ? (
             <textarea
               autoFocus
               value={motto}
@@ -100,7 +197,7 @@ export function Hero() {
         </div>
 
         <button
-          onClick={() => setEditing((v) => !v)}
+          onClick={() => setEditingMotto((v) => !v)}
           aria-label={t("dashboard.heroEdit")}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-tertiary transition-colors hover:bg-surface-elevated hover:text-text"
         >

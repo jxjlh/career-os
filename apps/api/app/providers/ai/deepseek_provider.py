@@ -11,11 +11,11 @@ class DeepSeekProvider(AIProvider):
 
     name = "deepseek"
 
-    def __init__(self) -> None:
+    def __init__(self, api_key: str | None = None, base_url: str | None = None, model: str | None = None) -> None:
         settings = get_settings()
-        self.api_key = settings.finance_ai_api_key
-        self.base_url = settings.finance_ai_base_url.rstrip("/")
-        self.model = settings.finance_ai_model
+        self.api_key = api_key if api_key is not None else settings.finance_ai_api_key
+        self.base_url = (base_url if base_url is not None else settings.finance_ai_base_url).rstrip("/")
+        self.model = model if model is not None else settings.finance_ai_model
 
     async def complete(self, messages, response_format=None, **kwargs: Any) -> str:
         if not self.api_key:

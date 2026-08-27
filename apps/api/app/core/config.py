@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     finance_ai_api_key: str = ""
     finance_ai_base_url: str = "https://api.deepseek.com/v1"
     finance_ai_model: str = "deepseek-chat"
+    jd_ai_api_key: str = ""
+    jd_ai_base_url: str = ""
+    jd_ai_model: str = ""
 
 
 def normalize_db_url(url: str) -> str:

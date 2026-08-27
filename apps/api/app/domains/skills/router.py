@@ -502,7 +502,7 @@ async def extract_skills_from_jd(
         "category 从以下选：编程语言、框架、工具、数据库、云平台、方法论、领域知识。"
         f"\n\nJD 内容：\n{payload.jd}"
     )
-    provider = ai_registry.get_ai_provider()
+    provider = ai_registry.get_jd_ai_provider()
     try:
         raw = await provider.complete(
             [{"role": "user", "content": prompt}],

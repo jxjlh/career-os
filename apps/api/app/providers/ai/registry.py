@@ -22,3 +22,14 @@ def get_ai_provider() -> AIProvider:
     if settings.gemini_api_key:
         return GeminiProvider()
     return MockAIProvider()
+
+
+def get_jd_ai_provider() -> AIProvider:
+    settings = get_settings()
+    if settings.jd_ai_api_key:
+        return DeepSeekProvider(
+            api_key=settings.jd_ai_api_key,
+            base_url=settings.jd_ai_base_url or settings.openai_base_url,
+            model=settings.jd_ai_model or settings.openai_model,
+        )
+    return get_ai_provider()
