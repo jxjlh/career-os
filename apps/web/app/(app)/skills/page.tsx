@@ -20,6 +20,7 @@ import { TargetRoleCard } from "@/components/skills/target-role-card";
 import { JdSkillCard } from "@/components/skills/jd-skill-card";
 import { Badge, Button, Card, Input, SectionHeader, Skeleton, Textarea } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/api-errors";
 
 type Envelope = { data: any };
 type SkillCategory = "learning" | "mastered";
@@ -34,6 +35,7 @@ export default function SkillsPage() {
   const [activeCategory, setActiveCategory] = useState<SkillCategory>("learning");
   const [selectedId, setSelectedId] = useState("");
   const [newSkillName, setNewSkillName] = useState("");
+  const [createSkillError, setCreateSkillError] = useState("");
 
   const matrix = useQuery<Envelope>({ queryKey: ["skill-matrix"], queryFn: () => apiFetch("/skills/matrix") });
   const items = useMemo(() => matrix.data?.data.items || [], [matrix.data]);
@@ -56,10 +58,14 @@ export default function SkillsPage() {
       body: JSON.stringify({ name: newSkillName.trim(), category: "自定义", currentLevel: 1, targetLevel: 5, learningStatus: "learning" }),
     }),
     onSuccess: (response) => {
+      setCreateSkillError("");
       setNewSkillName("");
       setActiveCategory("learning");
       setSelectedId(response.data.skillId);
       void queryClient.invalidateQueries({ queryKey: ["skill-matrix"] });
+    },
+    onError: (error: unknown) => {
+      setCreateSkillError(getApiErrorMessage(error));
     },
   });
 
@@ -143,6 +149,11 @@ export default function SkillsPage() {
             </div>
           )}
         />
+        {createSkillError && (
+          <p role="alert" className="mt-3 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-xs text-danger">
+            添加失败：{createSkillError}
+          </p>
+        )}
         {categorySkills.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">还没有{CATEGORY_LABELS[activeCategory]}，从右上角添加一个技能。</div>
         ) : (
