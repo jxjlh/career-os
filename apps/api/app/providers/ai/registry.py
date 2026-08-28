@@ -35,22 +35,18 @@ def get_jd_ai_providers() -> list[AIProvider]:
         providers.append(
             DeepSeekProvider(
                 api_key=settings.jd_ai_api_key,
-                base_url=settings.jd_ai_base_url or settings.openai_base_url,
-                model=settings.jd_ai_model or settings.openai_model,
+                # JD_AI_* is independent from OPENAI_* (which is used by
+                # DashScope OCR in production).  An empty JD base URL means
+                # the DeepSeek-compatible endpoint, never the OCR endpoint.
+                base_url=settings.jd_ai_base_url or "https://api.deepseek.com/v1",
+                model=settings.jd_ai_model or "deepseek-chat",
             )
         )
-    primary = get_ai_provider()
-    # OPENAI_API_KEY is also used by the finance OCR integration.  When it
-    # points at DashScope, it is an OCR credential/model and must not be
-    # selected for JD extraction; a 401 from DashScope would otherwise mask
-    # the configured JD fallbacks (for example Spark).
-    primary_base_url = str(getattr(primary, "base_url", "")).lower()
-    is_dashscope_ocr_provider = (
-        getattr(primary, "name", "") == "openai"
-        and "dashscope.aliyuncs.com" in primary_base_url
-    )
-    if not is_dashscope_ocr_provider:
-        providers.append(primary)
+    # Do not reuse the generic provider here.  It is selected from
+    # FINANCE_AI_* / OPENAI_* settings and those credentials are commonly
+    # pointed at DashScope for OCR or portfolio analysis, not JD extraction.
+    # JD must use its explicit JD_AI_* configuration or the dedicated
+    # fallbacks below; otherwise a DashScope 401 masks the real fallback.
 
     if settings.xfyun_api_key and settings.xfyun_api_secret and settings.xfyun_app_id:
         providers.append(XfyunSparkProvider())

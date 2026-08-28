@@ -141,6 +141,62 @@ def test_jd_provider_does_not_reuse_dashscope_ocr_credentials(monkeypatch) -> No
     assert [provider.name for provider in providers] == ["xfyun_spark"]
 
 
+def test_jd_provider_does_not_reuse_dashscope_finance_credentials(monkeypatch) -> None:
+    class DashscopeFinanceProvider:
+        name = "deepseek"
+        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    class XfyunProvider:
+        name = "xfyun_spark"
+
+    monkeypatch.setattr(
+        ai_registry,
+        "get_settings",
+        lambda: SimpleNamespace(
+            jd_ai_api_key="",
+            jd_ai_base_url="",
+            jd_ai_model="",
+            openai_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            openai_model="qwen3.5-ocr",
+            xfyun_api_key="configured",
+            xfyun_api_secret="configured",
+            xfyun_app_id="configured",
+            anthropic_api_key="",
+            gemini_api_key="",
+        ),
+    )
+    monkeypatch.setattr(ai_registry, "get_ai_provider", lambda: DashscopeFinanceProvider())
+    monkeypatch.setattr(ai_registry, "XfyunSparkProvider", lambda: XfyunProvider())
+
+    providers = ai_registry.get_jd_ai_providers()
+
+    assert [provider.name for provider in providers] == ["xfyun_spark"]
+
+
+def test_jd_credentials_default_to_deepseek_endpoint_not_ocr_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ai_registry,
+        "get_settings",
+        lambda: SimpleNamespace(
+            jd_ai_api_key="jd-key",
+            jd_ai_base_url="",
+            jd_ai_model="",
+            openai_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            openai_model="qwen3.5-ocr",
+            xfyun_api_key="",
+            xfyun_api_secret="",
+            xfyun_app_id="",
+            anthropic_api_key="",
+            gemini_api_key="",
+        ),
+    )
+
+    providers = ai_registry.get_jd_ai_providers()
+
+    assert providers[0].name == "deepseek"
+    assert providers[0].base_url == "https://api.deepseek.com/v1"
+
+
 def test_skill_categories_detail_and_knowledge() -> None:
     skill_name = f"分类详情技能-{uuid.uuid4().hex[:8]}"
     with client() as c:
