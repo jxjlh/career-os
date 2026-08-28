@@ -502,21 +502,39 @@ async def extract_skills_from_jd(
         "category 从以下选：编程语言、框架、工具、数据库、云平台、方法论、领域知识。"
         f"\n\nJD 内容：\n{payload.jd}"
     )
-    provider = ai_registry.get_jd_ai_provider()
-    try:
-        raw = await provider.complete(
-            [{"role": "user", "content": prompt}],
-            response_format="json_object",
-            temperature=0.2,
-            max_tokens=1500,
-        )
-        logger.info("JD extraction raw response length: %d", len(raw or ""))
-        parsed = extract_json(raw)
-        if parsed is None:
-            logger.warning("JD extraction: extract_json returned None. Raw: %s", (raw or "")[:500])
-    except Exception as exc:
-        logger.error("JD extraction AI call failed: %s", exc, exc_info=True)
-        return {"data": {"skills": [], "provider": "error", "error": str(exc)}}
+    providers = ai_registry.get_jd_ai_providers()
+    last_error: Exception | None = None
+    raw = ""
+    provider_name = "ai"
+    for provider_index, provider in enumerate(providers):
+        try:
+            raw = await provider.complete(
+                [{"role": "user", "content": prompt}],
+                response_format="json_object",
+                temperature=0.2,
+                max_tokens=1500,
+            )
+            provider_name = provider.name
+            logger.info("JD extraction raw response length: %d", len(raw or ""))
+            break
+        except Exception as exc:
+            last_error = exc
+            if provider_index + 1 < len(providers):
+                logger.warning("JD provider %s failed; trying fallback: %s", provider.name, exc)
+                continue
+            logger.error("JD extraction AI call failed: %s", exc, exc_info=True)
+
+    if last_error is not None and not raw:
+        status_code = getattr(getattr(last_error, "response", None), "status_code", None)
+        if status_code in (401, 403) or any(token in str(last_error).lower() for token in ("401", "403", "unauthorized", "forbidden")):
+            error_message = "AI 服务认证失败，请在生产环境更新有效的 JD_AI_API_KEY 或备用 AI 配置。"
+        else:
+            error_message = "AI 服务暂不可用，请稍后重试。"
+        return {"data": {"skills": [], "provider": "error", "error": error_message}}
+
+    parsed = extract_json(raw)
+    if parsed is None:
+        logger.warning("JD extraction: extract_json returned None. Raw: %s", (raw or "")[:500])
     if not isinstance(parsed, dict) or not isinstance(parsed.get("skills"), list):
         logger.warning("JD extraction: invalid parsed structure: %s", str(parsed)[:300])
         return {"data": {"skills": [], "provider": "fallback"}}
@@ -532,4 +550,4 @@ async def extract_skills_from_jd(
             "reason": str(item.get("reason", "")).strip()[:200],
             "alreadyAdded": name in existing_names,
         })
-    return {"data": {"skills": skills, "provider": "ai"}}
+    return {"data": {"skills": skills, "provider": provider_name}}

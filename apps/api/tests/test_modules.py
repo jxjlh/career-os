@@ -59,8 +59,8 @@ def test_extract_skills_returns_structured_error_when_ai_provider_fails(monkeypa
             raise RuntimeError("JD provider unavailable")
 
     monkeypatch.setattr(
-        "app.domains.skills.router.ai_registry.get_jd_ai_provider",
-        lambda: FailingProvider(),
+        "app.domains.skills.router.ai_registry.get_jd_ai_providers",
+        lambda: [FailingProvider()],
     )
 
     with client() as c:
@@ -74,8 +74,38 @@ def test_extract_skills_returns_structured_error_when_ai_provider_fails(monkeypa
     assert response.json()["data"] == {
         "skills": [],
         "provider": "error",
-        "error": "JD provider unavailable",
+        "error": "AI 服务暂不可用，请稍后重试。",
     }
+
+
+def test_extract_skills_falls_back_when_primary_provider_is_unauthorized(monkeypatch) -> None:
+    class UnauthorizedProvider:
+        name = "openai"
+
+        async def complete(self, *_args, **_kwargs):
+            raise RuntimeError("401 Unauthorized from upstream")
+
+    class WorkingProvider:
+        name = "xfyun_spark"
+
+        async def complete(self, *_args, **_kwargs):
+            return '{"skills":[{"name":"SQL","category":"数据库","suggestedLevel":5,"reason":"用于数据分析"}]}'
+
+    monkeypatch.setattr(
+        "app.domains.skills.router.ai_registry.get_jd_ai_providers",
+        lambda: [UnauthorizedProvider(), WorkingProvider()],
+    )
+
+    with client() as c:
+        response = c.post(
+            "/api/v1/skills/from-jd",
+            headers=HEADERS,
+            json={"jd": "负责数据分析和报表建设，要求熟悉 SQL、Python 以及 Power BI 工具。"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["provider"] == "xfyun_spark"
+    assert response.json()["data"]["skills"][0]["name"] == "SQL"
 
 
 def test_skill_categories_detail_and_knowledge() -> None:
