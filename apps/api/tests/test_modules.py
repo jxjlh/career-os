@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.domains.explorer.router import _select_search_providers
 from app.main import app
+from app.providers.ai import registry as ai_registry
 
 HEADERS = {"Authorization": "Bearer dev", "Content-Type": "application/json"}
 
@@ -106,6 +107,38 @@ def test_extract_skills_falls_back_when_primary_provider_is_unauthorized(monkeyp
     assert response.status_code == 200
     assert response.json()["data"]["provider"] == "xfyun_spark"
     assert response.json()["data"]["skills"][0]["name"] == "SQL"
+
+
+def test_jd_provider_does_not_reuse_dashscope_ocr_credentials(monkeypatch) -> None:
+    class DashscopeProvider:
+        name = "openai"
+        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    class XfyunProvider:
+        name = "xfyun_spark"
+
+    monkeypatch.setattr(
+        ai_registry,
+        "get_settings",
+        lambda: SimpleNamespace(
+            jd_ai_api_key="",
+            jd_ai_base_url="",
+            jd_ai_model="",
+            openai_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            openai_model="qwen3.5-ocr",
+            xfyun_api_key="configured",
+            xfyun_api_secret="configured",
+            xfyun_app_id="configured",
+            anthropic_api_key="",
+            gemini_api_key="",
+        ),
+    )
+    monkeypatch.setattr(ai_registry, "get_ai_provider", lambda: DashscopeProvider())
+    monkeypatch.setattr(ai_registry, "XfyunSparkProvider", lambda: XfyunProvider())
+
+    providers = ai_registry.get_jd_ai_providers()
+
+    assert [provider.name for provider in providers] == ["xfyun_spark"]
 
 
 def test_skill_categories_detail_and_knowledge() -> None:

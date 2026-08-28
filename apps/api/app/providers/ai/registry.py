@@ -40,7 +40,17 @@ def get_jd_ai_providers() -> list[AIProvider]:
             )
         )
     primary = get_ai_provider()
-    providers.append(primary)
+    # OPENAI_API_KEY is also used by the finance OCR integration.  When it
+    # points at DashScope, it is an OCR credential/model and must not be
+    # selected for JD extraction; a 401 from DashScope would otherwise mask
+    # the configured JD fallbacks (for example Spark).
+    primary_base_url = str(getattr(primary, "base_url", "")).lower()
+    is_dashscope_ocr_provider = (
+        getattr(primary, "name", "") == "openai"
+        and "dashscope.aliyuncs.com" in primary_base_url
+    )
+    if not is_dashscope_ocr_provider:
+        providers.append(primary)
 
     if settings.xfyun_api_key and settings.xfyun_api_secret and settings.xfyun_app_id:
         providers.append(XfyunSparkProvider())
