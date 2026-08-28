@@ -34,6 +34,7 @@ import {
   type Conversation,
   type Message,
 } from "@/lib/chat";
+import { extractPastedImages } from "@/lib/pasted-image.mjs";
 import {
   listFriendRequests,
   listFriends,
@@ -627,6 +628,14 @@ export default function ContactsPage() {
                       placeholder="输入消息..."
                       value={messageInput}
                       onChange={(e) => setMessageInput(e.target.value)}
+                      onPaste={(e) => {
+                        const images = extractPastedImages(e.clipboardData.items);
+                        if (images.length === 0) return;
+                        e.preventDefault();
+                        if (activeConversation) {
+                          void Promise.all(images.map((file) => handleUploadImage(file)));
+                        }
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();

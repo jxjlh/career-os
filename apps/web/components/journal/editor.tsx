@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { resolveMediaUrl } from "@/lib/chat";
+import { extractPastedImages } from "@/lib/pasted-image.mjs";
 import type { Journal } from "@/lib/journal";
 import { journalApi, TIME_SLOTS, MOODS, getSlotMeta, getSubSlotMeta } from "@/lib/journal";
 import { useI18n } from "@/lib/i18n";
@@ -152,6 +153,16 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
       // 用串行 mutation 方便状态管理，也避免并发时互相覆盖
       // eslint-disable-next-line no-await-in-loop
       await uploadImageMutation.mutateAsync(f);
+    }
+  };
+
+  const handlePaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const images = extractPastedImages(event.clipboardData.items);
+    if (images.length === 0) return;
+    event.preventDefault();
+    const remaining = MAX_IMAGES - photos.length;
+    for (const file of images.slice(0, Math.max(remaining, 0))) {
+      await uploadImageMutation.mutateAsync(file);
     }
   };
 
@@ -432,6 +443,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
+              onPaste={(e) => void handlePaste(e)}
               placeholder={t("journal.contentPlaceholder")}
               rows={3}
               className="
