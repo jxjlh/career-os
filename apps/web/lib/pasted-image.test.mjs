@@ -19,6 +19,11 @@ test("ignores non-image clipboard files", () => {
   assert.deepEqual(extractPastedImages([item]), []);
 });
 
+test("accepts clipboard file lists used by screenshot apps", () => {
+  const image = new File(["png"], "clipboard", { type: "image/png" });
+  assert.deepEqual(extractPastedImages([], [image]), [image]);
+});
+
 test("journal and chat inputs wire clipboard image handling", async () => {
   const [journal, contacts] = await Promise.all([
     readFile(new URL("../components/journal/editor.tsx", import.meta.url), "utf8"),
@@ -26,5 +31,5 @@ test("journal and chat inputs wire clipboard image handling", async () => {
   ]);
 
   assert.match(journal, /onPaste=\{\(e\) => void handlePaste\(e\)\}/);
-  assert.match(contacts, /extractPastedImages\(e\.clipboardData\.items\)/);
+  assert.match(contacts, /extractPastedImages\(e\.clipboardData\.items, e\.clipboardData\.files\)/);
 });

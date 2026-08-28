@@ -157,7 +157,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   };
 
   const handlePaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const images = extractPastedImages(event.clipboardData.items);
+    const images = extractPastedImages(event.clipboardData.items, event.clipboardData.files);
     if (images.length === 0) return;
     event.preventDefault();
     const remaining = MAX_IMAGES - photos.length;

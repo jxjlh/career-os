@@ -629,7 +629,7 @@ export default function ContactsPage() {
                       value={messageInput}
                       onChange={(e) => setMessageInput(e.target.value)}
                       onPaste={(e) => {
-                        const images = extractPastedImages(e.clipboardData.items);
+                        const images = extractPastedImages(e.clipboardData.items, e.clipboardData.files);
                         if (images.length === 0) return;
                         e.preventDefault();
                         if (activeConversation) {
