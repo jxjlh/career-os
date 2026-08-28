@@ -40,7 +40,7 @@ Learn -> Practice -> Build -> Interview -> Job -> Promotion -> Repeat
 | Database / Auth / Storage | Supabase PostgreSQL、Supabase Auth、Supabase Storage |
 | AI | 讯飞星火 Spark-X2-Flash（默认），OpenAI / Anthropic / Gemini 插件位 |
 | Search | Tavily / Exa / Google / Bing / Wikipedia / GitHub / YouTube 插件 |
-| Deploy | Vercel（Web）+ Render（API）+ Supabase（免费套餐） |
+| Deploy | GitHub Actions → 腾讯云 VPS（Docker）+ Supabase |
 
 ## 项目结构
 
@@ -51,7 +51,7 @@ packages/       ui / auth / database / ai / search / shared / utils
 docs/           产品 / 架构 / 数据库 / API / UI 设计
 infra/          Supabase SQL、Docker
 .github/workflows/ci.yml
-render.yaml     Render 蓝图
+.github/workflows/deploy-vps.yml  腾讯云 VPS 自动部署
 docker-compose.yml
 turbo.json      TurboRepo 任务编排
 ```
@@ -125,7 +125,7 @@ Supabase RLS / 触发器 / 存储桶 / 种子数据见 `infra/supabase/migration
 
 ## 免费部署
 
-详细的 Supabase / Vercel / Render 账号说明与逐步配置见 `docs/07-部署指南.md`。
+详细的 Supabase / 腾讯云 / GitHub Actions 配置说明与逐步部署流程见 `docs/07-部署指南.md`。
 
 免费版每日限额：AI 对话 30 条、搜索 20 次、AI 总结 20 次、Quiz 10 次、模拟面试 3 场、简历生成 3 次。
 

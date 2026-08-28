@@ -136,7 +136,7 @@ flowchart TB
 | AI | 讯飞星火 Spark-X2-Flash（默认）+ OpenAI / Anthropic / Gemini（可选） | 免费低门槛，Provider 插件化可切换 |
 | 搜索 | Tavily / Exa / Google / Bing / Wikipedia / GitHub / YouTube 插件 | 实时搜索，不维护资源库 |
 | 语音 | 浏览器 MediaRecorder + Web Speech API | 语音面试录音与浏览器端转写 |
-| 部署 | Vercel + Render + Supabase 免费套餐 | 无需账号域名即可上线，后续可迁 Railway + Docker |
+| 部署 | 腾讯云 VPS（GitHub Actions + Docker）+ Supabase | 单一生产入口，后续可按需迁移云平台 |
 | 监控 | Sentry + OpenTelemetry | 错误与性能可观测 |
 
 ---
@@ -891,16 +891,16 @@ Agent 规则：
 | 环境 | Web | API | DB |
 | --- | --- | --- | --- |
 | local | Next.js dev | uvicorn + 进程内任务 | docker compose Postgres（可选） |
-| staging | Vercel Preview（免费） | Render 免费实例 | Supabase staging |
-| production | Vercel 免费域名 | Render 免费实例 | Supabase production |
+| staging | 本地/腾讯云测试目录 | 腾讯云测试容器 | Supabase staging |
+| production | 腾讯云 VPS（Nginx + Docker） | 腾讯云 VPS 容器 | Supabase production |
 
-免费版部署说明：首版不使用自定义域名；Web 使用 Vercel Hobby，API 使用 Render 免费 Web Service，DB / Auth / Storage 使用 Supabase 免费套餐；长任务在 FastAPI 进程内以 BackgroundTasks + background_jobs 表实现。Celery / Redis / Railway 作为后续付费增强路径保留，不阻塞首版上线。
+部署说明：生产 Web 与 API 统一运行在腾讯云 VPS 的 Docker 容器中，DB / Auth / Storage 使用 Supabase；长任务在 FastAPI 进程内以 BackgroundTasks + background_jobs 表实现。Celery / Redis / 其他云平台作为后续增强路径保留，不参与当前生产部署。
 
 CI/CD：
 
 1. GitHub Actions：lint → typecheck → unit tests → integration tests → build。
 2. 数据库迁移：Alembic 迁移作为发布前置步骤。
-3. 部署：Web 自动部署 Vercel；API 部署 Render；后续付费路径可切换 Railway + Docker。
+3. 部署：GitHub Actions 构建后通过 SSH 自动部署到腾讯云 VPS；后续可按需切换其他云平台。
 4. 回滚：FastAPI 无状态多副本，Worker 幂等任务。
 
 可观测性：
@@ -928,7 +928,7 @@ CI/CD：
 1. 免费版 / 付费版的功能边界是否本阶段确定。
 2. AI 与搜索 Provider 的 API Key 由部署方提供，是否需要管理后台支持用户自带 Key。
 3. 是否需要语音面试（录音转写）纳入 P0。
-4. 部署环境是否已有 Vercel / Railway / Supabase 账号与域名。
+4. 部署环境是否已有腾讯云、GitHub 与 Supabase 账号及域名。
 5. 是否需要多语言（中文 / 英文）作为首版并行能力，或中文优先。
 
 以上问题已于 2026-07-31 确认，结论见第 17 节。
@@ -940,6 +940,6 @@ CI/CD：
 1. 首版按免费版设计，不做付费墙与计费系统，通过每日限额控制 AI / 搜索成本。
 2. AI Provider 默认讯飞星火 Spark-X2-Flash，使用用户提供的 APIKey / APISecret；密钥只写入本地与部署环境变量，不进入 git。
 3. 语音面试纳入首版：浏览器录音 + Web Speech API 转写（无服务端 ASR），转写可校对，面试评分维度增加表达流畅度。
-4. 首版无自有账号与域名，采用免费托管：Vercel（Web）+ Render（API）+ Supabase（DB / Auth / Storage）。
+4. 生产采用腾讯云 VPS（Web + API）+ Supabase（DB / Auth / Storage）。
 5. 首版支持中英文双语界面（zh-CN / en）与中英文简历；默认跟随浏览器语言并可手动切换。
 6. 免费版每日限额（可在 Admin 配置）：AI 对话 30 次、学习搜索 20 次、资源 AI 总结 20 次、Quiz / 思维导图 10 次、模拟面试 3 场、简历生成 3 次、存储 500MB。

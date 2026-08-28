@@ -1,4 +1,4 @@
-name: Deploy to VPS
+name: Deploy to Tencent Cloud VPS
 
 on:
   push:
@@ -83,10 +83,10 @@ jobs:
           retention-days: 7
 
   # ==============================================
-  # Job 2: SSH to server, upload package, deploy
+  # Job 2: SSH to Tencent Cloud server, upload package, deploy
   # ==============================================
   deploy:
-    name: Deploy to VPS (SSH)
+    name: Deploy to Tencent Cloud VPS (SSH)
     needs: build
     runs-on: ubuntu-latest
     environment: production

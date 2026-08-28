@@ -162,7 +162,7 @@ app.include_router(chat_router, prefix=settings.api_prefix)
 
 # ---------- 前端静态文件托管 ----------
 # 将 Next.js 构建产物 (apps/web/out) 作为静态资源提供服务，
-# 使 Render 后端同时托管前端 SPA，省去独立的 Cloudflare Pages 部署。
+# 使腾讯云 VPS 上的后端同时托管前端 SPA，省去独立的前端托管服务。
 # 关键：API 路由 (已通过 include_router 注册) 优先匹配，
 # 未命中的请求回退到 index.html，支持 SPA 客户端路由。
 frontend_dir = Path(__file__).resolve().parent.parent / "static"
