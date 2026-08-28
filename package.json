@@ -1,29 +1,28 @@
 {
-  "name": "career-os",
+  "name": "ai-aggregation-app",
   "version": "0.1.0",
   "private": true,
-  "description": "Career OS - AI Career Growth Platform",
+  "description": "AI Aggregation App - Monorepo with Next.js 15 + FastAPI",
+  "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": ">=18.18.0"
+    "node": ">=20.0.0"
   },
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck",
-    "dev:web": "npm --workspace apps/web run dev",
-    "dev:api": "uv run --project apps/api uvicorn app.main:app --reload --port 8000",
-    "build:web": "npm --workspace apps/web run build",
-    "lint": "npm --workspace apps/web run lint",
-    "test": "npm --workspace apps/web run test && uv run --project apps/api pytest"
+    "lint": "turbo run lint",
+    "dev:web": "pnpm --filter @ai-aggregation/web run dev",
+    "dev:backend": "uv run --project apps/backend uvicorn app.main:app --reload --port 8000",
+    "gen:api": "pnpm run gen:openapi && pnpm run gen:types",
+    "gen:openapi": "uv run --project apps/backend python -m app.main --export-openapi",
+    "gen:types": "openapi-typescript apps/backend/openapi.json -o apps/web/lib/api/api.d.ts",
+    "migrate": "uv run --project apps/backend alembic upgrade head",
+    "migrate:create": "uv run --project apps/backend alembic revision --autogenerate",
+    "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
-    "turbo": "^2.3.3"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.111.0"
+    "turbo": "^2.3.3",
+    "openapi-typescript": "^7.5.0",
+    "typescript": "^5.7.0"
   }
 }
