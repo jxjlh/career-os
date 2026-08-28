@@ -114,6 +114,7 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_PASS: ${{ secrets.VPS_PASSWORD }}
           VPS_PORT: ${{ secrets.VPS_PORT || 22 }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           HOST="$VPS_HOST"
@@ -128,25 +129,34 @@ jobs:
 
           echo "=== 2. SSH execute deploy ==="
           sshpass -e ssh -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-            "$USER@$HOST" bash -s <<'REMOTE_SCRIPT'
+            "$USER@$HOST" bash -s -- "$COMMIT_SHA" <<'REMOTE_SCRIPT'
               set -euo pipefail
+              COMMIT_SHA="${1:?missing commit SHA}"
               APP_DIR="/opt/ai-life-os"
+              RELEASE_ID="${COMMIT_SHA:0:12}"
+              RELEASE_DIR="$APP_DIR/releases/$RELEASE_ID"
               cd "$APP_DIR"
 
-              echo "--- Extract build_src ---"
+              echo "--- Prepare release $RELEASE_ID ---"
               rm -rf "$APP_DIR/build_src"
-              mkdir -p "$APP_DIR/build_src"
+              rm -rf "$RELEASE_DIR"
+              mkdir -p "$APP_DIR/build_src" "$RELEASE_DIR"
               tar -xzf /tmp/build_src.tar.gz -C "$APP_DIR/build_src"
               rm -f /tmp/build_src.tar.gz
-              echo "Extracted, file count: $(find $APP_DIR/build_src -type f | wc -l)"
+              cp -a "$APP_DIR/build_src/." "$RELEASE_DIR/"
+              echo "Extracted, file count: $(find "$RELEASE_DIR" -type f | wc -l)"
 
-              if [ ! -x "$APP_DIR/deploy_on_server.sh" ]; then
-                echo "ERROR: $APP_DIR/deploy_on_server.sh not found or not executable"
+              if [ ! -f "$RELEASE_DIR/Dockerfile" ] || [ ! -d "$RELEASE_DIR/static" ]; then
+                echo "ERROR: release is missing Dockerfile or static frontend output"
                 exit 1
               fi
 
-              echo "--- Run deploy_on_server.sh ---"
-              "$APP_DIR/deploy_on_server.sh"
+              echo "--- Build Docker image ---"
+              docker build -t "ai-life-os-api:$RELEASE_ID" -t ai-life-os-api:latest \
+                -f "$RELEASE_DIR/Dockerfile" "$RELEASE_DIR"
+
+              echo "--- Restart Tencent VPS service ---"
+              docker compose up -d --force-recreate api
 
               echo "--- Final health check ---"
               for i in 1 2 3 4 5 6 7 8 9 10; do
