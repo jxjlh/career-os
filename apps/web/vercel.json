@@ -1,0 +1,11 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "installCommand": "npm install",
+  "rewrites": [
+    {
+      "source": "/api/v1/:path*",
+      "destination": "https://ai-life-os-api-4y3x.onrender.com/api/v1/:path*"
+    }
+  ]
+}
