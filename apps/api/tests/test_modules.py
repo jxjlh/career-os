@@ -53,6 +53,31 @@ def test_skills_matrix_and_progress() -> None:
         assert resp.json()["data"]["targetProgressPercent"] == 57.1
 
 
+def test_extract_skills_returns_structured_error_when_ai_provider_fails(monkeypatch) -> None:
+    class FailingProvider:
+        async def complete(self, *_args, **_kwargs):
+            raise RuntimeError("JD provider unavailable")
+
+    monkeypatch.setattr(
+        "app.domains.skills.router.ai_registry.get_jd_ai_provider",
+        lambda: FailingProvider(),
+    )
+
+    with client() as c:
+        response = c.post(
+            "/api/v1/skills/from-jd",
+            headers=HEADERS,
+            json={"jd": "负责数据分析和报表建设，要求熟悉 SQL、Python 以及 Power BI 工具。"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "skills": [],
+        "provider": "error",
+        "error": "JD provider unavailable",
+    }
+
+
 def test_skill_categories_detail_and_knowledge() -> None:
     skill_name = f"分类详情技能-{uuid.uuid4().hex[:8]}"
     with client() as c:

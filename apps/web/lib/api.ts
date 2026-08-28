@@ -82,11 +82,21 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   headers.set("Authorization", token ? `Bearer ${token}` : "Bearer dev");
 
   const url = path.startsWith("/api/v1") ? path : `${API_BASE}${path}`;
-  const res = await fetch(url, {
-    ...options,
-    headers,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers,
+      cache: "no-store",
+    });
+  } catch (error) {
+    throw new ApiError(
+      error instanceof TypeError && /fetch|network/i.test(error.message)
+        ? "网络连接失败，请检查网络后重试；如果问题持续，请稍后再试。"
+        : "请求失败，请稍后重试。",
+      "NETWORK_ERROR",
+    );
+  }
 
   if (!res.ok) {
     // 401 时清除 token 缓存，下次请求会重新获取

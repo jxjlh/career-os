@@ -1,60 +1,41 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Check, Loader2, Pencil, PencilLine, X } from "lucide-react";
+import { PencilLine } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
 
 const MOTTO_KEY = "career_os_motto";
 
 /**
- * Hero —— 动态问候 GOOD MORNING/AFTERNOON/EVENING + 名字 + 人生格言 + Edit。
+ * Hero —— 动态问候 GOOD MORNING/AFTERNOON/EVENING + 名字 + 居中人生格言。
  * 不做 Card，用淡渐变 + ambient glow + noise。格言存 localStorage（无后端 profile API）。
  */
 export function Hero() {
   const { t } = useI18n();
-  const queryClient = useQueryClient();
   const [emailName, setEmailName] = useState("");
   const [motto, setMotto] = useState("");
   const [editingMotto, setEditingMotto] = useState(false);
-  const [editingName, setEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState("");
-  const [nameError, setNameError] = useState("");
 
   const me = useQuery<{ data: { displayName: string | null; email: string } }>({
     queryKey: ["me"],
     queryFn: () => apiFetch("/me"),
   });
 
-  const saveName = useMutation({
-    mutationFn: () =>
-      apiFetch("/me", {
-        method: "PATCH",
-        body: JSON.stringify({ display_name: nameInput.trim() }),
-      }),
-    onSuccess: (response) => {
-      queryClient.setQueryData(["me"], response);
-      setEditingName(false);
-      setNameError("");
-    },
-    onError: (error) => {
-      setNameError(error instanceof ApiError ? error.message : "昵称保存失败，请稍后重试");
-    },
-  });
-
   useEffect(() => {
-    if (!supabase) return;
-    supabase.auth
-      .getUser()
-      .then(({ data }) => {
-        const email = data.user?.email ?? "";
-        setEmailName(email ? email.split("@")[0] : "");
-      })
-      .catch(() => {});
+    if (supabase) {
+      supabase.auth
+        .getUser()
+        .then(({ data }) => {
+          const email = data.user?.email ?? "";
+          setEmailName(email ? email.split("@")[0] : "");
+        })
+        .catch(() => {});
+    }
     try {
       setMotto(localStorage.getItem(MOTTO_KEY) ?? "");
     } catch {
@@ -86,7 +67,7 @@ export function Hero() {
       <div className="pointer-events-none absolute -left-32 bottom-0 h-64 w-64 rounded-full bg-info/8 blur-[80px]" />
       <div className="noise" />
 
-      <div className="relative flex items-start justify-between gap-4">
+      <div className="relative">
         <div className="min-w-0 flex-1">
           <motion.p
             initial={{ opacity: 0, y: 4 }}
@@ -97,78 +78,10 @@ export function Hero() {
             {greeting}
           </motion.p>
 
-          <div className="mt-1 flex items-center gap-2">
-            {editingName ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  autoFocus
-                  value={nameInput}
-                  onChange={(event) => setNameInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      const trimmed = nameInput.trim();
-                      if (trimmed.length < 1 || trimmed.length > 20) {
-                        setNameError(t("profilePage.nicknameLengthError"));
-                        return;
-                      }
-                      saveName.mutate();
-                    }
-                    if (event.key === "Escape") setEditingName(false);
-                  }}
-                  maxLength={20}
-                  placeholder={t("profilePage.nicknamePlaceholder")}
-                  aria-label={t("profilePage.nickname")}
-                  className="h-8 w-44 rounded-[10px] border border-border-subtle bg-surface/60 px-3 text-sm text-text outline-none focus:border-primary/40"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const trimmed = nameInput.trim();
-                    if (trimmed.length < 1 || trimmed.length > 20) {
-                      setNameError(t("profilePage.nicknameLengthError"));
-                      return;
-                    }
-                    saveName.mutate();
-                  }}
-                  disabled={saveName.isPending}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white disabled:opacity-60"
-                  aria-label={t("profilePage.saveNickname")}
-                >
-                  {saveName.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingName(false);
-                    setNameError("");
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-elevated text-muted"
-                  aria-label={t("common.cancel")}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <>
-                <span className="text-primary-glow">{displayName || "YOU"}.</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNameInput(name);
-                    setNameError("");
-                    setEditingName(true);
-                  }}
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-text-tertiary transition-colors hover:bg-surface-elevated hover:text-text"
-                  aria-label={t("profilePage.editNickname")}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              </>
-            )}
-          </div>
-          {nameError && <p className="mt-1 text-xs text-danger">{nameError}</p>}
+          <p className="mt-1 text-primary-glow">{displayName || "YOU"}.</p>
+        </div>
 
+        <div className="relative mt-6 px-8 text-center">
           {editingMotto ? (
             <textarea
               autoFocus
@@ -182,27 +95,26 @@ export function Hero() {
                 }
               }}
               rows={2}
-              className="mt-3 w-full max-w-xl resize-none rounded-[10px] border border-border-subtle bg-surface/60 px-3 py-2 font-manrope text-[15px] text-text outline-none focus:border-primary/40"
+              className="mx-auto block w-full max-w-2xl resize-none rounded-[10px] border border-border-subtle bg-surface/60 px-3 py-2 text-center font-manrope text-[15px] text-text outline-none focus:border-primary/40"
             />
           ) : (
             <motion.h1
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, ease: "easeOut", delay: 0.05 }}
-              className="mt-3 max-w-xl font-manrope text-[18px] leading-relaxed text-text sm:text-[20px]"
+              className="mx-auto max-w-2xl font-manrope text-center text-[18px] leading-relaxed text-text sm:text-[20px]"
             >
               {displayMotto}
             </motion.h1>
           )}
+          <button
+            onClick={() => setEditingMotto((v) => !v)}
+            aria-label={t("dashboard.heroEdit")}
+            className="absolute right-0 top-0 flex h-8 w-8 items-center justify-center rounded-full text-text-tertiary transition-colors hover:bg-surface-elevated hover:text-text"
+          >
+            <PencilLine className="h-4 w-4" />
+          </button>
         </div>
-
-        <button
-          onClick={() => setEditingMotto((v) => !v)}
-          aria-label={t("dashboard.heroEdit")}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-tertiary transition-colors hover:bg-surface-elevated hover:text-text"
-        >
-          <PencilLine className="h-4 w-4" />
-        </button>
       </div>
     </section>
   );

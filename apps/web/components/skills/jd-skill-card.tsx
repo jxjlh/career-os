@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { Badge, Button, Card, SectionHeader, Textarea } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/api-errors";
 
 type ExtractedSkill = {
   name: string;
@@ -20,27 +21,31 @@ export function JdSkillCard() {
   const [jd, setJd] = useState("");
   const [skills, setSkills] = useState<ExtractedSkill[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [requestError, setRequestError] = useState("");
 
   const extract = useMutation({
     mutationFn: () =>
       apiFetch<{ data: { skills: ExtractedSkill[]; provider: string; error?: string } }>("/skills/from-jd", {
         method: "POST",
         body: JSON.stringify({ jd }),
-      }),
+    }),
     onSuccess: (res) => {
+      setRequestError("");
       if (res.data.skills.length === 0) {
         const msg = res.data.error
           ? `AI 提取失败：${res.data.error}`
           : res.data.provider === "fallback"
             ? "AI 返回格式异常，请重试或简化 JD 内容"
             : "未提取到技能，请检查 JD 内容是否包含明确的技术要求";
-        alert(msg);
+        setRequestError(msg);
       }
       setSkills(res.data.skills);
       setSelected(new Set(res.data.skills.filter((s) => !s.alreadyAdded).map((s) => s.name)));
     },
-    onError: (err: any) => {
-      alert(`请求失败：${err?.message || "网络错误，请稍后重试"}`);
+    onError: (err: unknown) => {
+      setSkills([]);
+      setSelected(new Set());
+      setRequestError(`请求失败：${getApiErrorMessage(err)}`);
     },
   });
 
@@ -97,6 +102,11 @@ export function JdSkillCard() {
         {extract.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
         AI 提取技能
       </Button>
+      {requestError && (
+        <p role="alert" className="mt-3 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-xs text-danger">
+          {requestError}
+        </p>
+      )}
 
       {skills.length > 0 && (
         <>
