@@ -110,9 +110,28 @@ class BilibiliProvider(SearchProvider):
         return results or await self._fallback_search(query, limit, language)
 
     async def _fallback_search(self, query: str, limit: int, language: str) -> list[dict[str, Any]]:
+        # B站官方接口经常返回风控 HTML（code -412/-799 或非 JSON）。
+        # 先用 Bing 的公开 HTML 搜索做站内检索，避免 DDG 超时就完全没有结果。
+        try:
+            async with httpx.AsyncClient(
+                timeout=12,
+                follow_redirects=True,
+                headers={"User-Agent": self.HEADERS["User-Agent"], "Accept-Language": "zh-CN,zh;q=0.9"},
+            ) as client:
+                response = await client.get(
+                    "https://www.bing.com/search",
+                    params={"q": f"site:bilibili.com {query}", "count": min(limit, 20)},
+                )
+                response.raise_for_status()
+                rows = _parse_bing_results(response.text, limit=limit, language=language)
+                if rows:
+                    return rows
+        except Exception:
+            pass
+
         from app.providers.search.duckduckgo_provider import search_ddg_lite
 
-        return await search_ddg_lite(
+        rows = await search_ddg_lite(
             query=query,
             limit=limit,
             language=language,
@@ -120,9 +139,67 @@ class BilibiliProvider(SearchProvider):
             provider_name=self.name,
             source_name_override="哔哩哔哩",
         )
+        return rows or [_bilibili_search_link(query, language)]
 
     async def healthcheck(self) -> bool:
         return True
+
+
+def _parse_bing_results(html: str, limit: int, language: str) -> list[dict[str, Any]]:
+    """Parse Bing's public result HTML and keep only Bilibili video links."""
+    import re
+    from html import unescape
+
+    pattern = re.compile(
+        r'<li[^>]*class=["\'][^"\']*b_algo[^"\']*["\'][^>]*>.*?'
+        r'<h2[^>]*>\s*<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+        re.DOTALL | re.IGNORECASE,
+    )
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for match in pattern.finditer(html):
+        url = unescape(match.group(1)).strip()
+        if not re.match(r"https?://(?:www\.)?bilibili\.com/video/", url, re.IGNORECASE):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        title = _strip_tags(unescape(match.group(2))).strip() or url
+        rows.append(
+            {
+                "title": title[:200],
+                "url": url,
+                "snippet": "Bing 站内搜索 · 哔哩哔哩视频",
+                "source_name": "哔哩哔哩",
+                "provider": "bilibili",
+                "resource_type": "video",
+                "language": language,
+                "difficulty": "mixed",
+                "is_free": True,
+                "is_official": False,
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def _bilibili_search_link(query: str, language: str = "zh") -> dict[str, Any]:
+    """Return a usable B站 search card when upstream scraping is blocked."""
+    from urllib.parse import quote
+
+    return {
+        "title": f"在 B 站搜索：{query}",
+        "url": f"https://search.bilibili.com/all?keyword={quote(query)}",
+        "snippet": "B站接口暂时受限，点击打开 B 站搜索结果。",
+        "source_name": "哔哩哔哩",
+        "provider": "bilibili",
+        "resource_type": "search",
+        "language": language,
+        "difficulty": "mixed",
+        "is_free": True,
+        "is_official": False,
+    }
 
 
 def _strip_tags(html: str) -> str:
