@@ -156,7 +156,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
     }
   };
 
-  const handlePaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const handlePaste = async (event: React.ClipboardEvent<HTMLElement>) => {
     const images = extractPastedImages(event.clipboardData.items, event.clipboardData.files);
     if (images.length === 0) return;
     event.preventDefault();
@@ -180,7 +180,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const activeMain = getSlotMeta(activeSlot);
 
   return (
-    <div className="w-full">
+    <div className="w-full" onPasteCapture={(e) => void handlePaste(e)}>
       {/* 隐藏的文件选择器 */}
       <input
         ref={fileInputRef}
@@ -443,7 +443,6 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              onPaste={(e) => void handlePaste(e)}
               placeholder={t("journal.contentPlaceholder")}
               rows={3}
               className="

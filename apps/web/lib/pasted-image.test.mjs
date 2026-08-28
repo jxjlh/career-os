@@ -24,12 +24,17 @@ test("accepts clipboard file lists used by screenshot apps", () => {
   assert.deepEqual(extractPastedImages([], [image]), [image]);
 });
 
+test("uses the actual file MIME type when clipboard metadata is incomplete", () => {
+  const image = new File(["png"], "clipboard", { type: "image/jpeg" });
+  assert.deepEqual(extractPastedImages([{ kind: "file", type: "", getAsFile: () => image }]), [image]);
+});
+
 test("journal and chat inputs wire clipboard image handling", async () => {
   const [journal, contacts] = await Promise.all([
     readFile(new URL("../components/journal/editor.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/(app)/contacts/page.tsx", import.meta.url), "utf8"),
   ]);
 
-  assert.match(journal, /onPaste=\{\(e\) => void handlePaste\(e\)\}/);
+  assert.match(journal, /onPasteCapture=\{\(e\) => void handlePaste\(e\)\}/);
   assert.match(contacts, /extractPastedImages\(e\.clipboardData\.items, e\.clipboardData\.files\)/);
 });
