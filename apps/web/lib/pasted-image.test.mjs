@@ -29,6 +29,11 @@ test("uses the actual file MIME type when clipboard metadata is incomplete", () 
   assert.deepEqual(extractPastedImages([{ kind: "file", type: "", getAsFile: () => image }]), [image]);
 });
 
+test("accepts image files when clipboard item kind and MIME are missing", () => {
+  const image = new File(["png"], "screenshot.png", { type: "" });
+  assert.deepEqual(extractPastedImages([{ kind: "", type: "", getAsFile: () => image }]), [image]);
+});
+
 test("journal and chat inputs wire clipboard image handling", async () => {
   const [journal, contacts] = await Promise.all([
     readFile(new URL("../components/journal/editor.tsx", import.meta.url), "utf8"),
