@@ -46,13 +46,20 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - name: Validate backend (compile)
+      - name: Validate backend + warm uv wheel cache
         working-directory: apps/backend
+        env:
+          UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
         run: |
-          uv sync --frozen
+          mkdir -p "$UV_CACHE_DIR"
+          uv sync --frozen --no-dev
           uv run python -m compileall -q app
+          echo "uv cache dir: $UV_CACHE_DIR"
+          du -sh "$UV_CACHE_DIR"
 
       - name: Assemble build directory
+        env:
+          UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
         run: |
           set -euxo pipefail
           TMP="deploy-assembly"
@@ -70,9 +77,9 @@ jobs:
           echo "commit=$GITHUB_SHA" > "$TMP/version.txt"
           echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$TMP/version.txt"
           echo "actor=$GITHUB_ACTOR" >> "$TMP/version.txt"
-          # Pre-warmed uv wheel cache (from Validate backend's uv sync) for offline docker build on VPS
+          # Pre-warmed uv wheel cache (downloaded on GitHub runner) for offline docker build on VPS
           mkdir -p "$TMP/uv-cache"
-          cp -a "$HOME/.cache/uv/." "$TMP/uv-cache/"
+          cp -a "$UV_CACHE_DIR/." "$TMP/uv-cache/"
           echo "uv-cache size: $(du -sh "$TMP/uv-cache" | cut -f1)"
           ls -la "$TMP"
 
