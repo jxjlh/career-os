@@ -127,6 +127,7 @@ jobs:
 
           echo "=== 2. SSH execute deploy ==="
           sshpass -e ssh -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -o TCPKeepAlive=yes \
             "$USER@$HOST" bash -s -- "$COMMIT_SHA" <<'REMOTE_SCRIPT'
               set -euo pipefail
               COMMIT_SHA="${1:?missing commit SHA}"
