@@ -50,7 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         <header className="glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border-subtle/60 px-4">
           <button
-            className="flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:text-text md:hidden"
+            className="-ml-1.5 flex h-11 w-11 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text md:hidden"
             onClick={() => setMobileOpen((v) => !v)}
             aria-label="Menu"
           >
@@ -73,7 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {/* 右侧 —— 极简 icon */}
           <div className="ml-auto flex items-center gap-1">
             <button
-              className="flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:text-text"
+              className="flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text"
               onClick={() => setCommandOpen(true)}
               aria-label="Command palette"
             >
@@ -81,14 +81,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
             <NotificationBell />
             <button
-              className="flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:text-text"
+              className="flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text"
               onClick={() => setLocale(locale === "zh-CN" ? "en" : "zh-CN")}
               aria-label={t("common.language")}
             >
               <Languages className="h-4 w-4" />
             </button>
             <button
-              className="flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:text-text"
+              className="flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text"
               onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
               aria-label={t("common.theme")}
             >
@@ -147,7 +147,7 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
             href={href}
             aria-label={nav[key] || key}
             className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 ease-out",
+              "flex h-11 w-11 items-center justify-center rounded-full transition-all duration-200 ease-out",
               active
                 ? "bg-primary/15 text-primary-glow shadow-[0_0_16px_-4px_var(--primary-glow)]"
                 : "text-text-tertiary hover:text-text hover:bg-surface-elevated/60",
@@ -161,7 +161,7 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
         href="/settings"
         aria-label={nav.settings}
         className={cn(
-          "flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 ease-out",
+          "flex h-11 w-11 items-center justify-center rounded-full transition-all duration-200 ease-out",
           isActive("/settings")
             ? "bg-primary/15 text-primary-glow"
             : "text-text-tertiary hover:text-text hover:bg-surface-elevated/60",
@@ -224,7 +224,7 @@ function MobileNavSheet({
         </span>
         <button
           onClick={onClose}
-          className="flex h-7 w-7 items-center justify-center rounded-full text-text-tertiary hover:bg-surface-elevated hover:text-text"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-text-tertiary hover:bg-surface-elevated hover:text-text"
           aria-label="Close"
         >
           <X className="h-4 w-4" />
@@ -243,7 +243,7 @@ function MobileNavSheet({
                   href={item.href}
                   onClick={onClose}
                   className={cn(
-                    "rounded-[10px] px-3 py-2.5 text-[13px] transition-colors",
+                    "flex min-h-11 items-center rounded-[10px] px-3 py-2 text-[13px] leading-5 transition-colors",
                     isActive(item.href)
                       ? "bg-primary/8 text-text"
                       : "text-text-secondary hover:bg-surface-elevated/60 hover:text-text",

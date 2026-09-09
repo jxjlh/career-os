@@ -76,7 +76,7 @@ export function NotificationBell() {
     <div ref={ref} className="relative">
       <button
         className={cn(
-          "relative flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text",
+          "relative flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text",
           open && "bg-surface-muted text-text"
         )}
         aria-label="Notifications"

@@ -256,3 +256,59 @@
     border: 1px solid var(--border-subtle);
   }
 }
+
+/* ============================================================================
+   Mobile UX 优化
+   1. 防止小屏横向滚动（个别卡片/marker 溢出导致整页左右漂移）
+   2. Leaflet zoom 控件触控热区加大（≥44px）
+   3. Leaflet Popup 在窄屏上限制宽度，避免撑出视口
+   ============================================================================ */
+html,
+body {
+  overflow-x: hidden;
+}
+
+.leaflet-container {
+  font-family: inherit;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+}
+
+@media (max-width: 767px) {
+  .leaflet-control-zoom {
+    border-radius: 12px !important;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+  }
+
+  .leaflet-control-zoom a.leaflet-control-zoom-in,
+  .leaflet-control-zoom a.leaflet-control-zoom-out {
+    width: 44px !important;
+    height: 44px !important;
+    line-height: 44px !important;
+    font-size: 20px !important;
+  }
+
+  .leaflet-control-zoom a.leaflet-control-zoom-in {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+  }
+
+  .leaflet-popup-content {
+    margin: 12px 14px;
+    width: auto !important;
+    max-width: calc(100vw - 72px) !important;
+    min-width: 0 !important;
+  }
+
+  .leaflet-popup-content p {
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .leaflet-control-attribution {
+    font-size: 9px !important;
+    padding: 1px 4px !important;
+  }
+}

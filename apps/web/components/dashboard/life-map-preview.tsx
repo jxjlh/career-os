@@ -30,10 +30,10 @@ export function LifeMapPreview() {
         </div>
         <Link
           href="/life/map"
-          className="flex items-center gap-1 text-[12px] text-text-secondary transition-colors hover:text-primary-glow"
+          className="-mr-2 flex min-h-10 items-center gap-1 rounded-lg px-2.5 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-elevated/60 hover:text-primary-glow"
         >
           <span>{t("dashboard.viewFullMap")}</span>
-          <ArrowUpRight className="h-3.5 w-3.5" />
+          <ArrowUpRight className="h-4 w-4" />
         </Link>
       </div>
 

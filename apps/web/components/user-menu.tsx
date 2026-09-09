@@ -60,7 +60,7 @@ export function UserMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-label="账号菜单"
       >
-        <span className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary via-[#7a5cd6] to-accent text-xs font-bold text-white shadow-[0_8px_18px_-8px_rgba(91,91,214,0.7)]">
+        <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary via-[#7a5cd6] to-accent text-xs font-bold text-white shadow-[0_8px_18px_-8px_rgba(91,91,214,0.7)]">
           {avatarUrl ? (
             <Image src={avatarUrl} alt={displayName} fill className="object-cover" unoptimized />
           ) : (

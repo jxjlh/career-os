@@ -151,9 +151,9 @@ export function ActiveGoals() {
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-1 text-[12px] text-text-secondary transition-colors hover:text-primary-glow"
+          className="-mr-2 flex min-h-10 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-elevated/70 hover:text-primary-glow"
         >
-          {showForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+          {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           <span>{showForm ? "取消" : t("dashboard.addGoal")}</span>
         </button>
       </div>
