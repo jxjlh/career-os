@@ -2,7 +2,9 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    APP_ENV=production
+    APP_ENV=production \
+    UV_DEFAULT_INDEX=https://mirrors.cloud.tencent.com/pypi/simple \
+    UV_HTTP_TIMEOUT=180
 
 WORKDIR /app
 
