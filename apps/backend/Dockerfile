@@ -16,8 +16,8 @@ COPY alembic.ini ./alembic.ini
 # Frontend static files (Next.js export output, copied by CI)
 COPY static ./static
 
-# Install dependencies (dev group provides alembic for migrations)
-RUN uv sync --frozen
+# Install runtime dependencies only (alembic is in main deps; skip dev tools to speed build & shrink image)
+RUN uv sync --frozen --no-dev
 RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
 
 USER app
