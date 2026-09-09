@@ -32,7 +32,6 @@ dev = [
 
 [project.scripts]
 serve = "app.main:main"
-worker = "arq app.core.queue.worker.WorkerSettings"
 export-openapi = "app.main:export_openapi"
 
 [tool.uv.sources]
