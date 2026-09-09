@@ -3,8 +3,7 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     APP_ENV=production \
-    UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple \
-    UV_HTTP_TIMEOUT=60
+    UV_CACHE_DIR=/uv-cache
 
 WORKDIR /app
 
@@ -15,9 +14,12 @@ COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 # Frontend static files (Next.js export output, copied by CI)
 COPY static ./static
+# Pre-warmed uv wheel cache (downloaded on GitHub runner) for offline install
+COPY uv-cache /uv-cache
 
-# Install runtime dependencies only (alembic is in main deps; skip dev tools to speed build & shrink image)
-RUN uv sync --frozen --no-dev
+# Install runtime dependencies offline (VPS -> PyPI is slow/unreliable; wheels come from cache)
+RUN uv sync --frozen --no-dev --offline
+RUN rm -rf /uv-cache
 RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
 
 USER app

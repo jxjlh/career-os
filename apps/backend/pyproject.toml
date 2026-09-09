@@ -19,6 +19,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "pgvector>=0.3.6",
     "orjson>=3.10.0",
+    "aiosqlite>=0.20.0",
 ]
 
 [project.optional-dependencies]

@@ -70,6 +70,10 @@ jobs:
           echo "commit=$GITHUB_SHA" > "$TMP/version.txt"
           echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$TMP/version.txt"
           echo "actor=$GITHUB_ACTOR" >> "$TMP/version.txt"
+          # Pre-warmed uv wheel cache (from Validate backend's uv sync) for offline docker build on VPS
+          mkdir -p "$TMP/uv-cache"
+          cp -a "$HOME/.cache/uv/." "$TMP/uv-cache/"
+          echo "uv-cache size: $(du -sh "$TMP/uv-cache" | cut -f1)"
           ls -la "$TMP"
 
       - name: Upload deploy artifact
@@ -88,7 +92,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 30
+    timeout-minutes: 60
     concurrency:
       group: deploy-vps
       cancel-in-progress: false
