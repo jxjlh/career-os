@@ -11,6 +11,8 @@ COPY pyproject.toml uv.lock ./
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
+# Ensure versions directory exists even if empty (alembic requires it)
+RUN mkdir -p alembic/versions
 # Frontend static files (Next.js export output, copied by CI)
 COPY static ./static
 # Pre-downloaded production wheels (fetched on GitHub runner) for fully offline install
