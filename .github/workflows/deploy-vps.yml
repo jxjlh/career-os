@@ -191,5 +191,36 @@ jobs:
 
               echo "--- /ready response ---"
               curl -s http://127.0.0.1:8000/ready || true; echo ""
+
+              # The public site is served by nginx straight from a static export
+              # directory, not by the api container. Keep that docroot pointed at the
+              # directory this deploy refreshes, otherwise the UI silently goes stale.
+              echo "--- Ensure nginx serves the deployed frontend ---"
+              NGINX_CONF="/etc/nginx/sites-available/ai-life-os"
+              DOCROOT="$APP_DIR/build/static"
+              SITE_DOMAIN="growlog.club"
+              if [ -f "$NGINX_CONF" ]; then
+                if grep -qE '^[[:space:]]*root[[:space:]]+/opt/ai-life-os/releases/' "$NGINX_CONF"; then
+                  sudo cp -a "$NGINX_CONF" "$NGINX_CONF.bak-$(date +%Y%m%d%H%M%S)"
+                  sudo sed -i -E "s#^[[:space:]]*root[[:space:]]+/opt/ai-life-os/[^;]+;#    root $DOCROOT;#g" "$NGINX_CONF"
+                  sudo nginx -t && sudo systemctl reload nginx
+                  echo "nginx docroot repointed to $DOCROOT"
+                else
+                  echo "nginx docroot already deploy-managed (no change)"
+                fi
+                grep -n 'root /opt/ai-life-os' "$NGINX_CONF" || true
+              fi
+
+              echo "--- Verify the live site serves this build ---"
+              BUILT_CSS=$(grep -oE '_next/static/css/[a-z0-9]+\.css' "$DOCROOT/index.html" | head -1)
+              SERVED_CSS=$(curl -sk "https://$SITE_DOMAIN/" --resolve "$SITE_DOMAIN:443:127.0.0.1" | grep -oE '_next/static/css/[a-z0-9]+\.css' | head -1)
+              echo "built CSS:  $BUILT_CSS"
+              echo "served CSS: $SERVED_CSS"
+              if [ -z "$BUILT_CSS" ] || [ "$BUILT_CSS" != "$SERVED_CSS" ]; then
+                echo "ERROR: the live site is not serving this build's frontend"
+                exit 1
+              fi
+              echo "OK: frontend served from $DOCROOT"
+
               echo "Deployment complete"
           REMOTE_SCRIPT
