@@ -107,7 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {mobileOpen && <MobileNavSheet onClose={() => setMobileOpen(false)} isActive={isActive} />}
 
-        <main className="mx-auto w-full max-w-[1100px] flex-1 p-4 pb-32 sm:p-6 md:pb-32 lg:pb-8">
+        <main className="relative mx-auto w-full max-w-[1100px] flex-1 p-4 pb-40 sm:p-6 md:pb-32 lg:pb-8">
           <Breadcrumb />
           <motion.div
             key={pathname}
@@ -117,6 +117,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             {children}
           </motion.div>
+          {/* 移动端底部渐变遮罩：提示下方有内容，避免 FixedNav 突然遮挡的突兀感 */}
+          <div
+            aria-hidden
+            className="pointer-events-none sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] -mt-16 h-16 bg-gradient-to-b from-transparent to-background md:hidden"
+          />
         </main>
       </div>
 
@@ -140,8 +145,8 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
 
   return (
     <nav
-      className="fixed bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border-subtle bg-surface px-2 py-2 shadow-soft backdrop-blur-xl md:hidden"
-      style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+      className="fixed bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-border-subtle bg-surface/90 px-1.5 py-1.5 shadow-soft backdrop-blur-xl md:hidden"
+      style={{ paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))" }}
     >
       {items.map(({ href, icon: Icon, key, isAI }) => {
         const active = isActive(href);
@@ -151,7 +156,7 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
             href={href}
             aria-label={nav[key] || key}
             className={cn(
-              "flex h-11 w-11 items-center justify-center rounded-full transition-all duration-200 ease-out",
+              "flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 ease-out",
               active
                 ? "bg-primary/10 text-primary shadow-[0_0_16px_-4px_var(--primary-glow)]"
                 : "text-text-tertiary hover:text-text hover:bg-surface-elevated",
