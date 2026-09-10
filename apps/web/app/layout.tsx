@@ -44,14 +44,14 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#09090B",
+  themeColor: "#F8F9FC",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="zh-CN"
-      className="dark"
+      className="light"
       style={fontVars}
       suppressHydrationWarning
     >

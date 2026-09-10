@@ -34,16 +34,13 @@ type NavItem = {
 
 type GroupKey = "now" | "grow" | "career";
 
-/** 路由 → NOW/GROW 分组映射 */
 const NAV: NavItem[] = [
-  // NOW —— 当下
   { key: "dashboard", href: "/dashboard", icon: Home, group: "now" },
   { key: "life", href: "/life", icon: Compass, group: "now" },
   { key: "lifeMap", href: "/life/map", icon: MapPin, group: "now" },
   { key: "lifeRecords", href: "/life/records", icon: Images, group: "now" },
   { key: "journal", href: "/journal", icon: NotebookPen, group: "now" },
   { key: "contacts", href: "/contacts", icon: Users, group: "now" },
-  // GROW —— 成长
   { key: "skills", href: "/skills", icon: Target, group: "grow" },
   { key: "planner", href: "/planner", icon: CalendarDays, group: "grow" },
   { key: "explore", href: "/explore", icon: Search, group: "grow" },
@@ -66,7 +63,6 @@ export function SidebarNav() {
     }));
   }, []);
 
-  // mobile 不渲染（用 BottomNav）
   if (!sw.visible) return null;
 
   const groupLabel = (g: GroupKey): string => {
@@ -80,13 +76,14 @@ export function SidebarNav() {
       onMouseLeave={sw.onLeave}
       style={{ width: sw.width }}
       className={cn(
-        "glass fixed inset-y-0 left-0 z-30 flex flex-col border-r border-border-subtle/60",
+        "fixed inset-y-0 left-0 z-30 flex flex-col border-r border-border bg-surface",
         "transition-[width] duration-200 ease-out",
       )}
     >
-      {/* Logo 区 —— ✦ CareerOS + YOUR LIFE OS */}
       <Link href="/dashboard" className="flex h-16 items-center gap-2.5 px-5">
-        <span className="font-display text-lg font-bold text-primary-glow">✦</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-primary text-base font-bold text-white">
+          C
+        </span>
         {!sw.isCompact && (
           <div className="leading-none">
             <span className="font-display text-[15px] font-bold tracking-tight text-text">
@@ -99,7 +96,6 @@ export function SidebarNav() {
         )}
       </Link>
 
-      {/* 导航分组 */}
       <nav className="flex-1 space-y-5 overflow-y-auto overflow-x-hidden px-3 py-3 scrollbar-none">
         {groups.map(({ group, items }) => (
           <div key={group}>
@@ -123,18 +119,17 @@ export function SidebarNav() {
         ))}
       </nav>
 
-      {/* Footer：Profile + Settings */}
-      <div className="border-t border-border-subtle/60">
+      <div className="border-t border-border-subtle">
         <SidebarProfile compact={sw.isCompact} />
         <Link
           href="/settings"
           title={sw.isCompact ? (t("nav") as unknown as Record<string, string>).settings : undefined}
           className={cn(
-            "group flex items-center gap-2.5 rounded-[10px] px-3 py-2 text-[13px] transition-colors duration-200 ease-out",
-            "mx-3 mb-3 text-text-secondary hover:bg-surface-elevated/60 hover:text-text",
+            "group flex items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-[14px] font-medium transition-colors duration-200 ease-out",
+            "mx-3 mb-3 text-text-secondary hover:bg-surface-elevated hover:text-text",
           )}
         >
-          <Settings className="h-4 w-4 shrink-0 transition-transform group-hover:rotate-45" />
+          <Settings className="h-[18px] w-[18px] shrink-0 transition-transform group-hover:rotate-45" />
           {!sw.isCompact && <span>{(t("nav") as unknown as Record<string, string>).settings}</span>}
         </Link>
       </div>
@@ -142,5 +137,4 @@ export function SidebarNav() {
   );
 }
 
-// 保持向后兼容 —— 旧 BookOpen 引用（如有）
 export { BookOpen };
