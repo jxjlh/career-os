@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { Sparkles, Briefcase, Rocket, Heart, Leaf, MoreHorizontal, CheckCircle2, Circle, Quote, Sun, Image, Pencil } from "lucide-react";
+import { Sparkles, Briefcase, Rocket, Heart, Leaf, MoreHorizontal, CheckCircle2, Circle, Quote, Image, Pencil } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
@@ -29,13 +29,6 @@ export default function DashboardPage() {
     queryFn: () => apiFetch("/dashboard/ai-advice"),
   });
 
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
-  const today = new Date();
-  const month = today.getMonth() + 1;
-  const date = today.getDate();
-  const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][today.getDay()];
-
   // ---- 快捷入口配置 ----
   const quickEntries = [
     { icon: Briefcase, label: "求职", color: "bg-blue-100 text-blue-600", href: "/portfolio" },
@@ -43,13 +36,6 @@ export default function DashboardPage() {
     { icon: Leaf, label: "生活方式", color: "bg-green-100 text-green-600", href: "/life" },
     { icon: Heart, label: "健康", color: "bg-pink-100 text-pink-600", href: "/health" },
     { icon: MoreHorizontal, label: "更多", color: "bg-amber-100 text-amber-600", href: "/explore" },
-  ];
-
-  // ---- 进度条数据（后续可接入真实 goals 数据）----
-  const progressItems = [
-    { label: "我的目标", percent: 68, color: "bg-primary" },
-    { label: "技能提升", percent: 42, color: "bg-purple-500" },
-    { label: "健康管理", percent: 39, color: "bg-green-500" },
   ];
 
   // ---- 本周计划任务（后续可接入 planner 数据）----
@@ -61,7 +47,6 @@ export default function DashboardPage() {
     { id: 5, title: "英语口语练习 3 次", done: false, priority: "中" },
   ];
 
-  // ---- 今日动态时间线（已移除）----
   const completedTasks = weeklyTasks.filter((t) => t.done).length;
 
   return (
@@ -81,57 +66,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ===== 1. 顶部问候区 ===== */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-[26px] font-bold tracking-tight text-text sm:text-[30px]">
-            {greeting}，李恒 <Sun className="ml-1 inline h-6 w-6 text-amber-400" />
-          </h1>
-          <p className="mt-1 text-[13px] text-text-secondary">
-            {month}月{date}日 · {weekday} · 今天也要元气满满地前进
-          </p>
-        </div>
-        <div className="hidden rounded-full bg-primary/10 px-3 py-1.5 text-[12px] font-medium text-primary sm:block">
-          Free Plan
-        </div>
-      </div>
+      {/* ===== 1. 座右铭 Banner ===== */}
+      <MottoBanner />
 
-      {/* ===== 2. 主横幅区 + 天数统计（8 + 4 网格）===== */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* 座右铭 Banner - 8 列 */}
-        <div className="col-span-12 lg:col-span-8">
-          <MottoBanner />
-        </div>
-
-        {/* 天数统计卡 - 4 列 */}
-        <div className="col-span-12 rounded-2xl border border-border-subtle bg-white p-5 shadow-sm lg:col-span-4">
-          <div className="text-center">
-            <p className="font-display text-[44px] font-bold leading-none tracking-tight text-primary">
-              07<span className="ml-1 text-[18px] font-semibold text-text-secondary">Days</span>
-            </p>
-            <p className="mt-1.5 text-[12px] text-text-tertiary">连续打卡天数</p>
-          </div>
-
-          <div className="mt-5 space-y-4">
-            {progressItems.map((item) => (
-              <div key={item.label}>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-[12px] text-text-secondary">{item.label}</span>
-                  <span className="text-[12px] font-semibold text-text">{item.percent}%</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-primary/10">
-                  <div
-                    className={`h-full rounded-full ${item.color} transition-all duration-500`}
-                    style={{ width: `${item.percent}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* ===== 3. 快捷入口栏（12 列，flex 横向排列）===== */}
+      {/* ===== 2. 快捷入口栏（12 列，flex 横向排列）===== */}
       <div className="rounded-2xl border border-border-subtle bg-white p-5 shadow-sm">
         <div className="flex items-center justify-around gap-2">
           {quickEntries.map((entry) => {
@@ -494,10 +432,18 @@ function DailyJournal() {
 
 const MOTTO_STORAGE_KEY = "career_os_motto";
 const DEFAULT_MOTTO = "持续成长，每一天都在遇见更好的自己";
+const MOTTO_COLORS = ["#FFFFFF", "#1A1A1A", "#5B9DFF", "#C49A5C", "#F5F8FF"];
+const MOTTO_SIZES = [
+  { label: "小", value: 18 },
+  { label: "中", value: 24 },
+  { label: "大", value: 32 },
+];
 
 function MottoBanner() {
   const [text, setText] = useState(DEFAULT_MOTTO);
   const [bgImage, setBgImage] = useState<string | null>(null);
+  const [color, setColor] = useState("#FFFFFF");
+  const [fontSize, setFontSize] = useState(24);
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
@@ -507,15 +453,19 @@ function MottoBanner() {
         const data = JSON.parse(saved);
         if (typeof data.text === "string" && data.text.trim()) setText(data.text);
         if (typeof data.image === "string") setBgImage(data.image);
+        if (typeof data.color === "string") setColor(data.color);
+        if (typeof data.fontSize === "number") setFontSize(data.fontSize);
       }
     } catch {}
   }, []);
 
-  const persist = (t: string, img: string | null) => {
-    setText(t);
-    setBgImage(img);
+  const persist = (next: { text: string; image: string | null; color: string; fontSize: number }) => {
+    setText(next.text);
+    setBgImage(next.image);
+    setColor(next.color);
+    setFontSize(next.fontSize);
     try {
-      localStorage.setItem(MOTTO_STORAGE_KEY, JSON.stringify({ text: t, image: img }));
+      localStorage.setItem(MOTTO_STORAGE_KEY, JSON.stringify(next));
     } catch {}
   };
 
@@ -523,7 +473,7 @@ function MottoBanner() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => persist(text, reader.result as string);
+    reader.onload = () => persist({ text, image: reader.result as string, color, fontSize });
     reader.readAsDataURL(file);
   };
 
@@ -541,9 +491,12 @@ function MottoBanner() {
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
 
-      {/* 座右铭文字 */}
+      {/* 座右铭文字（应用自定义颜色 + 字号） */}
       <div className="relative flex min-h-[224px] flex-col justify-end p-6 sm:min-h-[240px]">
-        <p className="font-display text-[20px] font-bold leading-snug tracking-tight text-white drop-shadow-sm sm:text-[24px]">
+        <p
+          className="font-display font-bold leading-snug tracking-tight drop-shadow-sm"
+          style={{ color, fontSize }}
+        >
           {text}
         </p>
         <p className="mt-2 text-[12px] text-white/70">我的座右铭</p>
@@ -560,13 +513,55 @@ function MottoBanner() {
 
       {/* 编辑面板 */}
       {editing && (
-        <div className="absolute inset-x-0 bottom-0 z-10 space-y-3 border-t border-white/15 bg-black/55 p-4 backdrop-blur-xl">
+        <div className="absolute inset-x-0 bottom-0 z-10 space-y-3 border-t border-white/15 bg-black/60 p-4 backdrop-blur-xl">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             className="h-20 w-full resize-none rounded-lg border border-white/20 bg-white/10 p-3 text-[13px] text-white placeholder-white/50 outline-none"
             placeholder="写下你的座右铭"
           />
+
+          {/* 字体颜色 */}
+          <div className="flex items-center gap-2">
+            <span className="w-8 shrink-0 text-[12px] text-white/70">颜色</span>
+            {MOTTO_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setColor(c)}
+                className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${
+                  color === c ? "border-white" : "border-transparent"
+                }`}
+                style={{ backgroundColor: c }}
+                aria-label={`颜色 ${c}`}
+              />
+            ))}
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent"
+              aria-label="自定义颜色"
+            />
+          </div>
+
+          {/* 字体大小 */}
+          <div className="flex items-center gap-2">
+            <span className="w-8 shrink-0 text-[12px] text-white/70">字号</span>
+            {MOTTO_SIZES.map((s) => (
+              <button
+                key={s.value}
+                onClick={() => setFontSize(s.value)}
+                className={`rounded-md px-3 py-1 text-[12px] transition-colors ${
+                  fontSize === s.value
+                    ? "bg-white/25 text-white"
+                    : "bg-white/10 text-white/70 hover:bg-white/15"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center justify-between">
             <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-white/80 hover:text-white">
               <Image className="h-4 w-4" />
@@ -576,7 +571,7 @@ function MottoBanner() {
             <div className="flex items-center gap-3">
               {bgImage && (
                 <button
-                  onClick={() => persist(text, null)}
+                  onClick={() => persist({ text, image: null, color, fontSize })}
                   className="text-[12px] text-white/70 hover:text-white"
                 >
                   移除背景
@@ -586,7 +581,7 @@ function MottoBanner() {
                 size="sm"
                 variant="primary"
                 onClick={() => {
-                  persist(text, bgImage);
+                  persist({ text, image: bgImage, color, fontSize });
                   setEditing(false);
                 }}
               >

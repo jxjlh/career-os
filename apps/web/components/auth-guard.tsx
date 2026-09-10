@@ -53,6 +53,19 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       (p) => pathname === p || pathname.startsWith(`${p}/`),
     );
 
+    // 旧的「开发模式」假 token（"dev"）已失效：后端现在用 Supabase JWT 校验。
+    // 残留的 dev token 会让系统误判已登录，导致 AI 陪伴等接口 401。检测到即清除并重新登录。
+    if (token === "dev") {
+      localStorage.removeItem(TOKEN_KEY);
+      if (typeof document !== "undefined") {
+        document.cookie = "career_os_token=; path=/; max-age=0; SameSite=Lax";
+      }
+      if (isAppPath) {
+        window.location.replace(`/login/?next=${encodeURIComponent(pathname)}`);
+      }
+      return;
+    }
+
     if (isAppPath && !token) {
       window.location.replace(`/login/?next=${encodeURIComponent(pathname)}`);
       return;
