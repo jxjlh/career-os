@@ -5,8 +5,8 @@ import { SWRegister } from "@/components/sw-register";
 import "./globals.css";
 
 const fontVars = {
-  "--font-display": "'Helvetica Neue', 'PingFang SC', 'Noto Sans SC', sans-serif",
-  "--font-body": "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', sans-serif",
+  "--font-display": "'Outfit', 'PingFang SC', 'Noto Sans SC', sans-serif",
+  "--font-body": "'Plus Jakarta Sans', 'PingFang SC', 'Noto Sans SC', sans-serif",
   "--font-mono": "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
 } as React.CSSProperties;
 
@@ -55,6 +55,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       style={fontVars}
       suppressHydrationWarning
     >
+      <head>
+        <link rel="preconnect" href="https://fonts.bunny.net" />
+        <link
+          href="https://fonts.bunny.net/css?family=outfit:400,500,600,700,800|plus-jakarta-sans:400,500,600,700"
+          rel="stylesheet"
+        />
+      </head>
       <body>
         <Providers>{children}</Providers>
         <SWRegister />

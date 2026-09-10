@@ -14,6 +14,7 @@ from app.core.logging import setup_logging
 from app.core.middleware import RateLimitMiddleware, RequestContextMiddleware
 from app.db.base import Base
 from app.domains.ai.router import router as ai_router
+from app.domains.ai.journal_companion import router as ai_journal_companion_router
 from app.domains.analytics.router import router as analytics_router
 from app.domains.auth.router import router as auth_router
 from app.domains.bucket.router import router as bucket_router
@@ -148,6 +149,7 @@ app.include_router(notifications_router, prefix=settings.api_prefix)
 app.include_router(roadmap_router, prefix=settings.api_prefix)
 app.include_router(analytics_router, prefix=settings.api_prefix)
 app.include_router(ai_router, prefix=settings.api_prefix)
+app.include_router(ai_journal_companion_router, prefix=settings.api_prefix)
 app.include_router(projects_router, prefix=settings.api_prefix)
 app.include_router(jobs_router, prefix=settings.api_prefix)
 app.include_router(journal_router, prefix=settings.api_prefix)

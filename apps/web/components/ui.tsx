@@ -16,9 +16,9 @@ const buttonVariants = cva(
         // default —— 克制：surface-elevated 底 + 细边框，紫色仅 hover 时浮现
         default:
           "border border-border-subtle bg-surface-elevated text-text hover:border-primary/40 hover:bg-surface hover:text-primary active:scale-[0.98]",
-        // primary —— 紫色仅关键 CTA；不用大面积渐变，用纯色 + glow
+        // primary —— 柔和蓝仅关键 CTA，用纯色 + 轻微 glow
         primary:
-          "bg-primary text-white shadow-[0_8px_24px_-12px_rgba(139,92,246,0.6)] hover:bg-primary-hover hover:shadow-[0_12px_28px_-12px_rgba(139,92,246,0.75)] active:scale-[0.98]",
+          "bg-primary text-white shadow-[0_8px_24px_-12px_rgba(91,141,239,0.5)] hover:bg-primary-hover hover:shadow-[0_12px_28px_-12px_rgba(91,141,239,0.65)] active:scale-[0.98]",
         outline:
           "border border-border bg-surface/60 text-text hover:border-primary/35 hover:bg-surface-elevated",
         ghost: "text-text-secondary hover:bg-surface-elevated/60 hover:text-text",
@@ -97,7 +97,7 @@ const badgeVariants = cva(
         success: "bg-success/12 text-success",
         warning: "bg-warning/12 text-warning",
         danger: "bg-danger/12 text-danger",
-        ai: "bg-gradient-to-r from-ai/14 to-accent/14 text-ai",
+        ai: "bg-ai/12 text-ai",
       },
     },
     defaultVariants: { variant: "default" },
@@ -165,7 +165,7 @@ export function EmptyState({
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-[10px] bg-gradient-to-r from-surface-muted via-primary/6 to-surface-muted", className)} />;
+  return <div className={cn("animate-pulse rounded-[10px] bg-gradient-to-r from-surface-muted via-surface-elevated to-surface-muted", className)} />;
 }
 
 export function SectionHeader({

@@ -11,22 +11,28 @@ import { extractPastedImages } from "@/lib/pasted-image.mjs";
 import type { Journal } from "@/lib/journal";
 import { journalApi, TIME_SLOTS, MOODS, getSlotMeta, getSubSlotMeta } from "@/lib/journal";
 import { useI18n } from "@/lib/i18n";
+import { easeFast, easeStandard } from "@/lib/motion";
 
 const QUICK_TAGS = ["工作", "学习", "生活", "思考", "休息"];
 const MAX_IMAGES = 9;
+
+const PLACEHOLDERS = [
+  "想说什么都可以。",
+  "今天发生了什么？",
+  "把脑子里的东西先放在这里。",
+  "不需要写得很好。",
+  "想说什么，就说什么。",
+];
+
+function getRandomPlaceholder() {
+  return PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
+}
 
 interface JournalEditorProps {
   date: string;
   onSaved?: () => void;
 }
 
-/**
- * 每日小记编辑器:
- * - 4 个主时段 (上午/下午/晚上/深夜), 点击展开显示 2 小时子时段
- * - 心情 emoji 下方有描述文字
- * - 每个子时段可独立记录
- * - 支持添加照片（上传/预览/删除）
- */
 export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -34,6 +40,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
 
   const [activeSlot, setActiveSlot] = useState<string>("morning_06");
   const [expandedMain, setExpandedMain] = useState<string | null>(null);
+  const [placeholder, setPlaceholder] = useState(getRandomPlaceholder());
 
   const { data: journalData, isLoading } = useQuery<{ data: Journal[] }>({
     queryKey: ["journal", date],
@@ -71,6 +78,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
       setTags([]);
       setPhotos([]);
     }
+    setPlaceholder(getRandomPlaceholder());
   }, [existing?.id, activeSlot]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isEditing = !!existing;
@@ -144,13 +152,10 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const handleFilesSelected = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const remaining = MAX_IMAGES - photos.length;
-    if (remaining <= 0) {
-      return;
-    }
+    if (remaining <= 0) return;
     const list = Array.from(files).slice(0, remaining);
     // eslint-disable-next-line no-restricted-syntax
     for (const f of list) {
-      // 用串行 mutation 方便状态管理，也避免并发时互相覆盖
       // eslint-disable-next-line no-await-in-loop
       await uploadImageMutation.mutateAsync(f);
     }
@@ -181,7 +186,6 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
 
   return (
     <div className="w-full" onPasteCapture={(e) => void handlePaste(e)}>
-      {/* 隐藏的文件选择器 */}
       <input
         ref={fileInputRef}
         type="file"
@@ -190,39 +194,36 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
         className="hidden"
         onChange={(e) => {
           handleFilesSelected(e.target.files);
-          // 允许再次选择同一文件
           e.target.value = "";
         }}
       />
 
       {/* 日期标题 */}
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-5 flex items-center justify-between">
         <div>
-          <h3 className="font-display text-lg font-semibold text-text-primary">
+          <h3 className="font-display text-[16px] font-semibold text-text">
             {formatDate(date)}
           </h3>
-          <p className="text-[13px] text-text-tertiary">
-            {isEditing ? "编辑这个小记" : "记录这个时间段的感受"}
+          <p className="mt-0.5 text-[12px] text-text-tertiary">
+            {isEditing ? t("journal.editPrompt") : "想说什么，就说什么"}
           </p>
         </div>
         {isEditing && (
-          <motion.button
+          <button
             onClick={() => {
               if (confirm("确定删除这篇小记吗?")) {
                 deleteMutation.mutate();
               }
             }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="flex h-8 items-center rounded-lg px-3 text-[12px] text-text-tertiary transition-colors hover:bg-red-500/10 hover:text-red-400"
+            className="flex h-8 items-center rounded-[8px] px-3 text-[12px] text-text-tertiary transition-colors hover:bg-danger/8 hover:text-danger"
           >
             删除
-          </motion.button>
+          </button>
         )}
       </div>
 
-      {/* 主时段切换 + 可展开子时段 */}
-      <div className="mb-5 space-y-2">
+      {/* 主时段切换 */}
+      <div className="mb-5 space-y-1.5">
         {TIME_SLOTS.map((slot) => {
           const isActive = activeMain.key === slot.key;
           const isExpanded = expandedMain === slot.key;
@@ -232,56 +233,49 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
 
           return (
             <div key={slot.key}>
-              {/* 主时段按钮 */}
-              <motion.button
+              <button
                 onClick={() => {
                   setExpandedMain(isExpanded ? null : slot.key);
-                  // 切到该时段的第一个子时段
                   if (!isExpanded) {
                     setActiveSlot(slot.subSlots[0]?.key ?? slot.key);
                   }
                 }}
-                whileTap={{ scale: 0.98 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className={`
-                  relative flex w-full items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200
+                className={`relative flex w-full items-center gap-2.5 rounded-[10px] px-3 py-2.5 transition-all duration-200
                   ${isActive
-                    ? "bg-primary/10 ring-1 ring-primary/30"
-                    : "bg-surface/40 hover:bg-surface-elevated/60"
+                    ? "bg-primary/6"
+                    : "hover:bg-surface-elevated/50"
                   }
                 `}
               >
-                <span className="text-lg">{slot.icon}</span>
+                <span className="text-[15px]">{slot.icon}</span>
                 <div className="flex-1 text-left">
-                  <span className={`text-[13px] font-medium ${isActive ? "text-primary" : "text-text-secondary"}`}>
+                  <span className={`text-[13px] font-medium ${isActive ? "text-text" : "text-text-secondary"}`}>
                     {slot.label}
                   </span>
                   <span className="ml-2 text-[10px] text-text-tertiary">
                     {slot.range}
                   </span>
                 </div>
-                {/* 已记录数量 */}
                 {slotJournals.length > 0 && (
-                  <span className="rounded-full bg-success/20 px-2 py-0.5 text-[10px] font-medium text-success">
+                  <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
                     {slotJournals.length}
                   </span>
                 )}
                 <ChevronDown
-                  className={`h-4 w-4 text-text-tertiary transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                  className={`h-3.5 w-3.5 text-text-tertiary transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
                 />
-              </motion.button>
+              </button>
 
-              {/* 子时段 (展开时显示) */}
               <AnimatePresence>
                 {isExpanded && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    transition={{ duration: 0.18, ease: "easeOut" }}
                     className="overflow-hidden"
                   >
-                    <div className="mt-1 flex flex-wrap gap-1.5 pl-4">
+                    <div className="mt-1 flex flex-wrap gap-1.5 pl-3">
                       {slot.subSlots.map((ss) => {
                         const ssJournal = allJournals.find((j) => j.timeSlot === ss.key);
                         const isSsActive = activeSlot === ss.key;
@@ -289,11 +283,10 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
                           <button
                             key={ss.key}
                             onClick={() => setActiveSlot(ss.key)}
-                            className={`
-                              flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all duration-150
+                            className={`flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[11px] font-medium transition-all duration-150
                               ${isSsActive
-                                ? "bg-primary/15 text-primary ring-1 ring-primary/30"
-                                : "bg-surface/30 text-text-tertiary hover:bg-surface-elevated/50"
+                                ? "bg-primary/8 text-primary"
+                                : "bg-surface text-text-tertiary hover:bg-surface-elevated hover:text-text-secondary"
                               }
                             `}
                           >
@@ -315,69 +308,102 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
         })}
       </div>
 
-      {/* 当前子时段信息 */}
-      {activeSubSlot && (
-        <div className="mb-4 flex items-center gap-2 text-[11px] text-text-tertiary">
-          <span>{activeMain.icon}</span>
-          <span>{activeMain.label}</span>
-          <span className="text-text-tertiary/60">·</span>
-          <span>{activeSubSlot.label}</span>
-          <span className="text-text-tertiary/60">时段</span>
-        </div>
-      )}
+      {/* 细分割线 */}
+      <div className="h-px bg-border-subtle mb-5" />
 
       {isLoading ? (
         <div className="flex h-32 items-center justify-center">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
         </div>
       ) : (
         <>
-          {/* 心情选择 (带描述) */}
+          {/* 心情选择 —— 轻量、克制 */}
           <div className="mb-5">
-            <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-text-secondary">
+            <p className="mb-3 text-[11px] text-text-tertiary">
               {t("journal.moodLabel")}
-            </label>
-            <div className="grid grid-cols-5 gap-2">
+            </p>
+            <div className="flex items-center justify-between">
               {MOODS.map((mood, i) => (
                 <motion.button
                   key={mood.emoji}
                   onClick={() => setMoodIndex(i)}
-                  whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.9 }}
-                  transition={{ duration: 0.15, ease: "easeOut" }}
-                  className={`
-                    flex flex-col items-center gap-1 rounded-xl py-2.5 transition-all duration-200
+                  transition={easeFast}
+                  className={`flex flex-col items-center gap-0.5 rounded-[12px] px-3 py-2 transition-all duration-200
                     ${moodIndex === i
-                      ? "bg-primary/15 ring-1 ring-primary/50 shadow-[0_0_12px_rgba(139,92,246,0.2)]"
-                      : "bg-surface/40 hover:bg-surface-elevated/60"
+                      ? "bg-surface-elevated"
+                      : "hover:bg-surface-elevated/50"
                     }
                   `}
                   aria-label={`mood ${i}`}
                 >
-                  <span className="text-xl">{mood.emoji}</span>
-                  <span className={`text-[10px] font-medium ${moodIndex === i ? "text-primary" : "text-text-tertiary"}`}>
+                  <motion.span
+                    animate={{ scale: moodIndex === i ? 1.15 : 1 }}
+                    transition={easeStandard}
+                    className="text-[20px]"
+                  >
+                    {mood.emoji}
+                  </motion.span>
+                  <span className={`text-[10px] ${moodIndex === i ? "text-text" : "text-text-tertiary"}`}>
                     {mood.label}
                   </span>
-                  <span className="text-[9px] text-text-tertiary/70">{mood.desc}</span>
                 </motion.button>
               ))}
             </div>
           </div>
 
-          {/* 照片区域 */}
+          {/* 文字输入 —— 核心区域 */}
           <div className="mb-5">
-            <div className="mb-2 flex items-center justify-between">
-              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-secondary">
-                照片
-              </label>
-              <span className="text-[10px] text-text-tertiary">{photos.length}/{MAX_IMAGES}</span>
-            </div>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder={placeholder}
+              rows={4}
+              className="w-full resize-none rounded-[14px] border border-border-subtle bg-surface px-4 py-3 text-[14px] leading-relaxed text-text placeholder:text-text-tertiary/60 transition-all duration-200 focus:border-primary/30 focus:outline-none focus:bg-surface"
+            />
+          </div>
 
-            <div className="grid grid-cols-3 gap-2">
+          {/* 照片 + 标签行 */}
+          <div className="mb-5 flex items-center gap-4">
+            <button
+              type="button"
+              onClick={handlePickImages}
+              disabled={uploadImageMutation.isPending || photos.length >= MAX_IMAGES}
+              className="flex items-center gap-1.5 text-[12px] text-text-tertiary transition-colors hover:text-text-secondary disabled:opacity-50"
+            >
+              {uploadImageMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ImagePlus className="h-4 w-4" />
+              )}
+              <span>{uploadImageMutation.isPending ? "上传中" : "添加照片"}</span>
+            </button>
+
+            <div className="flex flex-wrap gap-1.5">
+              {QUICK_TAGS.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => toggleTag(tag)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] transition-all duration-200
+                    ${tags.includes(tag)
+                      ? "bg-primary/8 text-primary"
+                      : "bg-surface-elevated/50 text-text-tertiary hover:bg-surface-elevated hover:text-text-secondary"
+                    }
+                  `}
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 照片预览网格 */}
+          {photos.length > 0 && (
+            <div className="mb-5 grid grid-cols-3 gap-2">
               {photos.map((url, i) => (
                 <div
                   key={`${url}-${i}`}
-                  className="relative aspect-square overflow-hidden rounded-xl bg-surface/40 ring-1 ring-white/5"
+                  className="relative aspect-square overflow-hidden rounded-[10px] bg-surface-elevated"
                 >
                   <button
                     type="button"
@@ -397,138 +423,67 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
                   <button
                     type="button"
                     onClick={() => removePhoto(i)}
-                    className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
+                    className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition hover:bg-black/60"
                     aria-label="删除图片"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-3 w-3" />
                   </button>
                 </div>
               ))}
-
-              {photos.length < MAX_IMAGES && (
-                <motion.button
-                  type="button"
-                  onClick={handlePickImages}
-                  disabled={uploadImageMutation.isPending}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="
-                    flex aspect-square flex-col items-center justify-center gap-1 rounded-xl
-                    border border-dashed border-white/15 bg-surface/20 text-text-tertiary
-                    transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary
-                  "
-                >
-                  {uploadImageMutation.isPending ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <ImagePlus className="h-5 w-5" />
-                  )}
-                  <span className="text-[10px]">{uploadImageMutation.isPending ? "上传中" : "添加照片"}</span>
-                </motion.button>
-              )}
             </div>
+          )}
 
-            {uploadImageMutation.isError && (
-              <p className="mt-2 text-[11px] text-danger">
-                图片上传失败：{uploadImageMutation.error?.message || "请稍后重试"}
-              </p>
-            )}
-          </div>
-
-          {/* 内容输入 */}
-          <div className="mb-5">
-            <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-text-secondary">
-              {t("journal.contentLabel")}
-            </label>
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder={t("journal.contentPlaceholder")}
-              rows={3}
-              className="
-                w-full resize-none rounded-xl border border-white/5 bg-surface/30
-                px-4 py-3 text-sm text-text-primary placeholder:text-text-tertiary/60
-                transition-colors duration-200
-                focus:border-primary/40 focus:bg-surface/50 focus:outline-none
-              "
-            />
-          </div>
-
-          {/* 快速标签 */}
-          <div className="mb-6">
-            <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-text-secondary">
-              {t("journal.tagsLabel")}
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {QUICK_TAGS.map((tag) => (
-                <motion.button
-                  key={tag}
-                  onClick={() => toggleTag(tag)}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  transition={{ duration: 0.15, ease: "easeOut" }}
-                  className={`
-                    rounded-full px-3 py-1.5 text-[12px] transition-all duration-200
-                    ${tags.includes(tag)
-                      ? "bg-primary/20 text-primary ring-1 ring-primary/30"
-                      : "bg-surface/40 text-text-secondary hover:bg-surface-elevated/60"
-                    }
-                  `}
-                >
-                  {tag}
-                </motion.button>
-              ))}
-            </div>
-          </div>
+          {uploadImageMutation.isError && (
+            <p className="mb-3 text-[11px] text-danger">
+              图片上传失败：{uploadImageMutation.error?.message || "请稍后重试"}
+            </p>
+          )}
 
           {/* 保存按钮 */}
-          <motion.button
+          <button
             onClick={handleSave}
             disabled={moodIndex === null || upsertMutation.isPending || uploadImageMutation.isPending}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className={`
-              flex w-full items-center justify-center rounded-xl py-3 text-sm font-medium transition-all duration-200
+            className={`flex w-full items-center justify-center rounded-[12px] py-3 text-[14px] font-medium transition-all duration-200
               ${moodIndex !== null && !uploadImageMutation.isPending
-                ? "bg-primary text-white shadow-[0_4px_20px_rgba(139,92,246,0.3)] hover:bg-primary-hover cursor-pointer"
-                : "cursor-not-allowed bg-surface/40 text-text-tertiary"
+                ? "bg-primary text-white hover:bg-primary-hover"
+                : "cursor-not-allowed bg-surface-elevated text-text-tertiary"
               }
             `}
           >
             {upsertMutation.isPending
               ? "保存中..."
               : isEditing
-                ? "更新小记"
-                : "保存小记"}
-          </motion.button>
+                ? t("journal.updateButton")
+                : t("journal.saveButton")}
+          </button>
 
-          {/* 保存状态反馈 */}
+          {/* 保存反馈 */}
           {upsertMutation.isSuccess && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
+            <motion.p
+              initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               className="mt-3 text-center text-[13px] text-success"
             >
-              ✓ 保存成功！
-            </motion.div>
+              ✓ {t("journal.savedHint")}
+            </motion.p>
           )}
           {upsertMutation.isError && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
+            <motion.p
+              initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               className="mt-3 text-center text-[13px] text-danger"
             >
               ✗ {upsertMutation.error?.message || "保存失败，请重试"}
-            </motion.div>
+            </motion.p>
           )}
         </>
       )}
 
+      {/* 图片预览弹窗 */}
       <AnimatePresence>
         {previewUrl && (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
             role="dialog"
             aria-modal="true"
             aria-label="日记图片预览"
@@ -540,7 +495,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
             <motion.img
               src={previewUrl}
               alt="日记图片预览"
-              className="max-h-full max-w-full rounded-xl object-contain shadow-2xl"
+              className="max-h-full max-w-full rounded-[14px] object-contain shadow-soft"
               initial={{ scale: 0.96 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.96 }}
@@ -549,7 +504,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
             <button
               type="button"
               onClick={() => setPreviewUrl(null)}
-              className="absolute right-5 top-5 rounded-lg bg-black/60 px-3 py-2 text-sm text-white hover:bg-black/80"
+              className="absolute right-5 top-5 rounded-[10px] bg-black/40 px-3 py-2 text-sm text-white backdrop-blur-sm hover:bg-black/60"
             >
               关闭
             </button>
