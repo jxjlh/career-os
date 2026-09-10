@@ -160,8 +160,14 @@ jobs:
                 exit 1
               fi
 
+              echo "--- Sync release to build context ---"
+              rsync -a --delete "$RELEASE_DIR/" "$APP_DIR/build/"
+
               echo "--- Build Docker image ---"
-              docker build -t "ai-life-os-api:$RELEASE_ID" -t ai-life-os-api:latest \
+              docker build \
+                -t "ai-life-os-api:$RELEASE_ID" \
+                -t ai-life-os-api:latest \
+                -t ghcr.io/liheng/ai-life-os-api:latest \
                 -f "$RELEASE_DIR/Dockerfile" "$RELEASE_DIR"
 
               echo "--- Restart Tencent VPS service ---"
