@@ -167,16 +167,20 @@ def test_auth():
     record("认证", "登录页可访问", s == 200, f"HTTP {s}", s, lat)
 
     # 5.2 前端是否已内联 Supabase 配置（开发模式检测）
-    _, html, _ = http("GET", "/")
+    # 注意：首页（landing）不加载 Supabase 客户端，需检测登录页 /dashboard 等需认证页面
     import re
-    js_chunks = re.findall(r'/_next/static/chunks/[a-zA-Z0-9/_.-]+\.js', html)
     supabase_inlined = False
     checked = 0
-    for chunk in js_chunks[:20]:
-        _, body, _ = http("GET", chunk)
-        checked += 1
-        if "supabase.co" in body:
-            supabase_inlined = True
+    for page in ["/login/", "/dashboard/"]:
+        _, html, _ = http("GET", page)
+        js_chunks = re.findall(r'/_next/static/chunks/[a-zA-Z0-9/_.-]+\.js', html)
+        for chunk in js_chunks[:30]:
+            _, body, _ = http("GET", chunk)
+            checked += 1
+            if "supabase.co" in body:
+                supabase_inlined = True
+                break
+        if supabase_inlined:
             break
     record("认证", "前端已内联 Supabase 配置（非开发模式）", supabase_inlined,
            f"扫描 {checked} 个 JS 分片，" + ("发现 supabase.co" if supabase_inlined else "未发现 supabase.co（仍为开发模式）"))
