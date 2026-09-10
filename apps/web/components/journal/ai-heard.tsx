@@ -68,7 +68,7 @@ export function AIHeard({ journals, date }: AIHeardProps) {
               transition={{ delay: 0.2, ...easeStandard }}
               className="max-w-md text-[15px] leading-relaxed text-text-secondary"
             >
-              "{result.reflection}"
+              &ldquo;{result.reflection}&rdquo;
             </motion.p>
 
             {/* 和我聊聊按钮 */}
