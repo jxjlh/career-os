@@ -7,6 +7,7 @@ import {
   Menu,
   Moon,
   MoreHorizontal,
+  NotebookPen,
   Search,
   Sun,
   Languages,
@@ -126,8 +127,9 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
 
   const items = [
     { href: "/dashboard", icon: Home, key: "dashboard" },
-    { href: "/life", icon: Compass, key: "life" },
-    { href: "/life/map", icon: MapPin, key: "lifeMap" },
+    { href: "/journal", icon: NotebookPen, key: "journal" },
+    { href: "/journal/companion", icon: null, key: "aiCompanion", isAI: true },
+    { href: "/settings", icon: MoreHorizontal, key: "settings" },
   ];
 
   return (
@@ -135,7 +137,7 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
       className="fixed bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border-subtle bg-surface px-2 py-2 shadow-soft backdrop-blur-xl md:hidden"
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
-      {items.map(({ href, icon: Icon, key }) => {
+      {items.map(({ href, icon: Icon, key, isAI }) => {
         const active = isActive(href);
         return (
           <Link
@@ -149,22 +151,14 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
                 : "text-text-tertiary hover:text-text hover:bg-surface-elevated",
             )}
           >
-            <Icon className="h-[18px] w-[18px]" />
+            {isAI ? (
+              <span className="text-[18px] leading-none">✦</span>
+            ) : (
+              Icon && <Icon className="h-[18px] w-[18px]" />
+            )}
           </Link>
         );
       })}
-      <Link
-        href="/settings"
-        aria-label={nav.settings}
-        className={cn(
-          "flex h-11 w-11 items-center justify-center rounded-full transition-all duration-200 ease-out",
-          isActive("/settings")
-            ? "bg-primary/10 text-primary"
-            : "text-text-tertiary hover:text-text hover:bg-surface-elevated",
-        )}
-      >
-        <MoreHorizontal className="h-[18px] w-[18px]" />
-      </Link>
     </nav>
   );
 }
@@ -181,32 +175,43 @@ function MobileNavSheet({
 
   const groups: Array<{ label: string; items: Array<{ href: string; key: string }> }> = [
     {
-      label: nav.now || "NOW",
+      label: nav.now || "我的生活",
       items: [
         { href: "/dashboard", key: "dashboard" },
         { href: "/life", key: "life" },
         { href: "/life/map", key: "lifeMap" },
         { href: "/life/records", key: "lifeRecords" },
+        { href: "/journal", key: "journal" },
+        { href: "/contacts", key: "contacts" },
       ],
     },
     {
-      label: nav.grow || "GROW",
+      label: nav.careerGroup || "我的职业",
+      items: [
+        { href: "/career", key: "career" },
+        { href: "/resume", key: "resume" },
+        { href: "/interviews", key: "interviews" },
+        { href: "/jobs", key: "jobs" },
+        { href: "/salary", key: "salary" },
+        { href: "/analytics", key: "analytics" },
+      ],
+    },
+    {
+      label: nav.grow || "我的成长",
       items: [
         { href: "/skills", key: "skills" },
         { href: "/planner", key: "planner" },
         { href: "/explore", key: "explore" },
         { href: "/library", key: "library" },
         { href: "/projects", key: "projects" },
+        { href: "/english", key: "english" },
+        { href: "/finance", key: "finance" },
       ],
     },
     {
-      label: nav.careerGroup || "CAREER",
+      label: "✦ AI",
       items: [
-        { href: "/resume", key: "resume" },
-        { href: "/interviews", key: "interviews" },
-        { href: "/jobs", key: "jobs" },
-        { href: "/salary", key: "salary" },
-        { href: "/analytics", key: "analytics" },
+        { href: "/journal/companion", key: "aiCompanion" },
       ],
     },
   ];
@@ -244,7 +249,7 @@ function MobileNavSheet({
                       : "text-text-secondary hover:bg-surface-elevated hover:text-text",
                   )}
                 >
-                  {nav[item.key] || item.key}
+                  {item.key === "aiCompanion" ? "AI 陪伴" : (nav[item.key] || item.key)}
                 </Link>
               ))}
             </div>

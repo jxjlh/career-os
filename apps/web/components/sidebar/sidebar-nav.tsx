@@ -2,6 +2,7 @@
 
 import {
   BookOpen,
+  Briefcase,
   CalendarDays,
   Compass,
   FolderKanban,
@@ -14,7 +15,9 @@ import {
   Search,
   Settings,
   Target,
+  TrendingUp,
   Users,
+  FileText,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
@@ -28,19 +31,28 @@ import { useSidebarWidth } from "./use-sidebar-width";
 type NavItem = {
   key: string;
   href: string;
-  icon: React.ElementType;
-  group: "now" | "grow" | "career";
+  icon: React.ElementType | null;
+  group: "now" | "career" | "grow" | "ai";
 };
 
-type GroupKey = "now" | "grow" | "career";
+type GroupKey = "now" | "career" | "grow" | "ai";
 
 const NAV: NavItem[] = [
+  // 我的生活
   { key: "dashboard", href: "/dashboard", icon: Home, group: "now" },
   { key: "life", href: "/life", icon: Compass, group: "now" },
   { key: "lifeMap", href: "/life/map", icon: MapPin, group: "now" },
   { key: "lifeRecords", href: "/life/records", icon: Images, group: "now" },
   { key: "journal", href: "/journal", icon: NotebookPen, group: "now" },
   { key: "contacts", href: "/contacts", icon: Users, group: "now" },
+  // 我的职业
+  { key: "career", href: "/career", icon: Briefcase, group: "career" },
+  { key: "resume", href: "/resume", icon: FileText, group: "career" },
+  { key: "interviews", href: "/interviews", icon: Users, group: "career" },
+  { key: "jobs", href: "/jobs", icon: Search, group: "career" },
+  { key: "salary", href: "/salary", icon: WalletCards, group: "career" },
+  { key: "analytics", href: "/analytics", icon: TrendingUp, group: "career" },
+  // 我的成长
   { key: "skills", href: "/skills", icon: Target, group: "grow" },
   { key: "planner", href: "/planner", icon: CalendarDays, group: "grow" },
   { key: "explore", href: "/explore", icon: Search, group: "grow" },
@@ -48,9 +60,11 @@ const NAV: NavItem[] = [
   { key: "projects", href: "/projects", icon: FolderKanban, group: "grow" },
   { key: "english", href: "/english", icon: BookOpen, group: "grow" },
   { key: "finance", href: "/finance", icon: WalletCards, group: "grow" },
+  // ✦ AI
+  { key: "aiCompanion", href: "/journal/companion", icon: null, group: "ai" },
 ];
 
-const GROUP_ORDER: GroupKey[] = ["now", "grow"];
+const GROUP_ORDER: GroupKey[] = ["now", "career", "grow", "ai"];
 
 export function SidebarNav() {
   const { t } = useI18n();
@@ -66,7 +80,12 @@ export function SidebarNav() {
   if (!sw.visible) return null;
 
   const groupLabel = (g: GroupKey): string => {
-    const map: Record<GroupKey, string> = { now: "NOW", grow: "GROW", career: "CAREER" };
+    const map: Record<GroupKey, string> = {
+      now: "我的生活",
+      grow: "我的成长",
+      career: "我的职业",
+      ai: "AI",
+    };
     return (t("nav") as unknown as Record<string, string>)[g] || map[g];
   };
 
@@ -76,12 +95,12 @@ export function SidebarNav() {
       onMouseLeave={sw.onLeave}
       style={{ width: sw.width }}
       className={cn(
-        "fixed inset-y-0 left-0 z-30 flex flex-col border-r border-border bg-surface",
+        "fixed inset-y-0 left-0 z-30 flex flex-col border-r border-border/60 bg-white",
         "transition-[width] duration-200 ease-out",
       )}
     >
       <Link href="/dashboard" className="flex h-16 items-center gap-2.5 px-5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-primary text-base font-bold text-white">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-base font-bold text-white">
           C
         </span>
         {!sw.isCompact && (
@@ -96,12 +115,19 @@ export function SidebarNav() {
         )}
       </Link>
 
-      <nav className="flex-1 space-y-5 overflow-y-auto overflow-x-hidden px-3 py-3 scrollbar-none">
+      <nav className="flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-2.5 py-3 scrollbar-none">
         {groups.map(({ group, items }) => (
           <div key={group}>
             {!sw.isCompact && (
-              <p className="px-3 pb-1.5 font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
-                {groupLabel(group)}
+              <p className="px-2.5 pb-1.5 font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary/80">
+                {group === "ai" ? (
+                  <span className="flex items-center gap-1">
+                    <span className="ai-star">✦</span>
+                    {groupLabel(group)}
+                  </span>
+                ) : (
+                  groupLabel(group)
+                )}
               </p>
             )}
             <div className="space-y-0.5">
@@ -110,8 +136,13 @@ export function SidebarNav() {
                   key={item.href}
                   href={item.href}
                   icon={item.icon}
-                  label={(t("nav") as unknown as Record<string, string>)[item.key] || item.key}
+                  label={
+                    group === "ai"
+                      ? "AI 陪伴"
+                      : (t("nav") as unknown as Record<string, string>)[item.key] || item.key
+                  }
                   compact={sw.isCompact}
+                  isAI={group === "ai"}
                 />
               ))}
             </div>
@@ -119,17 +150,17 @@ export function SidebarNav() {
         ))}
       </nav>
 
-      <div className="border-t border-border-subtle">
+      <div className="border-t border-border/60">
         <SidebarProfile compact={sw.isCompact} />
         <Link
           href="/settings"
           title={sw.isCompact ? (t("nav") as unknown as Record<string, string>).settings : undefined}
           className={cn(
-            "group flex items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-[14px] font-medium transition-colors duration-200 ease-out",
-            "mx-3 mb-3 text-text-secondary hover:bg-surface-elevated hover:text-text",
+            "group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[14px] font-medium transition-colors duration-200 ease-out",
+            "mx-2.5 mb-3 text-text-secondary hover:bg-surface-elevated hover:text-text",
           )}
         >
-          <Settings className="h-[18px] w-[18px] shrink-0 transition-transform group-hover:rotate-45" />
+          <Settings className="h-[19px] w-[19px] shrink-0 transition-transform group-hover:rotate-45" />
           {!sw.isCompact && <span>{(t("nav") as unknown as Record<string, string>).settings}</span>}
         </Link>
       </div>

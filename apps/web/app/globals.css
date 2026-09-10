@@ -3,44 +3,51 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================================
-   CareerOS Design System —— Light & Clean
-   浅色背景，蓝色主色 (#4F8CFF)，白/灰底，柔和阴影，大量留白。
+   CareerOS Design System —— Cool Blue & White, Clean & Modern
+   冷调蓝白 + 鲜亮蓝主色 + 清爽科技感
+   不是 SaaS，不是医疗平台，是年轻人的私人软件。
    ============================================================================ */
 :root {
-  /* 背景层 —— 浅色系 */
-  --background: #F8F9FC;
+  /* 背景层 —— 冷调蓝白 */
+  --background: #EEF2FF;
   --surface: #FFFFFF;
-  --surface-elevated: #F4F5F9;
-  --surface-muted: #ECEEF3;
-  --border: #E4E7EE;
-  --border-subtle: #EDF0F5;
+  --surface-elevated: #F5F8FF;
+  --surface-muted: #EDF1FA;
+  --border: #E2E8F0;
+  --border-subtle: #EEF2FA;
 
-  /* 文字 —— 深色系（在浅底上） */
-  --text: #1A1D2B;
-  --text-secondary: #6B7184;
-  --text-tertiary: #9CA3B5;
+  /* 文字 —— 深墨黑 */
+  --text: #1A1A1A;
+  --text-secondary: #686868;
+  --text-tertiary: #9A9A9A;
 
-  /* Accent —— 蓝色主色 */
-  --primary: #4F8CFF;
-  --primary-hover: #3B7AE8;
-  --primary-glow: #6BA1FF;
-  --accent: #4F8CFF;
-  --ai: #7C5CFC;
+  /* Accent —— 鲜亮蓝主色 */
+  --primary: #5B9DFF;
+  --primary-hover: #3D7EDB;
+  --primary-glow: #7BB0FF;
+  --accent: #5B9DFF;
+
+  /* AI 符号色 —— 暖琥珀（非紫色），像星光 */
+  --ai: #C49A5C;
 
   /* 状态色 */
-  --success: #34C759;
-  --warning: #FF9F0A;
-  --danger: #FF453A;
-  --info: #5AC8FA;
+  --success: #4CADE0;
+  --warning: #E8A04C;
+  --danger: #E5736E;
+  --info: #5B9DFF;
 
-  /* 渐变色 */
-  --gradient-primary: linear-gradient(135deg, #4F8CFF 0%, #6BA1FF 100%);
-  --gradient-secondary: linear-gradient(135deg, #7C5CFC 0%, #4F8CFF 100%);
-  --gradient-accent: linear-gradient(135deg, #4F8CFF 0%, #7C5CFC 50%, #FF6B9D 100%);
+  /* 辅助色 —— 少量使用 */
+  --soft-green: #6FB89A;
+  --soft-orange: #E8A04C;
+  --soft-pink: #D9A0BC;
+
+  /* 渐变色 —— 克制使用 */
+  --gradient-primary: linear-gradient(135deg, #5B9DFF 0%, #7BB0FF 100%);
+  --gradient-warm: linear-gradient(135deg, #C49A5C 0%, #D4AC6E 100%);
 
   /* 旧字段保留兼容 */
-  --accent-2: #5AC8FA;
-  --muted: #6B7184;
+  --accent-2: #6FB89A;
+  --muted: #686868;
 
   /* 圆角 */
   --radius-sm: 10px;
@@ -48,45 +55,49 @@
   --radius-lg: 20px;
   --radius-xl: 28px;
 
-  /* 阴影 —— 柔和 */
-  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.04), 0 8px 24px -6px rgba(0, 0, 0, 0.06);
-  --shadow-glow: 0 0 0 1px rgba(79, 140, 255, 0.12), 0 8px 32px -8px rgba(79, 140, 255, 0.18);
-  --shadow-ambient: 0 24px 64px -24px rgba(79, 140, 255, 0.12);
+  /* 阴影 —— 柔和蓝调 */
+  --shadow-soft: 0 2px 8px rgba(91, 157, 255, 0.04), 0 8px 24px -6px rgba(91, 157, 255, 0.06);
+  --shadow-glow: 0 0 0 1px rgba(91, 157, 255, 0.1), 0 8px 32px -8px rgba(91, 157, 255, 0.15);
+  --shadow-ambient: 0 24px 64px -24px rgba(91, 157, 255, 0.08);
 
   /* 侧边栏宽度 */
   --sidebar-width: 240px;
 }
 
-/* dark 模式反向覆盖 */
+/* dark 模式反向覆盖 —— 冷调蓝黑 */
 .dark {
-  --background: #0B0C10;
-  --surface: #15161B;
-  --surface-elevated: #1E1F26;
-  --surface-muted: #262730;
-  --border: #2A2B33;
-  --border-subtle: #222329;
+  --background: #0A0E1A;
+  --surface: #111827;
+  --surface-elevated: #1A2235;
+  --surface-muted: #1E293B;
+  --border: #2A3447;
+  --border-subtle: #1E2538;
 
-  --text: #FAFAFA;
-  --text-secondary: #A1A1AA;
-  --text-tertiary: #71717A;
+  --text: #F0F4FF;
+  --text-secondary: #94A3B8;
+  --text-tertiary: #64748B;
 
-  --primary: #4F8CFF;
-  --primary-hover: #6BA1FF;
-  --primary-glow: #8AB8FF;
-  --accent: #4F8CFF;
-  --ai: #9D7CFF;
+  --primary: #6BA8FF;
+  --primary-hover: #8BBCFF;
+  --primary-glow: #9CC8FF;
+  --accent: #6BA8FF;
+  --ai: #D4B074;
 
-  --success: #30D158;
-  --warning: #FF9F0A;
-  --danger: #FF453A;
-  --info: #64D2FF;
+  --success: #4CADE0;
+  --warning: #E8A04C;
+  --danger: #E5736E;
+  --info: #6BA8FF;
 
-  --accent-2: #64D2FF;
-  --muted: #A1A1AA;
+  --soft-green: #7FC8AC;
+  --soft-orange: #EDB05C;
+  --soft-pink: #DEAEC4;
 
-  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.2), 0 12px 32px -8px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 0 1px rgba(79, 140, 255, 0.2), 0 0 40px -8px rgba(79, 140, 255, 0.3);
-  --shadow-ambient: 0 32px 96px -32px rgba(79, 140, 255, 0.15);
+  --accent-2: #7FC8AC;
+  --muted: #94A3B8;
+
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.2), 0 12px 32px -8px rgba(107, 168, 255, 0.08);
+  --shadow-glow: 0 0 0 1px rgba(107, 168, 255, 0.2), 0 0 40px -8px rgba(107, 168, 255, 0.25);
+  --shadow-ambient: 0 32px 96px -32px rgba(107, 168, 255, 0.1);
 }
 
 @theme inline {
@@ -110,6 +121,9 @@
   --color-danger: var(--danger);
   --color-info: var(--info);
   --color-ai: var(--ai);
+  --color-soft-green: var(--soft-green);
+  --color-soft-orange: var(--soft-orange);
+  --color-soft-pink: var(--soft-pink);
 }
 
 @layer base {
@@ -135,8 +149,8 @@
       system-ui,
       sans-serif;
     background-image:
-      radial-gradient(1000px 500px at 90% -10%, rgba(79, 140, 255, 0.06), transparent 60%),
-      radial-gradient(800px 400px at -5% 5%, rgba(124, 92, 252, 0.04), transparent 55%);
+      radial-gradient(1200px 600px at 90% -10%, rgba(91, 157, 255, 0.08), transparent 60%),
+      radial-gradient(900px 500px at -5% 5%, rgba(123, 176, 255, 0.05), transparent 55%);
     background-attachment: fixed;
     letter-spacing: -0.01em;
   }
@@ -189,7 +203,7 @@
     -webkit-backdrop-filter: blur(24px) saturate(1.5);
   }
 
-  /* text-gradient —— 蓝紫渐变 */
+  /* text-gradient —— 蓝灰渐变 */
   .text-gradient {
     background: linear-gradient(135deg, var(--text) 0%, var(--primary) 60%, var(--ai) 100%);
     -webkit-background-clip: text;
@@ -198,11 +212,11 @@
   }
 
   .gradient-primary {
-    background: linear-gradient(135deg, #4F8CFF 0%, #6BA1FF 100%);
+    background: linear-gradient(135deg, #5B9DFF 0%, #7BB0FF 100%);
   }
 
-  .gradient-accent {
-    background: linear-gradient(135deg, #4F8CFF 0%, #7C5CFC 50%, #FF6B9D 100%);
+  .gradient-warm {
+    background: linear-gradient(135deg, #C49A5C 0%, #D4AC6E 100%);
   }
 
   .ring-glow {
@@ -220,8 +234,8 @@
   /* grid-fade —— 蓝色网格背景 */
   .grid-fade {
     background-image:
-      linear-gradient(rgba(79, 140, 255, 0.04) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(79, 140, 255, 0.04) 1px, transparent 1px);
+      linear-gradient(rgba(91, 157, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(91, 157, 255, 0.04) 1px, transparent 1px);
     background-size: 40px 40px;
     mask-image: radial-gradient(800px 400px at 50% 0%, black, transparent 75%);
     -webkit-mask-image: radial-gradient(800px 400px at 50% 0%, black, transparent 75%);
@@ -231,7 +245,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    opacity: 0.02;
+    opacity: 0.015;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' /%3E%3C/svg%3E");
   }
 
@@ -265,13 +279,17 @@
     border-radius: var(--radius);
     box-shadow: var(--shadow-soft);
   }
+
+  /* AI 星光符号 */
+  .ai-star {
+    display: inline-block;
+    color: var(--ai);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--ai) 30%, transparent);
+  }
 }
 
 /* ============================================================================
    Mobile UX 优化
-   1. 防止小屏横向滚动（个别卡片/marker 溢出导致整页左右漂移）
-   2. Leaflet zoom 控件触控热区加大（≥44px）
-   3. Leaflet Popup 在窄屏上限制宽度，避免撑出视口
    ============================================================================ */
 html,
 body {

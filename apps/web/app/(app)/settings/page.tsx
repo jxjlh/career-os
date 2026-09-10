@@ -1,16 +1,46 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Languages, LogOut, Moon, Save, Sun } from "lucide-react";
+import { Languages, Lock, LogOut, Moon, Save, Sun, Trash2 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import { Button, Card, Input, SectionHeader } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
+import { journalApi } from "@/lib/journal";
 import { useI18n } from "@/lib/i18n";
 import { signOut } from "@/lib/supabase";
 
 type Envelope = { data: any };
+
+const PRIVACY_KEYS = {
+  aiRead: "career_os_privacy_ai_read",
+  mirror: "career_os_privacy_mirror",
+  trends: "career_os_privacy_trends",
+};
+
+function usePrivacyToggle(key: string, defaultVal = true) {
+  const [enabled, setEnabled] = useState(defaultVal);
+  useEffect(() => {
+    const stored = localStorage.getItem(key);
+    if (stored !== null) {
+      setEnabled(stored === "true");
+    }
+  }, [key]);
+  const toggle = () => {
+    const next = !enabled;
+    setEnabled(next);
+    localStorage.setItem(key, String(next));
+  };
+  return { enabled, toggle };
+}
+
+function usePrivacySettings() {
+  const aiRead = usePrivacyToggle(PRIVACY_KEYS.aiRead);
+  const mirror = usePrivacyToggle(PRIVACY_KEYS.mirror);
+  const trends = usePrivacyToggle(PRIVACY_KEYS.trends);
+  return { aiRead, mirror, trends };
+}
 
 export default function SettingsPage() {
   const { locale, setLocale } = useI18n();
@@ -23,6 +53,8 @@ export default function SettingsPage() {
   });
   const [displayName, setDisplayName] = useState("");
   const [targetTitle, setTargetTitle] = useState("");
+  const privacy = usePrivacySettings();
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const profile = me.data?.data;
   const save = useMutation({
@@ -37,6 +69,48 @@ export default function SettingsPage() {
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["me"] }),
   });
+
+  const handleDeleteJournals = async () => {
+    if (!confirm(t("settings.privacyDeleteJournalConfirm"))) return;
+    setDeleting("journal");
+    try {
+      const now = new Date();
+      const data = await journalApi.listMonth(now.getFullYear(), now.getMonth() + 1);
+      const journals = data?.data?.journals ?? [];
+      for (const j of journals) {
+        await journalApi.remove(j.id);
+      }
+      queryClient.invalidateQueries({ queryKey: ["journal"] });
+      queryClient.invalidateQueries({ queryKey: ["journal-companion"] });
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleDeleteAiRecords = async () => {
+    if (!confirm(t("settings.privacyDeleteAiConfirm"))) return;
+    setDeleting("ai");
+    try {
+      queryClient.invalidateQueries({ queryKey: ["journal-companion"] });
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const Toggle = ({ enabled, onClick }: { enabled: boolean; onClick: () => void }) => (
+    <button
+      onClick={onClick}
+      className={`relative h-5 w-9 rounded-full transition-colors ${
+        enabled ? "bg-primary" : "bg-surface-elevated"
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+          enabled ? "translate-x-4" : "translate-x-0.5"
+        }`}
+      />
+    </button>
+  );
 
   return (
     <div>
@@ -84,6 +158,46 @@ export default function SettingsPage() {
               </span>
               <span className="text-sm font-medium">{resolvedTheme === "dark" ? "Dark" : "Light"}</span>
             </button>
+          </div>
+        </Card>
+        <Card className="p-5 lg:col-span-2">
+          <div className="mb-4 flex items-center gap-2">
+            <Lock className="h-4 w-4 text-text-tertiary" />
+            <h2 className="text-sm font-semibold">{t("settings.privacy")}</h2>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-[10px] border border-border p-3">
+              <span className="text-[13px] text-text-secondary">{t("settings.privacyAiRead")}</span>
+              <Toggle enabled={privacy.aiRead.enabled} onClick={privacy.aiRead.toggle} />
+            </div>
+            <div className="flex items-center justify-between rounded-[10px] border border-border p-3">
+              <span className="text-[13px] text-text-secondary">{t("settings.privacyMirror")}</span>
+              <Toggle enabled={privacy.mirror.enabled} onClick={privacy.mirror.toggle} />
+            </div>
+            <div className="flex items-center justify-between rounded-[10px] border border-border p-3">
+              <span className="text-[13px] text-text-secondary">{t("settings.privacyTrends")}</span>
+              <Toggle enabled={privacy.trends.enabled} onClick={privacy.trends.toggle} />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="ghost"
+                onClick={handleDeleteAiRecords}
+                disabled={deleting === "ai"}
+                className="flex-1"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="text-[12px]">{t("settings.privacyDeleteAi")}</span>
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={handleDeleteJournals}
+                disabled={deleting === "journal"}
+                className="flex-1"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="text-[12px]">{t("settings.privacyDeleteJournal")}</span>
+              </Button>
+            </div>
           </div>
         </Card>
         <Card className="p-5 lg:col-span-2">
