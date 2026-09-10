@@ -50,7 +50,7 @@ jobs:
         working-directory: apps/backend
         run: |
           uv export --frozen --no-dev --format requirements-txt --output-file requirements.txt
-          uv pip download -r requirements.txt -d wheels --no-deps
+          python3 -m pip download -r requirements.txt -d wheels --no-deps
           python3 -m compileall -q app
           echo "requirements lines: $(wc -l < requirements.txt)"
           du -sh wheels
