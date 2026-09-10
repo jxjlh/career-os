@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { Sparkles, Briefcase, Rocket, Heart, Leaf, MoreHorizontal, CheckCircle2, Circle, Quote, Sun } from "lucide-react";
+import { Sparkles, Briefcase, Rocket, Heart, Leaf, MoreHorizontal, CheckCircle2, Circle, Quote, Sun, Image, Pencil } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
@@ -60,14 +61,7 @@ export default function DashboardPage() {
     { id: 5, title: "英语口语练习 3 次", done: false, priority: "中" },
   ];
 
-  // ---- 今日动态时间线 ----
-  const todayActivities = [
-    { time: "09:00", title: "晨间学习", desc: "React Hooks 深度解析", type: "study" },
-    { time: "12:30", title: "午间阅读", desc: "《原子习惯》第 5 章", type: "read" },
-    { time: "15:00", title: "项目实战", desc: "Dashboard 页面重构", type: "work" },
-    { time: "19:00", title: "健身打卡", desc: "有氧 30 分钟", type: "fitness" },
-  ];
-
+  // ---- 今日动态时间线（已移除）----
   const completedTasks = weeklyTasks.filter((t) => t.done).length;
 
   return (
@@ -104,26 +98,9 @@ export default function DashboardPage() {
 
       {/* ===== 2. 主横幅区 + 天数统计（8 + 4 网格）===== */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* Hero Card - 8 列 */}
-        <div className="col-span-12 overflow-hidden rounded-2xl border border-border-subtle bg-white shadow-sm lg:col-span-8">
-          <div className="relative h-56 w-full sm:h-60">
-            {/* 风景渐变背景 */}
-            <div className="absolute inset-0 bg-gradient-to-br from-sky-400/60 via-blue-500/40 to-indigo-600/50" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-            {/* 装饰光晕 */}
-            <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/20 blur-3xl" />
-            <div className="pointer-events-none absolute -bottom-16 left-1/3 h-32 w-56 rounded-full bg-amber-300/20 blur-2xl" />
-
-            {/* 文字内容 */}
-            <div className="absolute bottom-5 left-6 right-6 text-white">
-              <p className="font-display text-[22px] font-bold leading-tight tracking-tight sm:text-[26px]">
-                Better Me Better Future
-              </p>
-              <p className="mt-1.5 text-[13px] text-white/80 sm:text-[14px]">
-                持续成长，每一天都在遇见更好的自己
-              </p>
-            </div>
-          </div>
+        {/* 座右铭 Banner - 8 列 */}
+        <div className="col-span-12 lg:col-span-8">
+          <MottoBanner />
         </div>
 
         {/* 天数统计卡 - 4 列 */}
@@ -182,7 +159,7 @@ export default function DashboardPage() {
       {/* ===== 4. 三栏卡片区（4 + 4 + 4）===== */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         {/* 左：本周计划 */}
-        <div className="col-span-12 rounded-2xl border border-border-subtle bg-white p-5 shadow-sm lg:col-span-4">
+        <div className="col-span-12 rounded-2xl border border-border-subtle bg-white p-5 shadow-sm lg:col-span-6">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="font-display text-[15px] font-semibold text-text">本周计划</h3>
             <span className="text-[11px] text-text-tertiary">
@@ -223,43 +200,8 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* 中：今日动态 */}
-        <div className="col-span-12 rounded-2xl border border-border-subtle bg-white p-5 shadow-sm lg:col-span-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="font-display text-[15px] font-semibold text-text">今日动态</h3>
-            <span className="text-[11px] text-text-tertiary">{todayActivities.length} 项活动</span>
-          </div>
-
-          <div className="relative space-y-4 pl-4">
-            {/* 时间线 */}
-            <div className="absolute bottom-2 left-[11px] top-2 w-px bg-border-subtle" />
-
-            {todayActivities.map((activity, i) => (
-              <div key={i} className="relative">
-                <div className="absolute -left-4 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-primary" />
-                <div className="min-w-0">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[11px] font-medium text-text-tertiary">
-                      {activity.time}
-                    </span>
-                    <span className="text-[13px] font-medium text-text">{activity.title}</span>
-                  </div>
-                  <p className="mt-0.5 text-[11px] text-text-secondary">{activity.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <Link
-            href="/journal"
-            className="mt-4 block text-center text-[12px] text-primary transition-colors hover:text-primary-glow"
-          >
-            记录今天 →
-          </Link>
-        </div>
-
         {/* 右：AI 语录 */}
-        <div className="col-span-12 rounded-2xl border border-border-subtle bg-white p-5 shadow-sm lg:col-span-4">
+        <div className="col-span-12 rounded-2xl border border-border-subtle bg-white p-5 shadow-sm lg:col-span-6">
           <div className="mb-4 flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -291,7 +233,9 @@ export default function DashboardPage() {
       {/* <ActiveGoals /> */}
       {/* <WeeklyPlanProgress /> */}
       {/* <LifeMapPreview /> */}
-      {/* <DailyJournal /> */}
+
+      {/* ===== 5. 每日小记 ===== */}
+      <DailyJournal />
 
       {advice.data?.data?.advice && (
         <section className="hidden border-t border-border-subtle pt-6">
@@ -545,5 +489,113 @@ function DailyJournal() {
         </div>
       )}
     </section>
+  );
+}
+
+const MOTTO_STORAGE_KEY = "career_os_motto";
+const DEFAULT_MOTTO = "持续成长，每一天都在遇见更好的自己";
+
+function MottoBanner() {
+  const [text, setText] = useState(DEFAULT_MOTTO);
+  const [bgImage, setBgImage] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(MOTTO_STORAGE_KEY);
+      if (saved) {
+        const data = JSON.parse(saved);
+        if (typeof data.text === "string" && data.text.trim()) setText(data.text);
+        if (typeof data.image === "string") setBgImage(data.image);
+      }
+    } catch {}
+  }, []);
+
+  const persist = (t: string, img: string | null) => {
+    setText(t);
+    setBgImage(img);
+    try {
+      localStorage.setItem(MOTTO_STORAGE_KEY, JSON.stringify({ text: t, image: img }));
+    } catch {}
+  };
+
+  const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => persist(text, reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-border-subtle shadow-sm">
+      {/* 背景图 / 默认渐变 */}
+      {bgImage ? (
+        <img
+          src={bgImage}
+          alt="座右铭背景"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-[#5B9DFF] via-[#3D7EDB] to-[#1E3A5F]" />
+      )}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+
+      {/* 座右铭文字 */}
+      <div className="relative flex min-h-[224px] flex-col justify-end p-6 sm:min-h-[240px]">
+        <p className="font-display text-[20px] font-bold leading-snug tracking-tight text-white drop-shadow-sm sm:text-[24px]">
+          {text}
+        </p>
+        <p className="mt-2 text-[12px] text-white/70">我的座右铭</p>
+      </div>
+
+      {/* 编辑按钮 */}
+      <button
+        onClick={() => setEditing((v) => !v)}
+        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+        aria-label="编辑座右铭"
+      >
+        <Pencil className="h-4 w-4" />
+      </button>
+
+      {/* 编辑面板 */}
+      {editing && (
+        <div className="absolute inset-x-0 bottom-0 z-10 space-y-3 border-t border-white/15 bg-black/55 p-4 backdrop-blur-xl">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            className="h-20 w-full resize-none rounded-lg border border-white/20 bg-white/10 p-3 text-[13px] text-white placeholder-white/50 outline-none"
+            placeholder="写下你的座右铭"
+          />
+          <div className="flex items-center justify-between">
+            <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-white/80 hover:text-white">
+              <Image className="h-4 w-4" />
+              更换背景图
+              <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
+            </label>
+            <div className="flex items-center gap-3">
+              {bgImage && (
+                <button
+                  onClick={() => persist(text, null)}
+                  className="text-[12px] text-white/70 hover:text-white"
+                >
+                  移除背景
+                </button>
+              )}
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  persist(text, bgImage);
+                  setEditing(false);
+                }}
+              >
+                保存
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -47,7 +47,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="flex min-w-0 flex-1 flex-col"
         style={{ paddingLeft: sw.contentPadding ? `${sw.contentPadding}px` : undefined }}
       >
-        <header className="glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border-subtle/80 px-4">
+        <header
+          className="glass sticky top-0 z-20 flex items-center gap-3 border-b border-border-subtle/80 px-4"
+          style={{
+            height: "calc(4rem + env(safe-area-inset-top))",
+            paddingTop: "env(safe-area-inset-top)",
+          }}
+        >
           <button
             className="-ml-1.5 flex h-11 w-11 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text md:hidden"
             onClick={() => setMobileOpen((v) => !v)}
@@ -217,7 +223,7 @@ function MobileNavSheet({
   ];
 
   return (
-    <div className="glass fixed inset-x-0 top-16 z-20 max-h-[calc(100vh-4rem)] overflow-y-auto border-b border-border-subtle p-4 md:hidden">
+    <div className="glass fixed inset-x-0 z-20 max-h-[calc(100vh-4rem)] overflow-y-auto border-b border-border-subtle p-4 md:hidden" style={{ top: "calc(4rem + env(safe-area-inset-top))" }}>
       <div className="mb-3 flex items-center justify-between">
         <span className="font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
           MENU

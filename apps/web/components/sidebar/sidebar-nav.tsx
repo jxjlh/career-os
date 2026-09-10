@@ -99,7 +99,11 @@ export function SidebarNav() {
         "transition-[width] duration-200 ease-out",
       )}
     >
-      <Link href="/dashboard" className="flex h-16 items-center gap-2.5 px-5">
+      <Link
+        href="/dashboard"
+        className="flex items-center gap-2.5 px-5"
+        style={{ height: "calc(4rem + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}
+      >
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-base font-bold text-white">
           C
         </span>
