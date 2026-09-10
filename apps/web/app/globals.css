@@ -3,87 +3,90 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================================
-   CareerOS Design System —— 年轻化风格
-   主背景 #09090B，紫蓝粉渐变 Accent，现代圆润字体。
+   CareerOS Design System —— Light & Clean
+   浅色背景，蓝色主色 (#4F8CFF)，白/灰底，柔和阴影，大量留白。
    ============================================================================ */
 :root {
-  /* 背景层 */
-  --background: #09090b;
-  --surface: #111114;
-  --surface-elevated: #18181c;
-  --surface-muted: #1f1f25;
-  --border: #2a2a32;
-  --border-subtle: #1e1e24;
+  /* 背景层 —— 浅色系 */
+  --background: #F8F9FC;
+  --surface: #FFFFFF;
+  --surface-elevated: #F4F5F9;
+  --surface-muted: #ECEEF3;
+  --border: #E4E7EE;
+  --border-subtle: #EDF0F5;
 
-  /* 文字 */
-  --text: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-tertiary: #71717a;
+  /* 文字 —— 深色系（在浅底上） */
+  --text: #1A1D2B;
+  --text-secondary: #6B7184;
+  --text-tertiary: #9CA3B5;
 
-  /* Accent —— 紫蓝粉渐变，更活泼 */
-  --primary: #a855f7;
-  --primary-hover: #c084fc;
-  --primary-glow: #e879f9;
-  --accent: #a855f7;
-  --ai: #c084fc;
+  /* Accent —— 蓝色主色 */
+  --primary: #4F8CFF;
+  --primary-hover: #3B7AE8;
+  --primary-glow: #6BA1FF;
+  --accent: #4F8CFF;
+  --ai: #7C5CFC;
 
-  /* 状态色 —— 年轻活力 */
-  --success: #4ade80;
-  --warning: #fbbf24;
-  --danger: #fb7185;
-  --info: #38bdf8;
+  /* 状态色 */
+  --success: #34C759;
+  --warning: #FF9F0A;
+  --danger: #FF453A;
+  --info: #5AC8FA;
 
-  /* 渐变色 —— 年轻化核心 */
-  --gradient-primary: linear-gradient(135deg, #a855f7 0%, #6366f1 50%, #ec4899 100%);
-  --gradient-secondary: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  --gradient-accent: linear-gradient(135deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
+  /* 渐变色 */
+  --gradient-primary: linear-gradient(135deg, #4F8CFF 0%, #6BA1FF 100%);
+  --gradient-secondary: linear-gradient(135deg, #7C5CFC 0%, #4F8CFF 100%);
+  --gradient-accent: linear-gradient(135deg, #4F8CFF 0%, #7C5CFC 50%, #FF6B9D 100%);
 
   /* 旧字段保留兼容 */
-  --accent-2: #38bdf8;
-  --muted: #a1a1aa;
+  --accent-2: #5AC8FA;
+  --muted: #6B7184;
 
-  /* 圆角：更圆润 */
+  /* 圆角 */
   --radius-sm: 10px;
-  --radius: 16px;
-  --radius-lg: 24px;
-  --radius-xl: 32px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
 
-  /* 阴影：更柔和 */
-  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.2), 0 12px 32px -8px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 0 1px rgba(168, 85, 247, 0.2), 0 0 40px -8px rgba(168, 85, 247, 0.4);
-  --shadow-ambient: 0 32px 96px -32px rgba(168, 85, 247, 0.2);
+  /* 阴影 —— 柔和 */
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.04), 0 8px 24px -6px rgba(0, 0, 0, 0.06);
+  --shadow-glow: 0 0 0 1px rgba(79, 140, 255, 0.12), 0 8px 32px -8px rgba(79, 140, 255, 0.18);
+  --shadow-ambient: 0 24px 64px -24px rgba(79, 140, 255, 0.12);
+
+  /* 侧边栏宽度 */
+  --sidebar-width: 240px;
 }
 
-/* light 反向覆盖（保留切换能力） */
-.light {
-  --background: #fafafa;
-  --surface: #ffffff;
-  --surface-elevated: #f4f4f5;
-  --surface-muted: #e4e4e7;
-  --border: #d4d4d8;
-  --border-subtle: #e4e4e7;
+/* dark 模式反向覆盖 */
+.dark {
+  --background: #0B0C10;
+  --surface: #15161B;
+  --surface-elevated: #1E1F26;
+  --surface-muted: #262730;
+  --border: #2A2B33;
+  --border-subtle: #222329;
 
-  --text: #18181b;
-  --text-secondary: #71717a;
-  --text-tertiary: #a1a1aa;
+  --text: #FAFAFA;
+  --text-secondary: #A1A1AA;
+  --text-tertiary: #71717A;
 
-  --primary: #9333ea;
-  --primary-hover: #7c3aed;
-  --primary-glow: #c084fc;
-  --accent: #9333ea;
-  --ai: #a855f7;
+  --primary: #4F8CFF;
+  --primary-hover: #6BA1FF;
+  --primary-glow: #8AB8FF;
+  --accent: #4F8CFF;
+  --ai: #9D7CFF;
 
-  --success: #16a34a;
-  --warning: #d97706;
-  --danger: #dc2626;
-  --info: #0891b2;
+  --success: #30D158;
+  --warning: #FF9F0A;
+  --danger: #FF453A;
+  --info: #64D2FF;
 
-  --accent-2: #0891b2;
-  --muted: #71717a;
+  --accent-2: #64D2FF;
+  --muted: #A1A1AA;
 
-  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.04), 0 16px 48px -12px rgba(0, 0, 0, 0.12);
-  --shadow-glow: 0 0 0 1px rgba(147, 51, 234, 0.16), 0 16px 48px -12px rgba(147, 51, 234, 0.25);
-  --shadow-ambient: 0 32px 96px -32px rgba(147, 51, 234, 0.12);
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.2), 0 12px 32px -8px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 0 1px rgba(79, 140, 255, 0.2), 0 0 40px -8px rgba(79, 140, 255, 0.3);
+  --shadow-ambient: 0 32px 96px -32px rgba(79, 140, 255, 0.15);
 }
 
 @theme inline {
@@ -131,11 +134,9 @@
       "Microsoft YaHei",
       system-ui,
       sans-serif;
-    /* 年轻化渐变背景 —— 紫蓝粉三色 */
     background-image:
-      radial-gradient(1200px 600px at 90% -10%, rgba(168, 85, 247, 0.12), transparent 60%),
-      radial-gradient(1000px 500px at -5% 5%, rgba(99, 102, 241, 0.1), transparent 55%),
-      radial-gradient(800px 500px at 50% 120%, rgba(236, 72, 153, 0.08), transparent 58%);
+      radial-gradient(1000px 500px at 90% -10%, rgba(79, 140, 255, 0.06), transparent 60%),
+      radial-gradient(800px 400px at -5% 5%, rgba(124, 92, 252, 0.04), transparent 55%);
     background-attachment: fixed;
     letter-spacing: -0.01em;
   }
@@ -161,7 +162,6 @@
     font-family: var(--font-display), "PingFang SC", sans-serif;
   }
 
-  /* 过渡动画 */
   a,
   button {
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -176,28 +176,33 @@
     display: none;
   }
 
-  /* glass —— 更轻盈的玻璃效果 */
+  /* glass —— 清透玻璃效果 */
   .glass {
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  }
+
+  .dark .glass {
     background: color-mix(in srgb, var(--surface) 80%, transparent);
     backdrop-filter: blur(24px) saturate(1.5);
     -webkit-backdrop-filter: blur(24px) saturate(1.5);
   }
 
-  /* text-gradient —— 紫蓝粉年轻渐变 */
+  /* text-gradient —— 蓝紫渐变 */
   .text-gradient {
-    background: linear-gradient(135deg, #fafafa 0%, #a855f7 40%, #ec4899 100%);
+    background: linear-gradient(135deg, var(--text) 0%, var(--primary) 60%, var(--ai) 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
 
-  /* 渐变背景 */
   .gradient-primary {
-    background: linear-gradient(135deg, #a855f7 0%, #6366f1 50%, #ec4899 100%);
+    background: linear-gradient(135deg, #4F8CFF 0%, #6BA1FF 100%);
   }
 
   .gradient-accent {
-    background: linear-gradient(135deg, #f472b6 0%, #a855f7 50%, #6366f1 100%);
+    background: linear-gradient(135deg, #4F8CFF 0%, #7C5CFC 50%, #FF6B9D 100%);
   }
 
   .ring-glow {
@@ -212,26 +217,24 @@
     box-shadow: var(--shadow-ambient);
   }
 
-  /* grid-fade —— 更活泼的网格背景 */
+  /* grid-fade —— 蓝色网格背景 */
   .grid-fade {
     background-image:
-      linear-gradient(rgba(168, 85, 247, 0.06) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(168, 85, 247, 0.06) 1px, transparent 1px);
+      linear-gradient(rgba(79, 140, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79, 140, 255, 0.04) 1px, transparent 1px);
     background-size: 40px 40px;
     mask-image: radial-gradient(800px 400px at 50% 0%, black, transparent 75%);
     -webkit-mask-image: radial-gradient(800px 400px at 50% 0%, black, transparent 75%);
   }
 
-  /* noise —— 轻微噪点纹理 */
   .noise {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    opacity: 0.03;
+    opacity: 0.02;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' /%3E%3C/svg%3E");
   }
 
-  /* 年轻化标题字体 */
   .editorial {
     font-family: var(--font-display), "PingFang SC", sans-serif;
     letter-spacing: -0.02em;
@@ -251,9 +254,16 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* hairline —— 极弱分隔 */
   .hairline {
     border: 1px solid var(--border-subtle);
+  }
+
+  /* card —— 标准卡片样式 */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-soft);
   }
 }
 

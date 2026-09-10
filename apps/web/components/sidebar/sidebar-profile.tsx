@@ -15,11 +15,6 @@ type ProfileData = {
 };
 type Envelope = { data: ProfileData };
 
-/**
- * Sidebar 底部用户 Profile —— 头像 + 名字 + LEVEL + 细进度条 + DAYS ACTIVE。
- * 数据来自 /life/dashboard（level/experience）+ /life/checkin（totalCheckins 兜底 daysActive）。
- * 点击跳转到个人主页 /profile（QQ 风格）。
- */
 export function SidebarProfile({ compact = false }: { compact?: boolean }) {
   const [email, setEmail] = useState("");
 
@@ -47,7 +42,6 @@ export function SidebarProfile({ compact = false }: { compact?: boolean }) {
   const level = dashboard.data?.level ?? 1;
   const experience = dashboard.data?.experience ?? 0;
   const { progressPercent } = getLevelInfo(level, experience);
-  // TODO: 后端补 /dashboard/life-stats 接口后，daysActive 用精确字段；暂用 totalCheckins 兜底
   const daysActive = streak.data?.totalCheckins ?? 0;
 
   const avatarUrl = me.data?.data?.avatarUrl;
@@ -57,15 +51,9 @@ export function SidebarProfile({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
       <Link href="/profile" className="flex justify-center px-2 py-2 transition-transform hover:scale-105">
-        <span className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary to-primary-glow text-xs font-bold text-white">
+        <span className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-primary text-xs font-bold text-white">
           {avatarUrl ? (
-            <Image
-              src={avatarUrl}
-              alt={name}
-              fill
-              className="object-cover"
-              unoptimized
-            />
+            <Image src={avatarUrl} alt={name} fill className="object-cover" unoptimized />
           ) : (
             initial
           )}
@@ -75,18 +63,12 @@ export function SidebarProfile({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <Link href="/profile" className="block transition-colors hover:bg-surface-elevated/40">
+    <Link href="/profile" className="block transition-colors hover:bg-surface-elevated/60">
       <div className="px-3 py-3">
         <div className="flex items-center gap-2.5">
-          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary to-primary-glow text-xs font-bold text-white">
+          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-xs font-bold text-white">
             {avatarUrl ? (
-              <Image
-                src={avatarUrl}
-                alt={name}
-                fill
-                className="object-cover"
-                unoptimized
-              />
+              <Image src={avatarUrl} alt={name} fill className="object-cover" unoptimized />
             ) : (
               initial
             )}
@@ -98,10 +80,9 @@ export function SidebarProfile({ compact = false }: { compact?: boolean }) {
             </p>
           </div>
         </div>
-        {/* 极细进度条 */}
-        <div className="mt-2.5 h-[3px] w-full overflow-hidden rounded-full bg-surface-elevated">
+        <div className="mt-2.5 h-[3px] w-full overflow-hidden rounded-full bg-surface-muted">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-500 ease-out"
+            className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
             style={{ width: `${progressPercent}%` }}
           />
         </div>

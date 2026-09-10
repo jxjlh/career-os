@@ -8,16 +8,11 @@ import { cn } from "@/components/ui";
 export interface GoalRowProps {
   index: number;
   title: string;
-  progress: number; // 0-100
+  progress: number;
   category?: string;
   href?: string;
 }
 
-/**
- * 单行 Goal —— 极轻量 Row，不是巨大 Card。
- * 序号 01 + 标题 + 百分比 + 进度条（width 动画 250ms ease-out）。
- * 使用 Next.js Link 进行客户端导航, 避免全页刷新.
- */
 export function GoalRow({ index, title, progress, href = "#" }: GoalRowProps) {
   return (
     <motion.div
@@ -27,19 +22,16 @@ export function GoalRow({ index, title, progress, href = "#" }: GoalRowProps) {
     >
       <Link
         href={href}
-        className="group flex items-center gap-4 py-3 transition-colors hover:bg-surface-elevated/30"
+        className="group flex items-center gap-4 rounded-[10px] py-3 transition-colors hover:bg-surface-elevated"
       >
-        {/* 序号 —— editorial 数字 */}
         <span className="font-display w-8 shrink-0 text-[13px] font-medium tabular-nums text-text-tertiary">
           {String(index).padStart(2, "0")}
         </span>
 
-        {/* 标题 */}
-        <span className="min-w-0 flex-1 truncate text-[14px] text-text transition-colors group-hover:text-primary-glow">
+        <span className="min-w-0 flex-1 truncate text-[14px] text-text-secondary transition-colors group-hover:text-primary">
           {title}
         </span>
 
-        {/* 百分比 */}
         <span
           className={cn(
             "font-display shrink-0 text-[13px] font-semibold tabular-nums",
@@ -49,17 +41,14 @@ export function GoalRow({ index, title, progress, href = "#" }: GoalRowProps) {
           {progress}%
         </span>
 
-        {/* 进度条 —— 极细，width 动画 */}
-        <div className="hidden h-[3px] w-32 overflow-hidden rounded-full bg-surface-elevated sm:block">
+        <div className="hidden h-[3px] w-32 overflow-hidden rounded-full bg-surface-muted sm:block">
           <motion.div
             initial={{ width: 0 }}
             animate={{ width: `${progress}%` }}
             transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 + index * 0.04 }}
             className={cn(
               "h-full rounded-full",
-              progress >= 100
-                ? "bg-gradient-to-r from-success to-info"
-                : "bg-gradient-to-r from-primary to-primary-glow",
+              progress >= 100 ? "bg-success" : "bg-primary",
             )}
           />
         </div>

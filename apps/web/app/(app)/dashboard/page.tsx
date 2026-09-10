@@ -18,9 +18,6 @@ import { journalApi, TIME_SLOTS, MOODS, type Journal } from "@/lib/journal";
 
 type Envelope = { data: any };
 
-/**
- * CareerOS Dashboard —— 年轻人的人生操作系统首页。
- */
 export default function DashboardPage() {
   const onboarding = useQuery<Envelope>({
     queryKey: ["onboarding-status"],
@@ -33,7 +30,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-1">
-      {/* onboarding 引导 —— 保留功能 */}
       {onboarding.data?.data && !onboarding.data.data.completed && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-primary/20 bg-primary/5 px-4 py-3">
           <div>
@@ -48,29 +44,22 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 1. Hero —— 动态问候 + 人生格言 */}
       <Hero />
 
-      {/* 2. Streak —— 连续打卡 */}
       <StreakCard />
 
-      {/* 3. Active Goals —— 轻量 Row 列表 */}
       <ActiveGoals />
 
-      {/* 4. Weekly Plan Progress —— 本周计划进度 */}
       <WeeklyPlanProgress />
 
-      {/* 5. Life Map —— 人生轨迹预览 */}
       <LifeMapPreview />
 
-      {/* 6. Daily Journal —— 每日小记详情 (合并原 TODAY'S MOOD + 每日小记) */}
       <DailyJournal />
 
-      {/* 7. AI 提示 —— 保留功能 */}
       {advice.data?.data?.advice && (
-        <section className="mt-12 border-t border-border-subtle/60 pt-6">
+        <section className="mt-12 border-t border-border-subtle pt-6">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-3.5 w-3.5 text-ai" />
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
             <span className="font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
               AI WHISPER
             </span>
@@ -87,11 +76,6 @@ export default function DashboardPage() {
 const MOOD_EMOJIS = MOODS.map((m) => m.emoji);
 const MOOD_LABELS = MOODS.map((m) => m.label);
 
-/**
- * DailyJournal —— Dashboard 上的每日小记详情组件.
- * 合并了原 TODAY'S MOOD (时间段可视化) 和 每日小记详情.
- * 只展示每日小记的完整信息.
- */
 function DailyJournal() {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
@@ -109,11 +93,9 @@ function DailyJournal() {
     ? Math.round(entries.reduce((sum, e) => sum + e.moodIndex, 0) / recordedCount)
     : null;
 
-  // 找到每个主时段的最新记录
   const getSlotEntry = (slotKey: string) => {
     const slot = TIME_SLOTS.find((s) => s.key === slotKey);
     if (!slot) return null;
-    // 查找该主时段下所有子时段的记录，取最新的
     const slotEntries = entries.filter((e) =>
       slot.subSlots.some((ss) => ss.key === e.timeSlot)
     );
@@ -123,7 +105,6 @@ function DailyJournal() {
   const hasAnyContent = entries.some((e) => e.content && e.content.trim().length > 0);
   const latestEntry = entries.length > 0 ? entries[entries.length - 1] : null;
 
-  // 收集所有照片（去重）
   const allPhotos: string[] = [];
   const seenPhotoUrls = new Set<string>();
   for (const e of entries) {
@@ -139,7 +120,6 @@ function DailyJournal() {
 
   return (
     <section className="mt-10">
-      {/* 标题行 */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
@@ -159,9 +139,7 @@ function DailyJournal() {
         </Link>
       </div>
 
-      {/* 时间段可视化 + 心情详情 */}
-      <div className="mt-3 rounded-xl border border-white/5 bg-surface/30 p-4">
-        {/* 时间段心情条 */}
+      <div className="mt-3 rounded-[14px] border border-border-subtle bg-surface p-4">
         <div className="flex items-center gap-2">
           {TIME_SLOTS.map((slot) => {
             const entry = getSlotEntry(slot.key);
@@ -170,7 +148,7 @@ function DailyJournal() {
               <Link
                 key={slot.key}
                 href="/journal"
-                className="group flex flex-1 flex-col items-center gap-1 rounded-lg py-2 transition-all duration-200 hover:bg-surface-elevated/40"
+                className="group flex flex-1 flex-col items-center gap-1 rounded-[10px] py-2 transition-all duration-200 hover:bg-surface-elevated"
               >
                 <span className={`text-lg transition-opacity ${entry ? "opacity-100" : "opacity-25"}`}>
                   {slot.icon}
@@ -178,7 +156,7 @@ function DailyJournal() {
                 {entry ? (
                   <span className="text-lg">{MOOD_EMOJIS[entry.moodIndex]}</span>
                 ) : (
-                  <span className="h-4 w-4 rounded-full border border-white/10" />
+                  <span className="h-4 w-4 rounded-full border border-border" />
                 )}
                 <span className="text-[9px] font-medium uppercase tracking-wider text-text-tertiary">
                   {slot.label}
@@ -191,9 +169,8 @@ function DailyJournal() {
           })}
         </div>
 
-        {/* 心情统计 */}
         {avgMood !== null && (
-          <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
+          <div className="mt-3 flex items-center justify-between border-t border-border-subtle pt-3">
             <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
               <span>今日平均心情</span>
               <span className="text-base">{MOOD_EMOJIS[avgMood]}</span>
@@ -207,7 +184,6 @@ function DailyJournal() {
           </div>
         )}
 
-        {/* 未记录提示 */}
         {recordedCount === 0 && (
           <div className="mt-3 text-center">
             <p className="text-[12px] text-text-tertiary">点击时间段开始记录你的心情</p>
@@ -215,10 +191,9 @@ function DailyJournal() {
         )}
       </div>
 
-      {/* 照片墙 */}
       {allPhotos.length > 0 && (
         <Link href="/journal" className="block mt-4">
-          <div className="rounded-xl border border-white/5 bg-surface/30 p-4 transition-colors hover:bg-surface/50">
+          <div className="rounded-[14px] border border-border-subtle bg-surface p-4 transition-colors hover:bg-surface-elevated">
             <div className="mb-3 flex items-center justify-between">
               <span className="font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
                 今日照片 · {allPhotos.length}
@@ -229,7 +204,7 @@ function DailyJournal() {
               {allPhotos.slice(0, 5).map((url, i) => (
                 <div
                   key={url}
-                  className="relative aspect-square overflow-hidden rounded-lg bg-surface/40 ring-1 ring-white/5"
+                  className="relative aspect-square overflow-hidden rounded-[10px] bg-surface-elevated ring-1 ring-border-subtle"
                 >
                   <img
                     src={resolveMediaUrl(url)}
@@ -242,8 +217,8 @@ function DailyJournal() {
                 </div>
               ))}
               {allPhotos.length > 5 && (
-                <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-surface-elevated/60 ring-1 ring-white/5">
-                  <span className="text-[13px] font-semibold text-text-primary">
+                <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-[10px] bg-surface-elevated ring-1 ring-border-subtle">
+                  <span className="text-[13px] font-semibold text-text-secondary">
                     +{allPhotos.length - 5}
                   </span>
                 </div>
@@ -253,7 +228,6 @@ function DailyJournal() {
         </Link>
       )}
 
-      {/* 各时段小记卡片 */}
       {entries.length > 0 && (
         <div className="mt-4 space-y-2">
           {entries.map((entry) => {
@@ -266,11 +240,10 @@ function DailyJournal() {
               <Link
                 key={entry.id}
                 href="/journal"
-                className="block rounded-xl border border-white/5 bg-surface/20 p-3 transition-all duration-200 hover:bg-surface/40 hover:border-white/10"
+                className="block rounded-[12px] border border-border-subtle bg-surface p-3 transition-all duration-200 hover:bg-surface-elevated hover:border-border"
               >
                 <div className="flex items-start gap-3">
-                  {/* 左侧: 时段 + 心情 */}
-                  <div className="flex w-[84px] shrink-0 flex-col items-center gap-1 rounded-lg bg-surface/40 py-2">
+                  <div className="flex w-[84px] shrink-0 flex-col items-center gap-1 rounded-[10px] bg-surface-elevated py-2">
                     <span className="text-xs opacity-70">{mainSlot?.icon}</span>
                     <span className="text-lg">{moodMeta?.emoji}</span>
                     <span className="text-[9px] font-medium text-text-tertiary">
@@ -278,7 +251,6 @@ function DailyJournal() {
                     </span>
                   </div>
 
-                  {/* 右侧: 内容 + 照片 + 标签 */}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-medium text-text-secondary">
@@ -289,7 +261,7 @@ function DailyJournal() {
                           {entry.tags.slice(0, 3).map((tag) => (
                             <span
                               key={tag}
-                              className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] text-primary/90"
+                              className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] text-primary"
                             >
                               #{tag}
                             </span>
@@ -298,7 +270,7 @@ function DailyJournal() {
                       )}
                     </div>
                     {entry.content && (
-                      <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-text-primary/90">
+                      <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-text-secondary">
                         {entry.content}
                       </p>
                     )}
@@ -307,7 +279,7 @@ function DailyJournal() {
                         {entry.photos.slice(0, 4).map((p, i) => (
                           <div
                             key={`${entry.id}-${i}`}
-                            className="relative aspect-square overflow-hidden rounded-md bg-surface/40"
+                            className="relative aspect-square overflow-hidden rounded-[8px] bg-surface-elevated"
                           >
                             <img
                               src={resolveMediaUrl(p)}

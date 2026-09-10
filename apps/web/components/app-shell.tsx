@@ -40,15 +40,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Sidebar —— Floating Navigation，宽度自适应（compact/expanded） */}
       <SidebarNav />
 
-      {/* main 容器：padding-left 跟随 sidebar base 宽度（非 hover） */}
       <div
         className="flex min-w-0 flex-1 flex-col"
         style={{ paddingLeft: sw.contentPadding ? `${sw.contentPadding}px` : undefined }}
       >
-        <header className="glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border-subtle/60 px-4">
+        <header className="glass sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border-subtle/80 px-4">
           <button
             className="-ml-1.5 flex h-11 w-11 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text md:hidden"
             onClick={() => setMobileOpen((v) => !v)}
@@ -57,20 +55,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Menu className="h-5 w-5" />
           </button>
           <Link href="/dashboard" className="flex items-center gap-2 md:hidden">
-            <span className="font-display text-base font-bold text-primary-glow">✦</span>
+            <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-primary text-sm font-bold text-white">
+              C
+            </span>
             <span className="font-display text-sm font-bold tracking-tight text-text">CareerOS</span>
           </Link>
 
-          {/* 搜索框 —— placeholder: Search your life... */}
           <button
-            className="hidden h-9 flex-1 items-center gap-2 rounded-[10px] border border-border-subtle bg-surface/40 px-3 text-[13px] text-text-tertiary transition-colors hover:border-border hover:text-text-secondary md:flex md:max-w-sm"
+            className="hidden h-9 flex-1 items-center gap-2 rounded-[10px] border border-border-subtle bg-surface px-3 text-[13px] text-text-tertiary transition-colors hover:border-border hover:text-text-secondary md:flex md:max-w-sm"
             onClick={() => setCommandOpen(true)}
           >
             <Search className="h-4 w-4" />
             <span>{t("dashboard.searchLife")}</span>
           </button>
 
-          {/* 右侧 —— 极简 icon */}
           <div className="ml-auto flex items-center gap-1">
             <button
               className="flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text"
@@ -117,13 +115,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <CommandPalette open={commandOpen} onClose={() => setCommandOpen(false)} />
 
-      {/* Mobile Floating Navigation —— 不贴边，居中浮动胶囊 */}
       <FloatingNav isActive={isActive} />
     </div>
   );
 }
 
-// ── Mobile Floating Navigation ──────────────────────────────────────
 function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
   const { t } = useI18n();
   const nav = t("nav") as unknown as Record<string, string>;
@@ -136,7 +132,7 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
 
   return (
     <nav
-      className="fixed bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border-subtle/80 bg-surface/90 px-2 py-2 shadow-soft backdrop-blur-xl md:hidden"
+      className="fixed bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border-subtle bg-surface px-2 py-2 shadow-soft backdrop-blur-xl md:hidden"
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
       {items.map(({ href, icon: Icon, key }) => {
@@ -149,8 +145,8 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
             className={cn(
               "flex h-11 w-11 items-center justify-center rounded-full transition-all duration-200 ease-out",
               active
-                ? "bg-primary/15 text-primary-glow shadow-[0_0_16px_-4px_var(--primary-glow)]"
-                : "text-text-tertiary hover:text-text hover:bg-surface-elevated/60",
+                ? "bg-primary/10 text-primary shadow-[0_0_16px_-4px_var(--primary-glow)]"
+                : "text-text-tertiary hover:text-text hover:bg-surface-elevated",
             )}
           >
             <Icon className="h-[18px] w-[18px]" />
@@ -163,8 +159,8 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
         className={cn(
           "flex h-11 w-11 items-center justify-center rounded-full transition-all duration-200 ease-out",
           isActive("/settings")
-            ? "bg-primary/15 text-primary-glow"
-            : "text-text-tertiary hover:text-text hover:bg-surface-elevated/60",
+            ? "bg-primary/10 text-primary"
+            : "text-text-tertiary hover:text-text hover:bg-surface-elevated",
         )}
       >
         <MoreHorizontal className="h-[18px] w-[18px]" />
@@ -173,7 +169,6 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
   );
 }
 
-// ── Mobile Nav Sheet —— 从顶部展开的完整导航 ──────────────────────────
 function MobileNavSheet({
   onClose,
   isActive,
@@ -217,7 +212,7 @@ function MobileNavSheet({
   ];
 
   return (
-    <div className="glass fixed inset-x-0 top-16 z-20 max-h-[calc(100vh-4rem)] overflow-y-auto border-b border-border-subtle/60 p-4 md:hidden">
+    <div className="glass fixed inset-x-0 top-16 z-20 max-h-[calc(100vh-4rem)] overflow-y-auto border-b border-border-subtle p-4 md:hidden">
       <div className="mb-3 flex items-center justify-between">
         <span className="font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
           MENU
@@ -245,8 +240,8 @@ function MobileNavSheet({
                   className={cn(
                     "flex min-h-11 items-center rounded-[10px] px-3 py-2 text-[13px] leading-5 transition-colors",
                     isActive(item.href)
-                      ? "bg-primary/8 text-text"
-                      : "text-text-secondary hover:bg-surface-elevated/60 hover:text-text",
+                      ? "bg-primary/8 text-primary"
+                      : "text-text-secondary hover:bg-surface-elevated hover:text-text",
                   )}
                 >
                   {nav[item.key] || item.key}

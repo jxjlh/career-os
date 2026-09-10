@@ -8,11 +8,6 @@ import { useI18n } from "@/lib/i18n";
 import { getLifeMap } from "@/lib/life-map";
 import { LifeMapClient } from "@/components/life/map/life-map-client";
 
-/**
- * YOUR LIFE MAP —— 首页地图预览（380px 高）。
- * Marker 不只是地理标记，对应目标/记忆/事件。
- * 点击 marker 显示弹窗（Tokyo / FIRST SOLO TRIP / 2026.04）由 LifeMapClient 内部处理。
- */
 export function LifeMapPreview() {
   const { t } = useI18n();
   const map = useQuery({ queryKey: ["life-map"], queryFn: () => getLifeMap() });
@@ -30,14 +25,14 @@ export function LifeMapPreview() {
         </div>
         <Link
           href="/life/map"
-          className="-mr-2 flex min-h-10 items-center gap-1 rounded-lg px-2.5 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-elevated/60 hover:text-primary-glow"
+          className="-mr-2 flex min-h-10 items-center gap-1 rounded-lg px-2.5 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-elevated/60 hover:text-primary"
         >
           <span>{t("dashboard.viewFullMap")}</span>
           <ArrowUpRight className="h-4 w-4" />
         </Link>
       </div>
 
-      <div className="relative mt-3 h-[380px] overflow-hidden rounded-[16px] border border-border-subtle bg-surface/40">
+      <div className="relative mt-3 h-[380px] overflow-hidden rounded-[16px] border border-border-subtle bg-surface">
         <LifeMapClient markers={markers} showPolyline={false} useCluster={false} />
         {markers.length === 0 && (
           <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center">

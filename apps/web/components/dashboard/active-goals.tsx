@@ -9,7 +9,6 @@ import { useI18n } from "@/lib/i18n";
 import { getLifeGoals, createLifeGoal, type LifeGoal, type LifeGoalInput } from "@/lib/life";
 import { GoalRow } from "./goal-row";
 
-// 分类配置: icon + label + 动态字段
 const CATEGORIES = [
   {
     key: "career",
@@ -67,10 +66,6 @@ const CATEGORIES = [
   },
 ] as const;
 
-/**
- * YOUR LIFE RIGHT NOW / ACTIVE GOALS —— 轻量 Row 列表（非巨大 Card）。
- * 右上角 ＋Add goal 点击展开内联创建表单, 根据分类动态显示字段.
- */
 export function ActiveGoals() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -100,13 +95,11 @@ export function ActiveGoals() {
     setCreating(true);
     setError(null);
     try {
-      // 构建描述: 把动态字段拼成描述
       const fieldParts = currentCategory.fields
         .filter((f) => dynamicFields[f.name])
         .map((f) => `${f.label}: ${dynamicFields[f.name]}`);
       const description = fieldParts.length > 0 ? fieldParts.join("\n") : undefined;
 
-      // 根据分类映射到后端字段
       const payload: LifeGoalInput = {
         title: title.trim(),
         category,
@@ -114,7 +107,6 @@ export function ActiveGoals() {
         description,
       };
 
-      // 旅行类特殊处理
       if (category === "travel") {
         if (dynamicFields.location) payload.location = dynamicFields.location;
         if (dynamicFields.budget) payload.budget = dynamicFields.budget;
@@ -151,14 +143,13 @@ export function ActiveGoals() {
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="-mr-2 flex min-h-10 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-elevated/70 hover:text-primary-glow"
+          className="-mr-2 flex min-h-10 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-elevated/70 hover:text-primary"
         >
           {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           <span>{showForm ? "取消" : t("dashboard.addGoal")}</span>
         </button>
       </div>
 
-      {/* 内联创建表单 */}
       <AnimatePresence>
         {showForm && (
           <motion.div
@@ -167,8 +158,7 @@ export function ActiveGoals() {
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="mt-3 rounded-xl border border-white/10 bg-surface/40 p-4">
-              {/* 标题输入 */}
+            <div className="mt-3 rounded-[14px] border border-border-subtle bg-surface p-4">
               <input
                 type="text"
                 value={title}
@@ -176,10 +166,9 @@ export function ActiveGoals() {
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                 placeholder={`输入你的${currentCategory.label}目标...`}
                 autoFocus
-                className="w-full rounded-lg border border-white/5 bg-surface/50 px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary/60 focus:border-primary/40 focus:outline-none"
+                className="w-full rounded-[10px] border border-border bg-surface-elevated px-3 py-2 text-sm text-text placeholder:text-text-tertiary focus:border-primary/40 focus:outline-none"
               />
 
-              {/* 分类选择 */}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {CATEGORIES.map((cat) => (
                   <button
@@ -187,8 +176,8 @@ export function ActiveGoals() {
                     onClick={() => handleCategoryChange(cat.key)}
                     className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] transition-colors ${
                       category === cat.key
-                        ? "bg-primary/20 text-primary ring-1 ring-primary/30"
-                        : "bg-surface/40 text-text-tertiary hover:bg-surface-elevated/60"
+                        ? "bg-primary/10 text-primary ring-1 ring-primary/20"
+                        : "bg-surface-elevated text-text-tertiary hover:bg-surface-muted"
                     }`}
                   >
                     <span>{cat.icon}</span>
@@ -197,7 +186,6 @@ export function ActiveGoals() {
                 ))}
               </div>
 
-              {/* 动态字段 (根据分类显示) */}
               <div className="mt-3 space-y-2">
                 {currentCategory.fields.map((field) => (
                   <div key={field.name}>
@@ -211,7 +199,7 @@ export function ActiveGoals() {
                         setDynamicFields((prev) => ({ ...prev, [field.name]: e.target.value }))
                       }
                       placeholder={field.placeholder}
-                      className="w-full rounded-lg border border-white/5 bg-surface/50 px-3 py-2 text-[13px] text-text-primary placeholder:text-text-tertiary/60 focus:border-primary/40 focus:outline-none"
+                      className="w-full rounded-[10px] border border-border bg-surface-elevated px-3 py-2 text-[13px] text-text placeholder:text-text-tertiary focus:border-primary/40 focus:outline-none"
                     />
                   </div>
                 ))}
@@ -221,7 +209,7 @@ export function ActiveGoals() {
               <button
                 onClick={handleCreate}
                 disabled={!title.trim() || creating}
-                className="mt-3 w-full rounded-lg bg-primary py-2 text-[13px] font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-3 w-full rounded-[10px] bg-primary py-2 text-[13px] font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creating ? "创建中..." : `创建${currentCategory.label}目标`}
               </button>
