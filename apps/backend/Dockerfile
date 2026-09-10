@@ -19,8 +19,8 @@ COPY wheels ./wheels
 
 # Install runtime deps offline (VPS -> PyPI is slow/unreliable)
 RUN uv venv .venv \
-    && uv pip install --python .venv/bin/python --no-index --find-links /wheels -r requirements.txt \
-    && rm -rf /wheels requirements.txt
+    && uv pip install --python .venv/bin/python --no-index --find-links ./wheels -r requirements.txt \
+    && rm -rf ./wheels requirements.txt
 RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
 
 USER app
