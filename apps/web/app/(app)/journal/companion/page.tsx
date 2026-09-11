@@ -58,6 +58,7 @@ export default function CompanionPage() {
   const [showModePicker, setShowModePicker] = useState(false);
   const [isHighRisk, setIsHighRisk] = useState(false);
   const [listening, setListening] = useState(false);
+  const [authError, setAuthError] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recogRef = useRef<SpeechRecognitionLike | null>(null);
@@ -124,11 +125,15 @@ export default function CompanionPage() {
     },
     onError: (err) => {
       const msg = err instanceof Error ? err.message : String(err);
-      // 登录过期必须明确提示；其他失败给出按模式的兜底回应，保证"发出去一定有回应"
+      // 登录过期/未登录：标记并显示醒目的登录引导卡片
+      if (msg.includes("401") || msg.includes("403")) {
+        setAuthError(true);
+      }
+      // 其他失败给出按模式的兜底回应，保证"发出去一定有回应"
       const fallbackReply = msg.includes("401") || msg.includes("403")
-        ? "登录状态已过期，请退出后重新登录再试。"
+        ? "还没有登录哦。用任意邮箱注册或登录后，我才能真正回应你说的话～"
         : mode === "listen"
-          ? "嗯，我在听。你继续说，不用着急，我哪儿也不去。"
+          ? "嗯，我在认真听呢。你继续说，不用着急，我哪儿也不去。"
           : mode === "calm"
             ? "先不着急。深呼吸一下，看看你周围，现在能看到哪三样东西？"
             : mode === "reflect"
@@ -228,6 +233,29 @@ export default function CompanionPage() {
           })}
         </div>
       </div>
+
+      {/* 登录引导卡片（未登录/登录过期时醒目提示） */}
+      {authError && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mx-4 mt-3 flex items-center gap-3 rounded-[14px] border border-warning/30 bg-warning/10 p-3.5"
+        >
+          <span className="text-[20px]">🔒</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium text-text">AI 还没有接上话——先登录吧</p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-text-secondary">
+              用任意邮箱 + 密码（6 位以上）注册即可，10 秒搞定。登录后我才能真正回应你说的每句话。
+            </p>
+          </div>
+          <button
+            onClick={() => router.push("/login/?next=%2Fjournal%2Fcompanion%2F")}
+            className="shrink-0 rounded-full bg-primary px-4 py-2 text-[12px] font-medium text-white transition-colors hover:bg-primary-hover"
+          >
+            去登录
+          </button>
+        </motion.div>
+      )}
 
       {/* 消息列表 */}
       <div

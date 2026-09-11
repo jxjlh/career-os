@@ -296,6 +296,67 @@ body {
   overflow-x: hidden;
 }
 
+/* ============================================================================
+   Vent（捏泡泡解压）动画
+   ============================================================================ */
+@keyframes vent-float {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-3px) scale(1.03);
+  }
+}
+
+.vent-bubble {
+  animation: vent-float 3s ease-in-out infinite;
+}
+
+@keyframes vent-bubble-pop {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.25);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+}
+
+.vent-bubble-pop {
+  transition: transform 0.12s ease;
+}
+
+button:active .vent-bubble-pop {
+  transform: scale(0.7);
+}
+
+@keyframes vent-burst {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.15);
+    opacity: 0;
+  }
+}
+
+.vent-particle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 5;
+  animation: vent-burst 0.45s cubic-bezier(0.2, 0.6, 0.4, 1) forwards;
+}
+
+
 .leaflet-container {
   font-family: inherit;
 }
