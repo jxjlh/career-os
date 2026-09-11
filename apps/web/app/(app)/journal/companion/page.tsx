@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ChevronLeft, Send, AlertCircle } from "lucide-react";
+import { ChevronLeft, Send, AlertCircle, Mic, Square } from "lucide-react";
 import Link from "next/link";
 
 import {
@@ -26,6 +26,24 @@ const QUICK_MOODS = [
   { emoji: "😊", label: "想分享", text: "今天有件开心的事，" },
 ];
 
+// 浏览器语音识别（安卓/桌面 Chrome·Edge 支持；iOS Safari 不支持则隐藏按钮）
+type SpeechRecognitionLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((e: any) => void) | null;
+  onerror: ((e: any) => void) | null;
+  onend: (() => void) | null;
+};
+
+function getSpeechRecognition(): (new () => SpeechRecognitionLike) | null {
+  if (typeof window === "undefined") return null;
+  const w = window as any;
+  return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
+
 export default function CompanionPage() {
   const { t } = useI18n();
   const router = useRouter();
@@ -39,8 +57,40 @@ export default function CompanionPage() {
   const [input, setInput] = useState("");
   const [showModePicker, setShowModePicker] = useState(false);
   const [isHighRisk, setIsHighRisk] = useState(false);
+  const [listening, setListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const recogRef = useRef<SpeechRecognitionLike | null>(null);
+
+  const speechSupported = typeof window !== "undefined" && getSpeechRecognition() !== null;
+
+  const toggleVoice = () => {
+    if (listening) {
+      recogRef.current?.stop();
+      return;
+    }
+    const SR = getSpeechRecognition();
+    if (!SR) return;
+    const recog = new SR();
+    recogRef.current = recog;
+    recog.lang = "zh-CN";
+    recog.continuous = false;
+    recog.interimResults = true;
+    let finalText = "";
+    recog.onresult = (e: any) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i += 1) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      setInput((finalText + interim).trim());
+    };
+    recog.onerror = () => setListening(false);
+    recog.onend = () => setListening(false);
+    setListening(true);
+    recog.start();
+  };
 
   const queryClient = useQueryClient();
 
@@ -384,6 +434,19 @@ export default function CompanionPage() {
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
         <div className="mx-auto flex max-w-2xl items-center gap-2">
+          {speechSupported && (
+            <button
+              onClick={toggleVoice}
+              aria-label={listening ? "停止语音" : "语音输入"}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-all ${
+                listening
+                  ? "animate-pulse border-danger/40 bg-danger/10 text-danger"
+                  : "border-border-subtle bg-surface text-text-secondary hover:bg-surface-elevated hover:text-text"
+              }`}
+            >
+              {listening ? <Square className="h-4 w-4" /> : <Mic className="h-[18px] w-[18px]" />}
+            </button>
+          )}
           <input
             ref={inputRef}
             type="text"
@@ -391,7 +454,7 @@ export default function CompanionPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="今天有什么想说的？随便说，我听着……"
+            placeholder={listening ? "正在听你说话……" : "今天有什么想说的？随便说，我听着……"}
             disabled={chatMutation.isPending}
             className="flex-1 rounded-[14px] border border-border-subtle bg-surface px-4 py-3 text-[15px] text-text placeholder:text-text-tertiary/60 transition-all focus:border-primary/40 focus:outline-none disabled:opacity-50"
           />

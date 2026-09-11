@@ -250,29 +250,44 @@ class JournalCompanionService:
             message=message,
         )
 
-        result = await self._call_ai(
-            prompt,
-            {"message": message, "mode": mode},
-            user_id,
-            f"journal_companion_chat_{mode}",
-        )
+        # 聊天场景直接调用 provider 拿原始文本：
+        # 1) AI 返回合法 JSON → 取 reply 字段
+        # 2) AI 返回纯文本（json 模式偶发不遵守）→ 清洗后直接当回复，绝不浪费一次成功调用
+        # 3) 完全失败 → 按模式给一句有温度的兜底（不再用"嗯，我在听"式敷衍文案）
+        ai = get_ai_provider()
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": message},
+        ]
+        raw = None
+        try:
+            raw = await ai.complete(messages, response_format="json_object", temperature=0.8)
+        except Exception:
+            raw = None
 
-        if not result:
+        reply = None
+        is_high_risk = False
+        if raw:
+            parsed = extract_json(raw)
+            if isinstance(parsed, dict) and parsed.get("reply"):
+                reply = str(parsed["reply"]).strip()
+                is_high_risk = bool(parsed.get("is_high_risk"))
+            else:
+                cleaned = raw.strip().strip('"').strip()
+                if cleaned and not cleaned.lstrip().startswith("{"):
+                    reply = cleaned
+
+        if not reply:
             fallback_replies = {
-                "listen": "嗯，我在听。你继续说。",
-                "chat": "嗯，我听到了。然后呢？",
-                "calm": "先不着急。深呼吸。看看你周围，现在能看到哪三个东西？",
-                "reflect": "你说的这件事，你觉得最让你难受的是什么？",
+                "listen": "我一直在认真听呢。你刚才说的这些，换成是我也会不好受的。想多说一点吗？我陪着您。",
+                "chat": "你说的这个我懂。后来呢？慢慢说，我在这儿。",
+                "calm": "先不着急。我们一起慢慢呼吸：吸气 4 秒，屏住 2 秒，呼气 6 秒。现在感觉好一点点了吗？",
+                "reflect": "这件事听起来挺复杂的。你觉得最让你在意的，是结果本身，还是过程中的某种感受？",
             }
-            reply = fallback_replies.get(mode, "我在听。")
-            return {
-                "sessionId": session_id or str(uuid.uuid4()),
-                "reply": reply,
-                "isHighRisk": False,
-            }
+            reply = fallback_replies.get(mode, "我在呢，慢慢说，我陪着你。")
 
         new_session_id = session_id or str(uuid.uuid4())
-        new_conversation = f"{conversation}\n用户: {message}\nAI: {result.get('reply', '')}"
+        new_conversation = f"{conversation}\n用户: {message}\nAI: {reply}"
         if not session_id:
             self.repository.create(
                 user_id=user_id,
@@ -294,8 +309,8 @@ class JournalCompanionService:
 
         return {
             "sessionId": new_session_id,
-            "reply": result.get("reply", "我在听。"),
-            "isHighRisk": result.get("is_high_risk", False),
+            "reply": reply,
+            "isHighRisk": is_high_risk,
         }
 
     async def get_patterns(self, user_id: str) -> list[dict]:
