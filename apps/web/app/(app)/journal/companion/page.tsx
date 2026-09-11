@@ -16,6 +16,16 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { easeFast, easeStandard } from "@/lib/motion";
 
+// 情绪发泄口快捷标签：点击直接填入开场句并聚焦输入框
+const QUICK_MOODS = [
+  { emoji: "😤", label: "烦死了", text: "今天真的很烦，" },
+  { emoji: "😢", label: "好委屈", text: "我觉得好委屈，" },
+  { emoji: "😫", label: "太累了", text: "我最近真的好累，" },
+  { emoji: "😡", label: "很生气", text: "我现在特别生气，" },
+  { emoji: "🥺", label: "压力大", text: "我最近压力好大，" },
+  { emoji: "😊", label: "想分享", text: "今天有件开心的事，" },
+];
+
 export default function CompanionPage() {
   const { t } = useI18n();
   const router = useRouter();
@@ -30,6 +40,7 @@ export default function CompanionPage() {
   const [showModePicker, setShowModePicker] = useState(false);
   const [isHighRisk, setIsHighRisk] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const queryClient = useQueryClient();
 
@@ -166,20 +177,37 @@ export default function CompanionPage() {
         className="flex-1 overflow-y-auto px-4 py-6"
       >
         <div className="mx-auto max-w-2xl space-y-6">
-          {/* 初始提示 */}
+          {/* 初始提示 —— 情绪发泄口 */}
           {messages.length === 0 && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={easeStandard}
-              className="flex flex-col items-center text-center pt-8"
+              className="flex flex-col items-center text-center pt-6"
             >
-              <span className="ai-star text-[20px] mb-3">✦</span>
-              <p className="text-[15px] text-text-secondary leading-relaxed max-w-sm">
-                {mode === "listen" && "我在听。你继续说。不用组织语言。"}
-                {mode === "chat" && "想说什么都可以。不需要写得很好。"}
-                {mode === "calm" && "先不解决这件事。我们先让脑子休息一下。"}
-                {mode === "reflect" && "我们一起理一理。不着急，慢慢来。"}
+              <span className="ai-star text-[22px] mb-3">✦</span>
+              <p className="font-display text-[19px] font-semibold tracking-tight text-text">
+                今天怎么样？说出来
+              </p>
+              <p className="mt-2 text-[13px] leading-relaxed text-text-secondary max-w-sm">
+                这里是你的情绪发泄口。吐槽、委屈、烦恼、开心，随便说，不用组织语言，我都在听。
+              </p>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                {QUICK_MOODS.map(({ emoji, label, text }) => (
+                  <button
+                    key={label}
+                    onClick={() => {
+                      setInput(text);
+                      inputRef.current?.focus();
+                    }}
+                    className="rounded-full border border-border-subtle bg-surface px-3.5 py-2 text-[12px] text-text-secondary transition-colors hover:border-primary/40 hover:bg-surface-elevated hover:text-text"
+                  >
+                    {emoji} {label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-5 text-[11px] text-text-tertiary">
+                在下方输入，按发送开始倾诉 ↓
               </p>
             </motion.div>
           )}
@@ -241,7 +269,17 @@ export default function CompanionPage() {
             >
               {mode === "listen" && (
                 <>
-                  <button onClick={() => { setInput("我想继续说"); }} className="rounded-full bg-surface-elevated/60 px-3 py-1.5 text-[12px] text-text-secondary hover:bg-surface-elevated">
+                  <button
+                    onClick={() => {
+                      const text = "我想继续说";
+                      setMessages((prev) => [
+                        ...prev,
+                        { id: `msg-${Date.now()}`, role: "user", content: text, mode },
+                      ]);
+                      chatMutation.mutate({ message: text });
+                    }}
+                    className="rounded-full bg-surface-elevated/60 px-3 py-1.5 text-[12px] text-text-secondary hover:bg-surface-elevated"
+                  >
                     💬 {t("journal.chatWithYou")}
                   </button>
                   <button onClick={() => handleModeChange("calm")} className="rounded-full bg-surface-elevated/60 px-3 py-1.5 text-[12px] text-text-secondary hover:bg-surface-elevated">
@@ -330,20 +368,22 @@ export default function CompanionPage() {
       >
         <div className="mx-auto flex max-w-2xl items-center gap-2">
           <input
+            ref={inputRef}
             type="text"
+            autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="说点什么……"
+            placeholder="今天有什么想说的？随便说，我听着……"
             disabled={chatMutation.isPending}
-            className="flex-1 rounded-[12px] border border-border-subtle bg-surface px-4 py-2.5 text-[14px] text-text placeholder:text-text-tertiary/60 transition-all focus:border-primary/30 focus:outline-none disabled:opacity-50"
+            className="flex-1 rounded-[14px] border border-border-subtle bg-surface px-4 py-3 text-[15px] text-text placeholder:text-text-tertiary/60 transition-all focus:border-primary/40 focus:outline-none disabled:opacity-50"
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || chatMutation.isPending}
-            className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-primary text-white transition-all hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-all hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Send className="h-4 w-4" />
+            <Send className="h-[18px] w-[18px]" />
           </button>
         </div>
       </div>

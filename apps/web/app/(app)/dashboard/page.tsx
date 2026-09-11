@@ -472,32 +472,34 @@ function MottoBanner() {
     }
   };
 
-  // 上传背景图：用 canvas 压缩到最大 1600px 宽、JPEG 0.82，避免撑爆 localStorage
+  // 上传背景图：blob URL 直读 + canvas 压缩（max 1280px、JPEG 0.8），比 FileReader base64 快数倍
   const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new window.Image();
-      img.onload = () => {
-        const MAX_W = 1600;
-        const scale = Math.min(1, MAX_W / img.width);
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          persist({ text, image: reader.result as string, color, fontSize });
-          return;
-        }
+    const blobUrl = URL.createObjectURL(file);
+    const img = new window.Image();
+    img.onload = () => {
+      const MAX_W = 1280;
+      const scale = Math.min(1, MAX_W / img.width);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      let out: string;
+      if (ctx) {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const compressed = canvas.toDataURL("image/jpeg", 0.82);
-        persist({ text, image: compressed, color, fontSize });
-      };
-      img.onerror = () => persist({ text, image: reader.result as string, color, fontSize });
-      img.src = reader.result as string;
+        out = canvas.toDataURL("image/jpeg", 0.8);
+      } else {
+        out = blobUrl;
+      }
+      URL.revokeObjectURL(blobUrl);
+      persist({ text, image: out, color, fontSize });
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(blobUrl);
+      alert("图片读取失败，请换一张试试");
+    };
+    img.src = blobUrl;
   };
 
   return (
