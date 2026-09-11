@@ -74,14 +74,22 @@ export default function CompanionPage() {
     },
     onError: (err) => {
       const msg = err instanceof Error ? err.message : String(err);
+      // 登录过期必须明确提示；其他失败给出按模式的兜底回应，保证"发出去一定有回应"
+      const fallbackReply = msg.includes("401") || msg.includes("403")
+        ? "登录状态已过期，请退出后重新登录再试。"
+        : mode === "listen"
+          ? "嗯，我在听。你继续说，不用着急，我哪儿也不去。"
+          : mode === "calm"
+            ? "先不着急。深呼吸一下，看看你周围，现在能看到哪三样东西？"
+            : mode === "reflect"
+              ? "你说的这件事，你觉得最让你难受的是哪一点？我们一起慢慢理。"
+              : "嗯，我听到了。然后呢？";
       setMessages((prev) => [
         ...prev,
         {
-          id: `err-${Date.now()}`,
+          id: `msg-${Date.now()}`,
           role: "assistant",
-          content: msg.includes("401") || msg.includes("403")
-            ? "登录状态已过期，请退出后重新登录再试。"
-            : `消息发送失败：${msg}`,
+          content: fallbackReply,
           mode,
         },
       ]);
@@ -206,6 +214,15 @@ export default function CompanionPage() {
                   </button>
                 ))}
               </div>
+
+              {/* 解压小游戏入口 */}
+              <button
+                onClick={() => router.push("/journal/companion/vent")}
+                className="mt-5 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-5 py-2.5 text-[13px] font-medium text-primary transition-all hover:bg-primary/20"
+              >
+                🫧 捏泡泡解压 · 捏碎烦恼
+              </button>
+
               <p className="mt-5 text-[11px] text-text-tertiary">
                 在下方输入，按发送开始倾诉 ↓
               </p>
