@@ -70,7 +70,7 @@ export default function DashboardPage() {
       <MottoBanner />
 
       {/* ===== 2. 快捷入口栏（12 列，flex 横向排列）===== */}
-      <div className="rounded-2xl border border-border-subtle bg-white p-5 shadow-sm">
+      <div className="rounded-2xl border border-border-subtle bg-surface p-5 shadow-sm">
         <div className="flex items-center justify-around gap-2">
           {quickEntries.map((entry) => {
             const Icon = entry.icon;
@@ -97,7 +97,7 @@ export default function DashboardPage() {
       {/* ===== 4. 三栏卡片区（4 + 4 + 4）===== */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         {/* 左：本周计划 */}
-        <div className="col-span-12 rounded-2xl border border-border-subtle bg-white p-5 shadow-sm lg:col-span-6">
+        <div className="col-span-12 rounded-2xl border border-border-subtle bg-surface p-5 shadow-sm lg:col-span-6">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="font-display text-[15px] font-semibold text-text">本周计划</h3>
             <span className="text-[11px] text-text-tertiary">
@@ -139,7 +139,7 @@ export default function DashboardPage() {
         </div>
 
         {/* 右：AI 语录 */}
-        <div className="col-span-12 rounded-2xl border border-border-subtle bg-white p-5 shadow-sm lg:col-span-6">
+        <div className="col-span-12 rounded-2xl border border-border-subtle bg-surface p-5 shadow-sm lg:col-span-6">
           <div className="mb-4 flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -466,14 +466,37 @@ function MottoBanner() {
     setFontSize(next.fontSize);
     try {
       localStorage.setItem(MOTTO_STORAGE_KEY, JSON.stringify(next));
-    } catch {}
+    } catch {
+      // localStorage 写入失败（常见原因：图片过大超出 ~5MB 限额）
+      alert("保存失败：背景图过大，请换一张较小的图片（建议 2MB 以内）");
+    }
   };
 
+  // 上传背景图：用 canvas 压缩到最大 1600px 宽、JPEG 0.82，避免撑爆 localStorage
   const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => persist({ text, image: reader.result as string, color, fontSize });
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onload = () => {
+        const MAX_W = 1600;
+        const scale = Math.min(1, MAX_W / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          persist({ text, image: reader.result as string, color, fontSize });
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.82);
+        persist({ text, image: compressed, color, fontSize });
+      };
+      img.onerror = () => persist({ text, image: reader.result as string, color, fontSize });
+      img.src = reader.result as string;
+    };
     reader.readAsDataURL(file);
   };
 

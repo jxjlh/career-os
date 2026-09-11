@@ -145,8 +145,8 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
 
   return (
     <nav
-      className="fixed bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-border-subtle bg-surface/90 px-1.5 py-1.5 shadow-soft backdrop-blur-xl md:hidden"
-      style={{ paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))" }}
+      className="fixed bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border-subtle bg-surface/90 px-3 py-2 shadow-soft backdrop-blur-xl md:hidden"
+      style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
       {items.map(({ href, icon: Icon, key, isAI }) => {
         const active = isActive(href);
@@ -156,9 +156,9 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
             href={href}
             aria-label={nav[key] || key}
             className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 ease-out",
+              "flex h-12 w-12 items-center justify-center rounded-full transition-all duration-200 ease-out",
               active
-                ? "bg-primary/10 text-primary shadow-[0_0_16px_-4px_var(--primary-glow)]"
+                ? "bg-primary/15 text-primary shadow-[0_0_16px_-4px_var(--primary-glow)]"
                 : "text-text-tertiary hover:text-text hover:bg-surface-elevated",
             )}
           >
@@ -228,35 +228,38 @@ function MobileNavSheet({
   ];
 
   return (
-    <div className="glass fixed inset-x-0 z-20 max-h-[calc(100vh-4rem)] overflow-y-auto border-b border-border-subtle p-4 md:hidden" style={{ top: "calc(4rem + env(safe-area-inset-top))" }}>
-      <div className="mb-3 flex items-center justify-between">
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-background p-4 md:hidden"
+      style={{ paddingTop: "calc(1rem + env(safe-area-inset-top))" }}
+    >
+      <div className="mb-4 flex items-center justify-between">
         <span className="font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
           MENU
         </span>
         <button
           onClick={onClose}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-text-tertiary hover:bg-surface-elevated hover:text-text"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-text-tertiary hover:bg-surface-elevated hover:text-text"
           aria-label="Close"
         >
-          <X className="h-4 w-4" />
+          <X className="h-5 w-5" />
         </button>
       </div>
       <div className="space-y-5">
         {groups.map((g) => (
           <div key={g.label}>
-            <p className="px-2 pb-1.5 font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+            <p className="px-2 pb-2 font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
               {g.label}
             </p>
-            <div className="grid grid-cols-2 gap-1">
+            <div className="grid grid-cols-2 gap-1.5">
               {g.items.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={onClose}
                   className={cn(
-                    "flex min-h-11 items-center rounded-[10px] px-3 py-2 text-[13px] leading-5 transition-colors",
+                    "flex min-h-12 items-center rounded-[12px] px-4 py-2.5 text-[15px] leading-5 transition-colors",
                     isActive(item.href)
-                      ? "bg-primary/8 text-primary"
+                      ? "bg-primary/12 text-primary font-medium"
                       : "text-text-secondary hover:bg-surface-elevated hover:text-text",
                   )}
                 >
@@ -267,6 +270,7 @@ function MobileNavSheet({
           </div>
         ))}
       </div>
+      <div style={{ paddingBottom: "env(safe-area-inset-bottom)" }} />
     </div>
   );
 }

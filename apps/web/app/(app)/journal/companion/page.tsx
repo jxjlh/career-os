@@ -61,6 +61,20 @@ export default function CompanionPage() {
         setIsHighRisk(true);
       }
     },
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `err-${Date.now()}`,
+          role: "assistant",
+          content: msg.includes("401") || msg.includes("403")
+            ? "登录状态已过期，请退出后重新登录再试。"
+            : `消息发送失败：${msg}`,
+          mode,
+        },
+      ]);
+    },
   });
 
   const handleSend = () => {
@@ -114,57 +128,37 @@ export default function CompanionPage() {
             {modeInfo.emoji} {modeInfo.label} · {modeInfo.desc}
           </p>
         </div>
-        <button
-          onClick={() => setShowModePicker(!showModePicker)}
-          className="flex h-9 w-9 items-center justify-center rounded-[10px] text-text-tertiary transition-colors hover:bg-surface-elevated hover:text-text"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <circle cx="4" cy="8" r="1.5" />
-            <circle cx="8" cy="8" r="1.5" />
-            <circle cx="12" cy="8" r="1.5" />
-          </svg>
-        </button>
       </header>
 
-      {/* 模式选择器 */}
-      <AnimatePresence>
-        {showModePicker && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="overflow-hidden border-b border-border-subtle"
-          >
-            <div className="grid grid-cols-2 gap-2 p-4">
-              {(Object.keys(COMPANION_MODES) as CompanionMode[]).map((key) => {
-                const info = COMPANION_MODES[key];
-                const active = mode === key;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => handleModeChange(key)}
-                    className={`flex items-center gap-2 rounded-[12px] px-3 py-3 text-left transition-all duration-200
-                      ${active
-                        ? "bg-primary/8 text-text"
-                        : "bg-surface text-text-secondary hover:bg-surface-elevated"
-                      }
-                    `}
-                  >
-                    <span className="text-lg">{info.emoji}</span>
-                    <div>
-                      <p className={`text-[13px] font-medium ${active ? "text-text" : "text-text-secondary"}`}>
-                        {info.label}
-                      </p>
-                      <p className="text-[10px] text-text-tertiary">{info.desc}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* 模式选择器（常驻展开） */}
+      <div className="border-b border-border-subtle">
+        <div className="grid grid-cols-2 gap-2 p-4">
+          {(Object.keys(COMPANION_MODES) as CompanionMode[]).map((key) => {
+            const info = COMPANION_MODES[key];
+            const active = mode === key;
+            return (
+              <button
+                key={key}
+                onClick={() => handleModeChange(key)}
+                className={`flex items-center gap-2 rounded-[12px] px-3 py-3 text-left transition-all duration-200
+                  ${active
+                    ? "bg-primary/15 text-text ring-1 ring-primary/40"
+                    : "bg-surface text-text-secondary hover:bg-surface-elevated"
+                  }
+                `}
+              >
+                <span className="text-lg">{info.emoji}</span>
+                <div>
+                  <p className={`text-[13px] font-medium ${active ? "text-text" : "text-text-secondary"}`}>
+                    {info.label}
+                  </p>
+                  <p className="text-[10px] text-text-tertiary">{info.desc}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* 消息列表 */}
       <div
