@@ -85,7 +85,7 @@ def ensure_columns() -> None:
             "difficulty": "VARCHAR(16) DEFAULT 'medium'",
             "priority": "VARCHAR(16) DEFAULT 'medium'",
             "completed_at": timestamp_ddl,
-            "ai_generated": "BOOLEAN DEFAULT 0",
+            "ai_generated": "BOOLEAN DEFAULT FALSE",
             "resource_url": "TEXT",
             "estimated_outcome": "VARCHAR(200)",
             "goal_id": "VARCHAR(36)",
@@ -115,7 +115,7 @@ def ensure_columns() -> None:
         "conversation_members": {
             "role": "VARCHAR(16) DEFAULT 'member'",
             "last_read_at": timestamp_ddl,
-            "muted": "BOOLEAN DEFAULT 0",
+            "muted": "BOOLEAN DEFAULT FALSE",
             "joined_at": timestamp_ddl,
         },
         "chat_messages": {
