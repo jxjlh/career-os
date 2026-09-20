@@ -74,6 +74,66 @@ def _goal_lookup(db: Session, user_id: str) -> dict[str, str]:
     return {g.id: g.title for g in rows}
 
 
+def _week_goals_payload(db: Session, user_id: str, week_start: date) -> list[dict]:
+    """本周内到期的人生目标 + 其本周到期子任务, 供前端在周计划页顶部展示."""
+    week_end = week_start + timedelta(days=6)
+    from app.db.models import GoalTask
+
+    goals = (
+        db.query(LifeGoal)
+        .filter(
+            LifeGoal.user_id == user_id,
+            LifeGoal.status.in_(["pending", "in_progress"]),
+            LifeGoal.target_date.isnot(None),
+            LifeGoal.target_date >= week_start,
+            LifeGoal.target_date <= week_end,
+        )
+        .order_by(LifeGoal.target_date)
+        .all()
+    )
+    sub_tasks = (
+        db.query(GoalTask)
+        .filter(
+            GoalTask.user_id == user_id,
+            GoalTask.status != "done",
+            GoalTask.due_date.isnot(None),
+            GoalTask.due_date >= week_start,
+            GoalTask.due_date <= week_end,
+        )
+        .order_by(GoalTask.due_date)
+        .all()
+    )
+    goal_ids = {g.id for g in goals}
+    extra_ids = {t.life_goal_id for t in sub_tasks if t.life_goal_id and t.life_goal_id not in goal_ids}
+    if extra_ids:
+        goals = list(goals) + db.query(LifeGoal).filter(LifeGoal.id.in_(extra_ids)).all()
+
+    result = []
+    for g in goals:
+        result.append(
+            {
+                "id": g.id,
+                "title": g.title,
+                "category": g.category,
+                "status": g.status,
+                "targetDate": g.target_date.isoformat() if g.target_date else None,
+                "dayIndex": (g.target_date - week_start).days + 1 if g.target_date else None,
+                "daysLeft": (g.target_date - date.today()).days if g.target_date else None,
+                "subTasks": [
+                    {
+                        "id": t.id,
+                        "title": t.title,
+                        "dueDate": t.due_date.isoformat() if t.due_date else None,
+                        "status": t.status,
+                    }
+                    for t in sub_tasks
+                    if t.life_goal_id == g.id
+                ],
+            }
+        )
+    return result
+
+
 def _skill_lookup(db: Session, user_id: str) -> dict[str, str]:
     """返回该用户所有相关技能 (按 user_skills 关联), 供前端展示标签."""
     from app.db.models import UserSkill
@@ -155,6 +215,10 @@ def _plan_dict(db: Session, plan: WeeklyPlan) -> dict:
         "completedMinutes": plan.completed_minutes,
         "goalIds": plan.goal_ids or [],
         "skillIds": plan.skill_ids or [],
+        # 本周内到期的人生目标（硬性要进周计划的内容）
+        "weekGoals": _week_goals_payload(db, user_id, plan.week_start),
+        # 本次生成时的上下文快照（技能矩阵 / 英语进度）
+        "contextSnapshot": plan.context_snapshot or {},
         "tasks": [_task_dict(t, goals, skills, milestones) for t in tasks],
     }
 
@@ -213,6 +277,7 @@ async def generate_plan(
         .limit(2)
         .all()
     )
+    db.flush()  # autoflush=False, 先 flush 才能数到刚落库的任务
     task_count = db.query(PlanTask).filter(PlanTask.plan_id == plan.id).count()
     for index, book in enumerate(books, start=1):
         remaining_pages = max((book.total_pages or 0) - book.current_page, 0)
@@ -237,8 +302,10 @@ async def generate_plan(
         )
     if books:
         plan.rationale = f"{plan.rationale or '已按想学技能生成学习任务。'} 同时加入 {len(books)} 本在读/想读书籍的阅读任务。"
-    from app.domains.planner.service import _recompute_plan_stats
+    from app.domains.planner.service import _recompute_plan_stats, enforce_budget
 
+    # 阅读任务也算进本周预算, 超了就按优先级削减（确定性逻辑, 不调 AI）
+    enforce_budget(db, plan, payload.weeklyStudyMinutes)
     _recompute_plan_stats(db, plan)
     db.commit()
     return {"data": _plan_dict(db, plan)}

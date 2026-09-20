@@ -432,20 +432,23 @@ export default function CompanionPage() {
               <p className="mt-1 text-[14px] leading-relaxed text-text-secondary">
                 你可以现在联系一个你信任的人，或者当地的紧急 / 危机支持服务。
               </p>
-              <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
                 <a
-                  href="tel:120"
+                  href="tel:400-161-9995"
                   className="inline-flex items-center gap-1.5 rounded-[12px] bg-danger px-5 py-2.5 text-[13px] font-medium text-white transition-all hover:brightness-105"
                 >
-                  联系身边的人
+                  希望24热线 400-161-9995
                 </a>
                 <a
-                  href="https://www.who.int/teams/mental-health-and-substance-use/care/treatment"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href="tel:12356"
                   className="inline-flex items-center gap-1.5 rounded-[12px] border border-border-subtle bg-surface px-5 py-2.5 text-[13px] font-medium text-text transition-all hover:border-danger/30 hover:bg-surface-elevated"
                 >
-                  获取紧急帮助
+                  心理援助热线 12356
+                </a>
+                <a
+                  href="tel:120"
+                  className="inline-flex items-center gap-1.5 rounded-[12px] border border-border-subtle bg-surface px-5 py-2.5 text-[13px] font-medium text-text transition-all hover:border-danger/30 hover:bg-surface-elevated"
+                >
+                  紧急情况 120
                 </a>
               </div>
               <p className="mt-4 text-[11px] text-text-tertiary">

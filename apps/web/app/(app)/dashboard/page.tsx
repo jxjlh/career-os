@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { Sparkles, Briefcase, Rocket, Heart, Leaf, MoreHorizontal, CheckCircle2, Circle, Quote, Image, Pencil } from "lucide-react";
+import { Sparkles, Briefcase, Rocket, Heart, Leaf, MoreHorizontal, CheckCircle2, Circle, Quote, Image, Pencil, Loader2, CalendarDays } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
@@ -19,7 +19,11 @@ import { journalApi, TIME_SLOTS, MOODS, type Journal } from "@/lib/journal";
 
 type Envelope = { data: any };
 
+const PRIORITY_LABELS: Record<string, string> = { high: "高", medium: "中", low: "低" };
+const DAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
 export default function DashboardPage() {
+  const queryClient = useQueryClient();
   const onboarding = useQuery<Envelope>({
     queryKey: ["onboarding-status"],
     queryFn: () => apiFetch("/onboarding/status"),
@@ -28,6 +32,27 @@ export default function DashboardPage() {
     queryKey: ["dashboard-advice"],
     queryFn: () => apiFetch("/dashboard/ai-advice"),
   });
+
+  // ---- 本周计划：真实读取 planner 生成的周计划 ----
+  const plan = useQuery<Envelope>({
+    queryKey: ["planner-current"],
+    queryFn: () => apiFetch("/planner/current"),
+    staleTime: 30_000,
+  });
+  const toggleTask = useMutation({
+    mutationFn: (taskId: string) => apiFetch(`/planner/tasks/${taskId}/toggle`, { method: "PATCH" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["planner-current"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+  });
+
+  const planData = plan.data?.data;
+  const weeklyTasks = useMemo(() => {
+    const list: any[] = [...(planData?.tasks || [])];
+    list.sort((a, b) => (a.day ?? 0) - (b.day ?? 0) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    return list;
+  }, [planData]);
 
   // ---- 快捷入口配置 ----
   const quickEntries = [
@@ -38,16 +63,7 @@ export default function DashboardPage() {
     { icon: MoreHorizontal, label: "更多", color: "bg-amber-100 text-amber-600", href: "/explore" },
   ];
 
-  // ---- 本周计划任务（后续可接入 planner 数据）----
-  const weeklyTasks = [
-    { id: 1, title: "完成 React 进阶课程", done: true, priority: "高" },
-    { id: 2, title: "更新简历项目经历", done: true, priority: "高" },
-    { id: 3, title: "投递 5 家目标公司", done: false, priority: "中" },
-    { id: 4, title: "阅读《深度工作》第 3 章", done: false, priority: "低" },
-    { id: 5, title: "英语口语练习 3 次", done: false, priority: "中" },
-  ];
-
-  const completedTasks = weeklyTasks.filter((t) => t.done).length;
+  const completedTasks = weeklyTasks.filter((t: any) => t.status === "done").length;
 
   return (
     <div className="space-y-6 pb-8">
@@ -98,37 +114,71 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         {/* 左：本周计划 */}
         <div className="col-span-12 rounded-2xl border border-border-subtle bg-surface p-5 shadow-sm lg:col-span-6">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-1 flex items-center justify-between">
             <h3 className="font-display text-[15px] font-semibold text-text">本周计划</h3>
             <span className="text-[11px] text-text-tertiary">
               {completedTasks}/{weeklyTasks.length} 已完成
             </span>
           </div>
+          {planData?.weekStart && (
+            <p className="mb-3 flex items-center gap-1 text-[11px] text-text-tertiary">
+              <CalendarDays className="h-3 w-3" />
+              {planData.weekStart} 起{planData.aiGenerated ? " · AI 生成" : ""}
+            </p>
+          )}
+          {planData?.weeklyFocus && (
+            <p className="mb-3 rounded-xl bg-primary/5 px-3 py-2 text-[12px] leading-relaxed text-text-secondary">
+              {planData.weeklyFocus}
+            </p>
+          )}
 
-          <div className="space-y-2">
-            {weeklyTasks.map((task) => (
-              <div
-                key={task.id}
-                className="flex items-start gap-3 rounded-xl border border-transparent px-2 py-2 transition-colors hover:bg-surface-elevated"
+          {plan.isLoading ? (
+            <div className="flex items-center gap-2 py-6 text-[12px] text-text-tertiary">
+              <Loader2 className="h-4 w-4 animate-spin" /> 加载本周计划…
+            </div>
+          ) : weeklyTasks.length === 0 ? (
+            <div className="py-6 text-center">
+              <p className="text-[12px] text-text-tertiary">本周还没有计划</p>
+              <Link
+                href="/planner"
+                className="mt-2 inline-block text-[12px] text-primary hover:text-primary-glow"
               >
-                {task.done ? (
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                ) : (
-                  <Circle className="mt-0.5 h-4 w-4 shrink-0 text-text-tertiary/50" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p
-                    className={`truncate text-[13px] ${
-                      task.done ? "text-text-tertiary line-through" : "text-text"
-                    }`}
+                让 AI 生成本周计划 →
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {weeklyTasks.slice(0, 6).map((task: any) => {
+                const done = task.status === "done";
+                return (
+                  <button
+                    key={task.id}
+                    type="button"
+                    onClick={() => toggleTask.mutate(task.id)}
+                    disabled={toggleTask.isPending}
+                    className="flex w-full items-start gap-3 rounded-xl border border-transparent px-2 py-2 text-left transition-colors hover:bg-surface-elevated disabled:opacity-60"
                   >
-                    {task.title}
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-text-tertiary">优先级：{task.priority}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+                    {done ? (
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    ) : (
+                      <Circle className="mt-0.5 h-4 w-4 shrink-0 text-text-tertiary/50" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate text-[13px] ${done ? "text-text-tertiary line-through" : "text-text"}`}>
+                        {task.title}
+                      </p>
+                      <p className="mt-0.5 truncate text-[10px] text-text-tertiary">
+                        {DAY_LABELS[(task.day ?? 1) - 1] ?? ""}
+                        {task.estimatedMinutes ? ` · ${task.estimatedMinutes} 分钟` : ""}
+                        {task.priority ? ` · 优先级：${PRIORITY_LABELS[task.priority] ?? task.priority}` : ""}
+                        {task.goalName ? ` · #${task.goalName}` : ""}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <Link
             href="/planner"
@@ -157,8 +207,12 @@ export default function DashboardPage() {
 
           <div className="mt-4 flex items-center justify-between text-[11px] text-text-tertiary">
             <span>每日 AI 寄语</span>
-            <button className="flex items-center gap-1 text-primary transition-colors hover:text-primary-glow">
-              <Sparkles className="h-3 w-3" />
+            <button
+              onClick={() => advice.refetch()}
+              disabled={advice.isFetching}
+              className="flex items-center gap-1 text-primary transition-colors hover:text-primary-glow disabled:opacity-60"
+            >
+              {advice.isFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
               换一句
             </button>
           </div>

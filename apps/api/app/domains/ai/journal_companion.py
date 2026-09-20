@@ -21,9 +21,14 @@ from app.domains.ai.prompts.journal_companion import (
     JOURNAL_HEAR_PROMPT,
     JOURNAL_MIRROR_PROMPT,
     JOURNAL_WEATHER_PROMPT,
-    JOURNAL_CHAT_PROMPT,
     JOURNAL_PATTERNS_PROMPT,
     JOURNAL_WORD_INSIGHT_PROMPT,
+)
+from app.domains.ai.prompts.companion_modes import MODE_PROMPTS, MODE_LABELS
+from app.domains.ai.companion_games import (
+    GAME_FALLBACK_REPLY,
+    get_catalog,
+    run_game,
 )
 from app.domains.ai.repository import AIContentRepository
 from app.providers.ai.base import AIProvider, extract_json
@@ -32,6 +37,30 @@ from app.providers.ai.registry import get_ai_provider
 MOOD_LABELS = ["糟糕", "一般", "还行", "很好", "超赞"]
 MOOD_WEATHER = ["⛈️", "☁️", "⛅", "⛅", "☀️"]
 WEATHER_EMPTY = "☁️"
+
+# 危机干预: 确定性关键词检测，不依赖大模型判断。
+# 命中即视为高风险，直接走固定安全响应（同输入同输出，符合项目确定性铁律）。
+CRISIS_KEYWORDS = (
+    "跳楼", "跳桥", "跳下去", "自杀", "自残", "自伤", "割腕", "轻生",
+    "想死", "去死", "不想活", "活不下去", "活着的意义是什么都无所谓",
+    "结束生命", "结束一切", "了结自己", "安眠药", "遗书",
+    # 伤害他人
+    "杀了", "同归于尽", "想掐死", "弄死",
+)
+
+CRISIS_REPLY = (
+    "我听到你现在的痛苦非常深，我非常担心你的安全。我作为AI无法提供紧急危机干预，"
+    "请你立刻联系专业的心理危机热线（如希望24小时热线：400-161-9995），"
+    "或者告诉你身边信任的人。你的生命非常重要。"
+    "如果你现在有伤害自己的打算，请千万不要一个人待着——"
+    "也可以拨打全国心理援助热线 12356（24小时）。"
+)
+
+
+def detect_crisis(text: str) -> bool:
+    if not text:
+        return False
+    return any(kw in text for kw in CRISIS_KEYWORDS)
 
 
 class HearRequest(BaseModel):
@@ -43,6 +72,9 @@ class ChatRequest(BaseModel):
     mode: str = "chat"
     message: str
     journal_id: str | None = None
+    # 解压小游戏：game_id 指定玩哪个，step 表示当前步序/已进行轮数
+    game_id: str | None = None
+    step: int = 0
 
 
 class JournalCompanionService:
@@ -100,6 +132,15 @@ class JournalCompanionService:
             system=JOURNAL_COMPANION_SYSTEM,
             journals_text=journals_text or "（今天还没有写小记）",
         )
+        # 小记内容命中危机关键词时，不进大模型，直接安全响应。
+        if detect_crisis(journals_text):
+            return {
+                "reflection": CRISIS_REPLY,
+                "moodThemes": [],
+                "gentleObservation": "",
+                "suggestedMode": "calm",
+                "isHighRisk": True,
+            }
         result = await self._call_ai(prompt, {"journals": journals_data}, user_id, "journal_companion_hear")
         if not result:
             return {
@@ -214,6 +255,43 @@ class JournalCompanionService:
             "summary": summary,
         }
 
+    def _save_turn(
+        self,
+        user_id: str,
+        session_id: str | None,
+        mode: str,
+        journal_id: str | None,
+        conversation: str,
+        message: str,
+        reply: str,
+        extra_input: dict | None = None,
+    ) -> str:
+        """把一轮对话写入会话记录，返回 session_id（新建或沿用）。"""
+        new_session_id = session_id or str(uuid.uuid4())
+        new_conversation = f"{conversation}\n用户: {message}\nAI: {reply}"
+        input_json: dict = {"mode": mode, "journal_id": journal_id}
+        if extra_input:
+            input_json.update(extra_input)
+        if not session_id:
+            self.repository.create(
+                user_id=user_id,
+                content_type=f"journal_companion_session_{new_session_id}",
+                input_json=input_json,
+                output_json={"conversation": new_conversation},
+                provider="companion",
+                model="default",
+            )
+        else:
+            record = (
+                self.db.query(self.repository.model)
+                .filter(self.repository.model.id == session_id)
+                .first()
+            )
+            if record:
+                record.output_json = {"conversation": new_conversation}
+                self.db.commit()
+        return new_session_id
+
     async def chat(
         self,
         user_id: str,
@@ -221,6 +299,8 @@ class JournalCompanionService:
         mode: str,
         message: str,
         journal_id: str | None = None,
+        game_id: str | None = None,
+        step: int = 0,
     ) -> dict:
         conversation = ""
         if session_id:
@@ -235,15 +315,59 @@ class JournalCompanionService:
                 conv_data = records.output_json or {}
                 conversation = conv_data.get("conversation", "")
 
-        mode_descriptions = {
-            "listen": "只是听听",
-            "chat": "陪我聊聊",
-            "calm": "陪我缓一缓",
-            "reflect": "帮我想明白",
-        }
-        mode_label = mode_descriptions.get(mode, "陪我聊聊")
+        mode_label = MODE_LABELS.get(mode, "陪我聊聊")
 
-        prompt = JOURNAL_CHAT_PROMPT.format(
+        # 危机干预优先: 命中关键词直接走确定性安全响应，不进大模型。
+        # 游戏模式同样拦截 —— 用户可能把"不想活了"打进发泄沙袋。
+        if detect_crisis(message) or detect_crisis(conversation[-500:]):
+            new_session_id = self._save_turn(
+                user_id=user_id,
+                session_id=session_id,
+                mode=mode,
+                journal_id=journal_id,
+                conversation=conversation,
+                message=message,
+                reply=CRISIS_REPLY,
+                extra_input={"crisis": True},
+            )
+            return {
+                "sessionId": new_session_id,
+                "reply": CRISIS_REPLY,
+                "isHighRisk": True,
+            }
+
+        # ── 解压小游戏: 确定性引擎驱动，不进大模型（同输入同输出）──────
+        game_state: dict | None = None
+        if mode == "game":
+            if game_id:
+                result = run_game(game_id, message, step)
+                game_state = result
+                reply = result["reply"]
+            else:
+                reply = GAME_FALLBACK_REPLY
+            new_session_id = self._save_turn(
+                user_id=user_id,
+                session_id=session_id,
+                mode=mode,
+                journal_id=journal_id,
+                conversation=conversation,
+                message=message or "（开始玩游戏）",
+                reply=reply,
+                extra_input={"game_id": game_id, "step": step},
+            )
+            payload: dict = {
+                "sessionId": new_session_id,
+                "reply": reply,
+                "isHighRisk": False,
+            }
+            if game_state:
+                payload["gameId"] = game_state["gameId"]
+                payload["step"] = game_state["step"]
+                payload["done"] = game_state["done"]
+            return payload
+
+        prompt_template = MODE_PROMPTS.get(mode, MODE_PROMPTS["chat"])
+        prompt = prompt_template.format(
             system=JOURNAL_COMPANION_SYSTEM,
             mode=f"{mode} ({mode_label})",
             conversation=conversation or "（无历史）",
@@ -279,33 +403,23 @@ class JournalCompanionService:
 
         if not reply:
             fallback_replies = {
-                "listen": "我一直在认真听呢。你刚才说的这些，换成是我也会不好受的。想多说一点吗？我陪着您。",
+                "listen": "我一直在认真听呢。你刚才说的这些，换成是我也会不好受的。想多说一点吗？我陪着你。",
                 "chat": "你说的这个我懂。后来呢？慢慢说，我在这儿。",
                 "calm": "先不着急。我们一起慢慢呼吸：吸气 4 秒，屏住 2 秒，呼气 6 秒。现在感觉好一点点了吗？",
                 "reflect": "这件事听起来挺复杂的。你觉得最让你在意的，是结果本身，还是过程中的某种感受？",
+                "game": GAME_FALLBACK_REPLY,
             }
             reply = fallback_replies.get(mode, "我在呢，慢慢说，我陪着你。")
 
-        new_session_id = session_id or str(uuid.uuid4())
-        new_conversation = f"{conversation}\n用户: {message}\nAI: {reply}"
-        if not session_id:
-            self.repository.create(
-                user_id=user_id,
-                content_type=f"journal_companion_session_{new_session_id}",
-                input_json={"mode": mode, "journal_id": journal_id},
-                output_json={"conversation": new_conversation},
-                provider="companion",
-                model="default",
-            )
-        else:
-            record = (
-                self.db.query(self.repository.model)
-                .filter(self.repository.model.id == session_id)
-                .first()
-            )
-            if record:
-                record.output_json = {"conversation": new_conversation}
-                self.db.commit()
+        new_session_id = self._save_turn(
+            user_id=user_id,
+            session_id=session_id,
+            mode=mode,
+            journal_id=journal_id,
+            conversation=conversation,
+            message=message,
+            reply=reply,
+        )
 
         return {
             "sessionId": new_session_id,
@@ -535,8 +649,18 @@ async def companion_chat(
         payload.mode,
         payload.message,
         payload.journal_id,
+        payload.game_id,
+        payload.step,
     )
     return {"data": result}
+
+
+@router.get("/ai/journal-companion/games")
+async def companion_game_catalog(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+) -> dict:
+    """解压小游戏目录 —— 前端按目录渲染，脚本由服务端统一维护。"""
+    return {"data": get_catalog()}
 
 
 @router.get("/ai/journal-companion/patterns")

@@ -4,13 +4,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen,
+  CalendarClock,
   Check,
   ChevronDown,
+  Languages,
   Lightbulb,
   Loader2,
   Rocket,
   Search,
   Sparkles,
+  Target,
   Trash2,
   Wrench,
 } from "lucide-react";
@@ -30,6 +33,8 @@ const TASK_TYPE_ICON: Record<string, React.ReactNode> = {
   practice: <Wrench className="h-3.5 w-3.5" />,
   project: <Rocket className="h-3.5 w-3.5" />,
   review: <Search className="h-3.5 w-3.5" />,
+  english: <Languages className="h-3.5 w-3.5" />,
+  reading: <BookOpen className="h-3.5 w-3.5" />,
   rest: <Sparkles className="h-3.5 w-3.5" />,
 };
 
@@ -174,6 +179,12 @@ export default function PlannerPage() {
             rationale={planData?.rationale}
             tips={planData?.tips || []}
           />
+
+          {/* ── 本周到期的人生目标 ── */}
+          <WeekGoalsSection goals={planData?.weekGoals || []} />
+
+          {/* ── 英语学习进度 ── */}
+          <EnglishSection snapshot={planData?.contextSnapshot?.english} />
 
           {/* ── 7 列网格 ── */}
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
@@ -357,6 +368,155 @@ function ProgressHeader({
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// 子组件: 本周到期的人生目标
+// ──────────────────────────────────────────────────────────────────────
+
+function WeekGoalsSection({ goals }: { goals: any[] }) {
+  const { t } = useI18n();
+  const days = t("planner.days") as unknown as string[];
+
+  return (
+    <div className="rounded-[16px] border border-primary/25 bg-primary/5 p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <Target className="h-4 w-4 text-primary" />
+        <h3 className="font-display text-[12px] font-semibold uppercase tracking-[0.16em] text-text-secondary">
+          {t("planner.weekGoalsTitle")}
+        </h3>
+        <span className="rounded-full bg-primary/12 px-2 py-0.5 text-[11px] font-semibold text-primary">
+          {goals.length}
+        </span>
+      </div>
+
+      {goals.length === 0 ? (
+        <p className="text-[12px] text-text-tertiary">{t("planner.noWeekGoals")}</p>
+      ) : (
+        <div className="space-y-2">
+          {goals.map((g: any) => {
+            const daysLeft = g.daysLeft;
+            const dueLabel =
+              daysLeft === null || daysLeft === undefined
+                ? t("planner.weekGoalDue")
+                : daysLeft < 0
+                ? t("planner.weekGoalOverdue")
+                : daysLeft === 0
+                ? t("planner.weekGoalToday")
+                : `${daysLeft} ${t("planner.weekGoalDaysLeft")}`;
+            return (
+              <Link
+                key={g.id}
+                href={`/life/goals/detail?id=${g.id}`}
+                className="block rounded-[10px] border border-border-subtle bg-surface/60 p-3 transition-colors hover:bg-surface-elevated/60"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-text">{g.title}</p>
+                    {g.subTasks?.length > 0 && (
+                      <ul className="mt-1 space-y-0.5">
+                        {g.subTasks.slice(0, 3).map((s: any) => (
+                          <li key={s.id} className="text-[11px] text-text-tertiary">
+                            · {s.title}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${
+                        daysLeft !== null && daysLeft !== undefined && daysLeft < 0
+                          ? "bg-danger/12 text-danger"
+                          : "bg-warning/12 text-warning"
+                      }`}
+                    >
+                      <CalendarClock className="h-3 w-3" />
+                      {dueLabel}
+                    </span>
+                    {g.targetDate && (
+                      <p className="mt-1 text-[10px] text-text-tertiary">
+                        {g.targetDate}
+                        {g.dayIndex ? ` · ${days[g.dayIndex - 1] ?? ""}` : ""}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// 子组件: 英语学习进度
+// ──────────────────────────────────────────────────────────────────────
+
+function EnglishSection({ snapshot }: { snapshot: any }) {
+  const { t } = useI18n();
+
+  if (!snapshot || !snapshot.active) {
+    return (
+      <div className="rounded-[16px] border border-border-subtle bg-surface/40 p-5">
+        <div className="mb-2 flex items-center gap-2">
+          <Languages className="h-4 w-4 text-text-tertiary" />
+          <h3 className="font-display text-[12px] font-semibold uppercase tracking-[0.16em] text-text-secondary">
+            {t("planner.englishTitle")}
+          </h3>
+        </div>
+        <p className="text-[12px] text-text-tertiary">{t("planner.noEnglishData")}</p>
+      </div>
+    );
+  }
+
+  const books = (snapshot.books || []).slice(0, 2);
+  return (
+    <div className="rounded-[16px] border border-border-subtle bg-surface/40 p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Languages className="h-4 w-4 text-cyan-500" />
+          <h3 className="font-display text-[12px] font-semibold uppercase tracking-[0.16em] text-text-secondary">
+            {t("planner.englishTitle")}
+          </h3>
+        </div>
+        <div className="flex gap-4 text-right text-[11px] text-text-tertiary">
+          <span>
+            {t("planner.englishStreak")}{" "}
+            <b className="text-text">{snapshot.streakDays ?? 0}</b>
+          </span>
+          <span>
+            {t("planner.englishMinutes")}{" "}
+            <b className="text-text">{snapshot.minutesThisWeek ?? 0}</b>
+          </span>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {books.map((b: any) => (
+          <div key={b.bookId}>
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="font-medium text-text">
+                {b.name}
+                <span className="ml-1 text-[10px] text-text-tertiary">{b.level}</span>
+              </span>
+              <span className="text-text-tertiary">
+                {t("planner.englishLearned")} {b.learnedCount}/{b.totalWords} ·{" "}
+                {b.progressPercent}% · {t("planner.englishDue")} {b.dueCount}
+              </span>
+            </div>
+            <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-elevated">
+              <div
+                className="h-full rounded-full bg-cyan-500"
+                style={{ width: `${Math.min(100, b.progressPercent ?? 0)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // 子组件: 任务卡片
 // ──────────────────────────────────────────────────────────────────────
 
@@ -473,6 +633,15 @@ function TaskCard({
                 <span className="text-[10px] text-pink-400">
                   #{task.milestoneName}
                 </span>
+              )}
+              {task.taskType === "english" && (
+                <a
+                  href="/english"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[10px] text-cyan-500 hover:underline"
+                >
+                  #英语
+                </a>
               )}
             </div>
           )}
