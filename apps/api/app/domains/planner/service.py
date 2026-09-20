@@ -103,9 +103,12 @@ class PlannerContextBuilder:
         english_text = self._english_text(english)
 
         today_weekday = date.today().weekday() + 1  # 1=周一 ... 7=周日
+        # 单任务最少 25 分钟 → 任务数上限, 避免 AI 排太多导致总时长必然超标
+        max_tasks = max(7, weekly_minutes // 25)
         prompt = WEEKLY_PLAN_PROMPT.format(
             profile=profile_text,
             weekly_minutes=weekly_minutes,
+            max_tasks=max_tasks,
             today_weekday=today_weekday,
             skill_matrix=skill_matrix_text,
             english=english_text,
@@ -612,7 +615,7 @@ class PlannerService:
         plan.skill_ids = sorted(used_skill_ids)
 
         # 时长预算兜底: AI 常常超排, 这里确定性压回预算内（不调 AI, 保证同输入同输出）
-        trimmed = self._enforce_budget(plan, weekly_minutes)
+        trimmed = enforce_budget(self.db, plan, weekly_minutes)
         snapshot["budgetTrimmedMinutes"] = trimmed
         plan.context_snapshot = snapshot
 
@@ -664,8 +667,9 @@ class PlannerService:
             if is_english:
                 has_english_task = True
 
+            # 单任务 25-120 分钟（与 prompt 规则一致, 保证预算可控）
             estimated = int(task.get("estimatedMinutes") or 60)
-            estimated = max(10, min(estimated, 600))
+            estimated = max(25, min(estimated, 120))
             task_type = self._norm_enum(task.get("taskType"), TASK_TYPES, "learning")
             if is_english and task_type not in {"english", "review"}:
                 task_type = "english"

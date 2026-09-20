@@ -1,20 +1,21 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ChevronLeft, Send, AlertCircle, Mic, Square } from "lucide-react";
-import Link from "next/link";
+import { ChevronLeft, Send, Mic, Square } from "lucide-react";
 
 import {
   journalCompanionApi,
   COMPANION_MODES,
   type CompanionMode,
   type CompanionMessage,
+  type CompanionGame,
 } from "@/lib/ai/journal-companion";
+import { GamePicker, GameStage } from "@/components/journal/game-panel";
 import { useI18n } from "@/lib/i18n";
-import { easeFast, easeStandard } from "@/lib/motion";
+import { easeStandard } from "@/lib/motion";
 
 // 情绪发泄口快捷标签：点击直接填入开场句并聚焦输入框
 const QUICK_MOODS = [
@@ -59,6 +60,12 @@ export default function CompanionPage() {
   const [isHighRisk, setIsHighRisk] = useState(false);
   const [listening, setListening] = useState(false);
   const [authError, setAuthError] = useState(false);
+  // ── 解压小游戏状态 ──
+  // activeGame: 当前在玩的游戏；gameStep: guided 步骤下标；gameRound: 已完成轮数；gameDone: 本轮结束
+  const [activeGame, setActiveGame] = useState<CompanionGame | null>(null);
+  const [gameStep, setGameStep] = useState(0);
+  const [gameRound, setGameRound] = useState(0);
+  const [gameDone, setGameDone] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recogRef = useRef<SpeechRecognitionLike | null>(null);
@@ -93,7 +100,13 @@ export default function CompanionPage() {
     recog.start();
   };
 
-  const queryClient = useQueryClient();
+  const { data: gamesRes, isLoading: gamesLoading } = useQuery({
+    queryKey: ["companion-games"],
+    queryFn: () => journalCompanionApi.getGames(),
+    enabled: mode === "game",
+    staleTime: 5 * 60 * 1000,
+  });
+  const games: CompanionGame[] = gamesRes?.data ?? [];
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -101,9 +114,25 @@ export default function CompanionPage() {
     }
   }, [messages]);
 
+  /** 往对话里追加一条 AI 消息（游戏引导语走本地，零延迟） */
+  const pushAssistant = (content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { id: `msg-${Date.now()}-${prev.length}`, role: "assistant", content, mode: "game" },
+    ]);
+  };
+
   const chatMutation = useMutation({
-    mutationFn: ({ message }: { message: string }) =>
-      journalCompanionApi.chat(sessionId, mode, message, date || undefined),
+    mutationFn: ({
+      message,
+      gameId,
+      step,
+    }: {
+      message: string;
+      gameId?: string;
+      step?: number;
+    }) =>
+      journalCompanionApi.chat(sessionId, mode, message, date || undefined, gameId, step),
     onSuccess: (res) => {
       const data = res.data;
       if (data.sessionId && !sessionId) {
@@ -118,6 +147,10 @@ export default function CompanionPage() {
           mode,
         },
       ]);
+      // 输入式游戏：轮数以服务端返回为准
+      if (data.gameId && typeof data.step === "number") {
+        setGameRound(data.step);
+      }
       if (data.isHighRisk) {
         setShowModePicker(false);
         setIsHighRisk(true);
@@ -138,7 +171,9 @@ export default function CompanionPage() {
             ? "先不着急。深呼吸一下，看看你周围，现在能看到哪三样东西？"
             : mode === "reflect"
               ? "你说的这件事，你觉得最让你难受的是哪一点？我们一起慢慢理。"
-              : "嗯，我听到了。然后呢？";
+              : mode === "game"
+                ? "我在呢。这一下我接住了，继续也行，换个游戏也行 🎮"
+                : "你说的这个我懂。后来呢？慢慢说，我在这儿。";
       setMessages((prev) => [
         ...prev,
         {
@@ -164,7 +199,12 @@ export default function CompanionPage() {
       },
     ]);
     setInput("");
-    chatMutation.mutate({ message: trimmed });
+    // 输入式小游戏带上 gameId / 轮次，走后端确定性引擎
+    if (mode === "game" && activeGame && activeGame.kind === "text") {
+      chatMutation.mutate({ message: trimmed, gameId: activeGame.id, step: gameRound });
+    } else {
+      chatMutation.mutate({ message: trimmed });
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -177,9 +217,60 @@ export default function CompanionPage() {
   const handleModeChange = (newMode: CompanionMode) => {
     setMode(newMode);
     setShowModePicker(false);
+    if (newMode !== "game") {
+      setActiveGame(null);
+      setGameStep(0);
+      setGameRound(0);
+      setGameDone(false);
+    }
+  };
+
+  // ── 解压小游戏 ──────────────────────────────────────────────────────
+  const pickGame = (game: CompanionGame) => {
+    setActiveGame(game);
+    setGameStep(0);
+    setGameRound(0);
+    setGameDone(false);
+    if (game.kind === "guided" && game.steps?.length) {
+      pushAssistant(`${game.emoji} ${game.title}\n\n${game.steps[0].prompt}`);
+    } else {
+      pushAssistant(`${game.emoji} ${game.title}\n\n${game.desc}\n${game.hint ?? ""}`);
+    }
+  };
+
+  /** 引导式游戏：本地即时推进（零延迟），整轮结束才落库 */
+  const advanceGuided = () => {
+    const game = activeGame;
+    if (!game?.steps) return;
+    const steps = game.steps;
+    const current = gameStep;
+    pushAssistant(steps[current].done);
+    const next = current + 1;
+    if (next < steps.length) {
+      setGameStep(next);
+      pushAssistant(steps[next].prompt);
+    } else {
+      setGameStep(next);
+      setGameDone(true);
+      pushAssistant(game.closing ?? "你做得非常好！");
+      // 只记录一次「完整玩完一轮」，不打扰体验
+      chatMutation.mutate({ message: "（完成一轮）", gameId: game.id, step: steps.length });
+    }
+  };
+
+  const restartGame = () => {
+    if (activeGame) pickGame(activeGame);
+  };
+
+  const exitGame = () => {
+    setActiveGame(null);
+    setGameStep(0);
+    setGameRound(0);
+    setGameDone(false);
   };
 
   const modeInfo = COMPANION_MODES[mode];
+  const showGamePicker = mode === "game" && !activeGame;
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col bg-background">
@@ -207,14 +298,16 @@ export default function CompanionPage() {
       {/* 模式选择器（常驻展开） */}
       <div className="border-b border-border-subtle">
         <div className="grid grid-cols-2 gap-2 p-4">
-          {(Object.keys(COMPANION_MODES) as CompanionMode[]).map((key) => {
+          {(Object.keys(COMPANION_MODES) as CompanionMode[]).map((key, idx, arr) => {
             const info = COMPANION_MODES[key];
             const active = mode === key;
+            // 5 个模式：奇数收尾时最后一个横跨两列，避免落单
+            const span = arr.length % 2 === 1 && idx === arr.length - 1 ? "col-span-2" : "";
             return (
               <button
                 key={key}
                 onClick={() => handleModeChange(key)}
-                className={`flex items-center gap-2 rounded-[12px] px-3 py-3 text-left transition-all duration-200
+                className={`flex items-center gap-2 rounded-[12px] px-3 py-3 text-left transition-all duration-200 ${span}
                   ${active
                     ? "bg-primary/15 text-text ring-1 ring-primary/40"
                     : "bg-surface text-text-secondary hover:bg-surface-elevated"
@@ -273,25 +366,38 @@ export default function CompanionPage() {
             >
               <span className="ai-star text-[22px] mb-3">✦</span>
               <p className="font-display text-[19px] font-semibold tracking-tight text-text">
-                今天怎么样？说出来
+                {mode === "game" ? "换个频道，玩一会儿" : "今天怎么样？说出来"}
               </p>
               <p className="mt-2 text-[13px] leading-relaxed text-text-secondary max-w-sm">
-                这里是你的情绪发泄口。吐槽、委屈、烦恼、开心，随便说，不用组织语言，我都在听。
+                {mode === "game"
+                  ? "不用讲道理，也不用把话说清楚。挑一个，跟着玩就行。"
+                  : "这里是你的情绪发泄口。吐槽、委屈、烦恼、开心，随便说，不用组织语言，我都在听。"}
               </p>
-              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-                {QUICK_MOODS.map(({ emoji, label, text }) => (
-                  <button
-                    key={label}
-                    onClick={() => {
-                      setInput(text);
-                      inputRef.current?.focus();
-                    }}
-                    className="rounded-full border border-border-subtle bg-surface px-3.5 py-2 text-[12px] text-text-secondary transition-colors hover:border-primary/40 hover:bg-surface-elevated hover:text-text"
-                  >
-                    {emoji} {label}
-                  </button>
-                ))}
-              </div>
+
+              {mode === "game" ? (
+                <div className="mt-6 w-full max-w-md">
+                  <GamePicker
+                    games={games}
+                    loading={gamesLoading}
+                    onPick={pickGame}
+                  />
+                </div>
+              ) : (
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                  {QUICK_MOODS.map(({ emoji, label, text }) => (
+                    <button
+                      key={label}
+                      onClick={() => {
+                        setInput(text);
+                        inputRef.current?.focus();
+                      }}
+                      className="rounded-full border border-border-subtle bg-surface px-3.5 py-2 text-[12px] text-text-secondary transition-colors hover:border-primary/40 hover:bg-surface-elevated hover:text-text"
+                    >
+                      {emoji} {label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* 解压小游戏入口 */}
               <button
@@ -302,7 +408,7 @@ export default function CompanionPage() {
               </button>
 
               <p className="mt-5 text-[11px] text-text-tertiary">
-                在下方输入，按发送开始倾诉 ↓
+                {mode === "game" ? "选好之后，跟着上面的引导走就行 ↑" : "在下方输入，按发送开始倾诉 ↓"}
               </p>
             </motion.div>
           )}
@@ -321,7 +427,7 @@ export default function CompanionPage() {
                   <span className="ai-star text-[10px] mb-1 inline-block">✦</span>
                 )}
                 <div
-                  className={`inline-block rounded-[14px] px-4 py-2.5 text-[14px] leading-relaxed
+                  className={`inline-block whitespace-pre-line rounded-[14px] px-4 py-2.5 text-left text-[14px] leading-relaxed
                     ${msg.role === "user"
                       ? "bg-primary text-white"
                       : "bg-surface-elevated text-text"
@@ -412,6 +518,18 @@ export default function CompanionPage() {
                   </button>
                 </>
               )}
+              {mode === "game" && (
+                <>
+                  {activeGame && (
+                    <button onClick={exitGame} className="rounded-full bg-surface-elevated/60 px-3 py-1.5 text-[12px] text-text-secondary hover:bg-surface-elevated">
+                      🎮 换个游戏
+                    </button>
+                  )}
+                  <button onClick={() => handleModeChange("chat")} className="rounded-full bg-surface-elevated/60 px-3 py-1.5 text-[12px] text-text-secondary hover:bg-surface-elevated">
+                    💬 陪我聊聊
+                  </button>
+                </>
+              )}
             </motion.div>
           )}
 
@@ -432,6 +550,7 @@ export default function CompanionPage() {
               <p className="mt-1 text-[14px] leading-relaxed text-text-secondary">
                 你可以现在联系一个你信任的人，或者当地的紧急 / 危机支持服务。
               </p>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 <a
                   href="tel:400-161-9995"
                   className="inline-flex items-center gap-1.5 rounded-[12px] bg-danger px-5 py-2.5 text-[13px] font-medium text-white transition-all hover:brightness-105"
@@ -464,6 +583,30 @@ export default function CompanionPage() {
         className="border-t border-border-subtle px-4 py-3"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
+        {/* 解压小游戏操作台 */}
+        {mode === "game" && activeGame && (
+          <div className="mb-3">
+            <GameStage
+              game={activeGame}
+              step={gameStep}
+              done={gameDone}
+              round={gameRound}
+              onNext={advanceGuided}
+              onRestart={restartGame}
+              onExit={exitGame}
+            />
+          </div>
+        )}
+
+        {showGamePicker ? (
+          <p className="mx-auto max-w-2xl text-center text-[11px] leading-relaxed text-text-tertiary">
+            先在上面挑一个游戏，选好就能开玩了 🎮
+          </p>
+        ) : mode === "game" && activeGame?.kind === "guided" ? (
+          <p className="mx-auto max-w-2xl text-center text-[11px] leading-relaxed text-text-tertiary">
+            跟着上面那一步做就好，不用打字
+          </p>
+        ) : (
         <div className="mx-auto flex max-w-2xl items-center gap-2">
           {speechSupported && (
             <button
@@ -485,7 +628,13 @@ export default function CompanionPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={listening ? "正在听你说话……" : "今天有什么想说的？随便说，我听着……"}
+            placeholder={
+              listening
+                ? "正在听你说话……"
+                : mode === "game" && activeGame?.placeholder
+                  ? activeGame.placeholder
+                  : "今天有什么想说的？随便说，我听着……"
+            }
             disabled={chatMutation.isPending}
             className="flex-1 rounded-[14px] border border-border-subtle bg-surface px-4 py-3 text-[15px] text-text placeholder:text-text-tertiary/60 transition-all focus:border-primary/40 focus:outline-none disabled:opacity-50"
           />
@@ -497,6 +646,7 @@ export default function CompanionPage() {
             <Send className="h-[18px] w-[18px]" />
           </button>
         </div>
+        )}
       </div>
     </div>
   );

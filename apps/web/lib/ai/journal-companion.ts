@@ -2,7 +2,7 @@ import { apiFetch } from "@/lib/api";
 import type { Journal } from "@/lib/journal";
 
 // ── AI 陪伴模式 ────────────────────────────────────────────────────
-export type CompanionMode = "listen" | "chat" | "calm" | "reflect";
+export type CompanionMode = "listen" | "chat" | "calm" | "reflect" | "game";
 
 export const COMPANION_MODES: Record<
   CompanionMode,
@@ -12,7 +12,34 @@ export const COMPANION_MODES: Record<
   chat: { label: "陪我聊聊", desc: "正常对话", emoji: "💬" },
   calm: { label: "陪我缓一缓", desc: "情绪调节", emoji: "☁️" },
   reflect: { label: "帮我想明白", desc: "自我梳理", emoji: "🌱" },
+  game: { label: "解压小游戏", desc: "转移注意力", emoji: "🎮" },
 };
+
+// ── 解压小游戏 ──────────────────────────────────────────────────────
+/** guided: 步骤脚本固定，前端本地即时推进；text: 用户打字，服务端确定性回应 */
+export type CompanionGameKind = "guided" | "text";
+
+export interface CompanionGameStep {
+  /** 这一步的引导语 */
+  prompt: string;
+  /** 按钮文案 */
+  cta: string;
+  /** 完成后的一句话 */
+  done: string;
+}
+
+export interface CompanionGame {
+  id: string;
+  title: string;
+  emoji: string;
+  kind: CompanionGameKind;
+  desc: string;
+  hint?: string;
+  placeholder?: string;
+  cta?: string;
+  steps?: CompanionGameStep[];
+  closing?: string;
+}
 
 // ── AI 听见结果 ────────────────────────────────────────────────────
 export interface JournalCompanionResult {
@@ -119,20 +146,38 @@ export const journalCompanionApi = {
   getWordInsight: (word: string) =>
     apiFetch<{ data: WordInsight }>(`${API}/word?word=${encodeURIComponent(word)}`),
 
-  /** AI 陪伴对话：发送消息 */
-  chat: (sessionId: string | null, mode: CompanionMode, message: string, journalId?: string) =>
-    apiFetch<{ data: { sessionId: string; reply: string; isHighRisk?: boolean } }>(
-      `${API}/chat`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          session_id: sessionId,
-          mode,
-          message,
-          journal_id: journalId,
-        }),
-      }
-    ),
+  /** AI 陪伴对话：发送消息（game 模式可带 gameId / step 走确定性引擎） */
+  chat: (
+    sessionId: string | null,
+    mode: CompanionMode,
+    message: string,
+    journalId?: string,
+    gameId?: string,
+    step?: number,
+  ) =>
+    apiFetch<{
+      data: {
+        sessionId: string;
+        reply: string;
+        isHighRisk?: boolean;
+        gameId?: string;
+        step?: number;
+        done?: boolean;
+      };
+    }>(`${API}/chat`, {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: sessionId,
+        mode,
+        message,
+        journal_id: journalId,
+        game_id: gameId,
+        step,
+      }),
+    }),
+
+  /** 解压小游戏目录（脚本由服务端统一维护） */
+  getGames: () => apiFetch<{ data: CompanionGame[] }>(`${API}/games`),
 
   /** 获取会话历史 */
   getSessions: () =>
