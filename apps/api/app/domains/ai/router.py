@@ -62,6 +62,16 @@ async def generate_travel_plan(
     return await TravelPlanService(db).generate(current_user.id, payload)
 
 
+@router.get("/ai/travel-plan/latest", response_model=TravelPlanResponse | None)
+def latest_travel_plan(
+    goal_id: Annotated[str, Query(min_length=1, max_length=36)],
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> TravelPlanResponse | None:
+    """目标详情页用：取该目标已保存的最新旅行攻略，没有则返回 null。"""
+    return TravelPlanService(db).latest(current_user.id, goal_id)
+
+
 @router.post("/ai/travel-assistant", response_model=TravelAssistantResponse)
 async def travel_assistant(
     payload: TravelAssistantRequest,
@@ -122,7 +132,18 @@ async def generate_growth_plan(
     current_user: Annotated[Profile, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> GrowthPlanResponse:
+    """按目标分类生成规划：只传 goalId 即可（服务端从人生目标读全部已知信息）。"""
     return await GrowthPlanService(db).generate(current_user.id, payload)
+
+
+@router.get("/ai/growth-plan/latest", response_model=GrowthPlanResponse | None)
+def latest_growth_plan(
+    goal_id: Annotated[str, Query(min_length=1, max_length=36)],
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> GrowthPlanResponse | None:
+    """目标详情页用：取该目标已保存的最新规划，没有则返回 null。"""
+    return GrowthPlanService(db).latest(current_user.id, goal_id)
 
 
 @router.post("/ai/growth-plan/{ai_content_id}/generate-tasks", response_model=GenerateTasksResponse)

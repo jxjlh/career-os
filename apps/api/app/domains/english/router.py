@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -17,7 +17,11 @@ from app.domains.english.schemas import (
     SessionRequest,
     WordStarRequest,
 )
-from app.domains.english.service import EnglishService, ListeningService
+from app.domains.english.service import (
+    DEFAULT_LISTENING_VOICE,
+    EnglishService,
+    ListeningService,
+)
 
 router = APIRouter(tags=["english"])
 
@@ -126,6 +130,46 @@ def list_listening(
     difficulty: str | None = Query(None),
 ) -> dict:
     return {"data": ListeningService(db).list_materials(book_id, difficulty)}
+
+
+@router.post("/english/listening/generate", status_code=201)
+async def generate_listening(
+    payload: ListeningGenerateRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """AI 生成一篇听力材料（联动词书选词）并合成 TTS 音频.
+
+    注意: 必须注册在 /english/listening/{material_id} 之前, 否则 "generate" 会被当作 material_id。
+    """
+    data = await ListeningService(db).generate_material(
+        current_user.id,
+        level=payload.level,
+        topic=payload.topic,
+        difficulty=payload.difficulty,
+        book_id=payload.book_id,
+        voice=payload.voice or DEFAULT_LISTENING_VOICE,
+    )
+    return {"data": data}
+
+
+@router.get("/english/listening/{material_id}/audio")
+async def get_listening_audio(
+    material_id: str,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    voice: str = Query(DEFAULT_LISTENING_VOICE),
+) -> Response:
+    """拿听力音频。材料还没音频时**懒合成**一次再返回（302 重定向到音频地址）."""
+    material = await ListeningService(db).ensure_audio(material_id, voice=voice)
+    if material is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Material not found"})
+    if not material.audio_url:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "AUDIO_UNAVAILABLE", "message": "音频暂不可用，请稍后重试"},
+        )
+    return RedirectResponse(material.audio_url, status_code=302)
 
 
 @router.get("/english/listening/{material_id}")

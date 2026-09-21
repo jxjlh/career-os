@@ -8,6 +8,9 @@ import httpx
 
 from app.core.config import get_settings
 
+# 听力材料音频桶
+LISTENING_BUCKET = "listening-audio"
+
 
 class StorageService:
     """存储服务, 支持 Supabase Storage 和本地回退."""
@@ -50,6 +53,31 @@ class StorageService:
         except Exception as exc:
             if self._cloud_storage_required():
                 raise RuntimeError("云端存储上传失败，请稍后重试") from exc
+            return self._upload_local(path, content)
+
+    def upload_listening_audio(
+        self,
+        content: bytes,
+        material_id: str,
+        voice: str = "catherine",
+    ) -> str:
+        """上传听力材料音频 (mp3), 返回可播放 URL.
+
+        路径: listening/{material_id}.mp3, 桶: listening-audio
+        Supabase 优先, 非生产环境失败时回退本地 media 目录（返回 /media/... 相对路径）。
+        """
+        path = f"listening/{material_id}.mp3"
+        if not self._supabase_configured():
+            if self._cloud_storage_required():
+                raise RuntimeError("云端存储尚未配置，无法保存听力音频")
+            return self._upload_local(path, content)
+
+        try:
+            self._ensure_bucket(LISTENING_BUCKET)
+            return self._upload_supabase(path, content, "audio/mpeg", bucket=LISTENING_BUCKET)
+        except Exception:
+            if self._cloud_storage_required():
+                raise
             return self._upload_local(path, content)
 
     def upload_avatar(
@@ -161,9 +189,15 @@ class StorageService:
                 headers=headers,
                 json={"id": bucket, "name": bucket, "public": True},
             )
-            if response.status_code == 409:
-                self._fix_bucket_public(bucket)
-            elif response.status_code >= 400 and response.status_code != 400:
+            # 409 = 桶已存在；400 = Supabase 对「已存在」的另一种返回（实测），
+            # 两者都去修补 public 状态；其它 4xx/5xx 才算真失败。
+            if response.status_code in (400, 409):
+                try:
+                    self._fix_bucket_public(bucket)
+                except Exception:
+                    # 桶已存在且修补失败不阻断上传（可能本来就是 public）
+                    pass
+            elif response.status_code >= 400:
                 raise RuntimeError(f"Supabase bucket setup failed: HTTP {response.status_code}")
 
     def _fix_bucket_public(self, bucket: str) -> None:
@@ -216,6 +250,8 @@ class StorageService:
                 bucket = "chat-images"
             elif path.startswith("avatars/"):
                 bucket = "avatars"
+            elif path.startswith("listening/"):
+                bucket = LISTENING_BUCKET
             else:
                 bucket = "chat-images"
             # 返回永久公开 URL (桶创建时已设为 public: True)

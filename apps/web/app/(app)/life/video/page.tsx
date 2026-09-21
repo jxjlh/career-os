@@ -23,7 +23,7 @@ import {
   getLifeGoals,
   type JournalResponse,
 } from "@/lib/life";
-import { getCurrentLocation, getCurrentWeather, formatGps, reverseGeocode } from "@/lib/location";
+import { getCurrentLocation, getCurrentWeather, formatPlace, type GeoPlace, reverseGeocode } from "@/lib/location";
 
 const DURATION_PRESETS = [
   { label: "30 秒", value: 30 },
@@ -52,7 +52,7 @@ function VideoLogContent() {
   const [error, setError] = useState<string | null>(null);
 
   const [location, setLocation] = useState<{ latitude: number; longitude: number; altitude?: number | null } | null>(null);
-  const [place, setPlace] = useState<{ city?: string; country?: string } | null>(null);
+  const [place, setPlace] = useState<GeoPlace | null>(null);
   const [weather, setWeather] = useState<{ weather: string; temperature: number } | null>(null);
 
   const goalsQuery = useQuery({ queryKey: ["life-goals"], queryFn: getLifeGoals });
@@ -101,7 +101,7 @@ function VideoLogContent() {
       const result = await generateJournal({
         mediaType: "video",
         mediaDescription: content || "一段视频日志",
-        city: place?.city,
+        city: formatPlace(place) || undefined,
         country: place?.country,
         weather: weather?.weather,
         temperature: weather?.temperature ?? null,
@@ -141,7 +141,8 @@ function VideoLogContent() {
         content: content || journalResult?.body || undefined,
         latitude: location?.latitude,
         longitude: location?.longitude,
-        city: place?.city,
+        // 与拍照流程一致：把「具体位置」地名存进 city 字段，展示时不再露经纬度
+        city: formatPlace(place) || undefined,
         country: place?.country,
         weather: weather?.weather,
         altitude: location?.altitude ?? null,

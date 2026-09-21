@@ -211,8 +211,11 @@ def _plan_dict(db: Session, plan: WeeklyPlan) -> dict:
         "summary": plan.summary,
         "reflection": plan.reflection,
         "completionRate": plan.completion_rate,
+        "totalTasks": len(tasks),
+        "completedTasks": sum(1 for t in tasks if t.status == "done"),
         "totalMinutes": plan.total_minutes,
         "completedMinutes": plan.completed_minutes,
+        "weeklyMinutesBudget": (plan.context_snapshot or {}).get("weeklyMinutes"),
         "goalIds": plan.goal_ids or [],
         "skillIds": plan.skill_ids or [],
         # 本周内到期的人生目标（硬性要进周计划的内容）

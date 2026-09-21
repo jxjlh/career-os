@@ -791,6 +791,10 @@ class LifeGoal(Base):
     region: Mapped[str | None] = mapped_column(String(120))
     friends: Mapped[list[str]] = mapped_column(JSON, default=list)
     ai_plan_meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # ── 分类专属字段（按 category 走不同字段集）──
+    # 例：travel 的 departure_city/travelers/interests、career 的 target_role/key_results、
+    # finance 的 kind/target_amount … 用单列 JSON 承载，避免每个分类长一张表。
+    custom_fields: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

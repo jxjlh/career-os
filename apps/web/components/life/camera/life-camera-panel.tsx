@@ -32,7 +32,7 @@ import {
   getLifeGoals,
   type PhotoAnalysisResponse,
 } from "@/lib/life";
-import { getCurrentWeather, formatGps, getLocationState, reverseGeocode } from "@/lib/location";
+import { getCurrentWeather, getLocationState, reverseGeocode, formatPlace, type GeoPlace } from "@/lib/location";
 import { listFriends } from "@/lib/social";
 
 const COUNTDOWN_OPTIONS = [0, 3, 5, 10];
@@ -69,7 +69,7 @@ export function LifeCameraPanel({
   const [error, setError] = useState<string | null>(null);
 
   const [location, setLocation] = useState<{ latitude: number; longitude: number; altitude?: number | null } | null>(null);
-  const [place, setPlace] = useState<{ city?: string; country?: string } | null>(null);
+  const [place, setPlace] = useState<GeoPlace | null>(null);
   const [weather, setWeather] = useState<{ weather: string; temperature: number } | null>(null);
   const [locationState, setLocationState] = useState<"locating" | "ready" | "denied" | "failed">("locating");
   const [locationStatus, setLocationStatus] = useState("正在获取定位…");
@@ -82,6 +82,7 @@ export function LifeCameraPanel({
   const friendsQuery = useQuery({ queryKey: ["friends"], queryFn: listFriends });
 
   // 获取定位 + 反向地理编码 + 天气 (拍照前预加载, 失败不阻塞, 可手动重试)
+  // 定位成功后立即把经纬度解析成具体位置（如「北京市朝阳区」）展示给用户
   const locate = useCallback(async () => {
     setLocationState("locating");
     setLocationStatus("正在获取定位…");
@@ -90,13 +91,14 @@ export function LifeCameraPanel({
     if (result.status === "ready" && result.location) {
       setLocation(result.location);
       setLocationState("ready");
-      setLocationStatus(`已定位 ${formatGps(result.location.latitude, result.location.longitude)}`);
+      setLocationStatus("已定位，正在解析位置…");
       const [p, w] = await Promise.all([
         reverseGeocode(result.location.latitude, result.location.longitude),
         getCurrentWeather(result.location.latitude, result.location.longitude),
       ]);
       if (p) setPlace(p);
       if (w) setWeather(w);
+      setLocationStatus(formatPlace(p) ? "已定位" : "已定位（未解析出具体位置）");
     } else {
       setLocation(null);
       setLocationState(result.status === "denied" ? "denied" : "failed");
@@ -144,7 +146,7 @@ export function LifeCameraPanel({
       const result = await analyzePhoto({
         latitude: location?.latitude,
         longitude: location?.longitude,
-        city: place?.city,
+        city: placeText || undefined,
         country: place?.country,
         weather: weather?.weather,
         temperature: weather?.temperature ?? null,
@@ -177,9 +179,8 @@ export function LifeCameraPanel({
           date: date.toISOString().slice(0, 10).replaceAll("-", "."),
           time: date.toTimeString().slice(0, 5),
           goalTitle: goalsQuery.data?.find((g) => g.id === goalId)?.title ?? "人生记录",
-          city: place?.city,
+          city: placeText || undefined,
           country: place?.country,
-          gps: formatGps(location?.latitude, location?.longitude) || undefined,
           weather: weather?.weather,
           temperature: weather?.temperature ?? null,
           altitude: location?.altitude ?? null,
@@ -194,7 +195,9 @@ export function LifeCameraPanel({
         content: content || undefined,
         latitude: location?.latitude,
         longitude: location?.longitude,
-        city: place?.city,
+        // 后端 life_records 没有独立 address 列，这里把「具体位置」存进 city 字段，
+        // 各处展示（详情、地图、时间轴）即可直接显示地名而不是经纬度。
+        city: placeText || undefined,
         country: place?.country,
         weather: weather?.weather,
         altitude: location?.altitude ?? null,
@@ -244,6 +247,7 @@ export function LifeCameraPanel({
 
   const goals = goalsQuery.data ?? [];
   const activeGoal = goals.find((g) => g.id === selectedGoalId) ?? goals[0];
+  const placeText = formatPlace(place);
 
   return (
     <Card className="overflow-hidden p-4 sm:p-5">
@@ -291,7 +295,7 @@ export function LifeCameraPanel({
       <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-surface px-3 py-2 text-xs text-muted">
         <MapPin className="h-3.5 w-3.5" />
         <span>{locationStatus}</span>
-        {place?.city && <span>· {place.country} {place.city}</span>}
+        {placeText && locationState === "ready" && <span>· {place?.country} {placeText}</span>}
         {weather && <span>· {weather.weather} {weather.temperature}°C</span>}
         <button
           onClick={() => void locate()}

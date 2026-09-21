@@ -22,6 +22,8 @@ export interface LifeGoal {
   region?: string | null;
   friends?: string[];
   aiPlanMeta?: Record<string, unknown>;
+  /** 分类专属字段（按 category 走不同字段集），见 lib/life-fields.ts */
+  customFields?: Record<string, unknown> | null;
   status: string;
   isAiGenerated: boolean;
   createdAt?: string | null;
@@ -42,6 +44,7 @@ export interface LifeGoalInput {
   bestSeason?: string;
   region?: string;
   friends?: string[];
+  customFields?: Record<string, unknown>;
   status?: string;
 }
 
@@ -540,6 +543,13 @@ export async function generateTravelPlan(payload: TravelPlanRequest): Promise<Tr
   });
 }
 
+/** 取某个人生目标已保存的最新旅行攻略；没有则返回 null。 */
+export async function getLatestTravelPlan(goalId: string): Promise<TravelPlanResponse | null> {
+  return apiFetch<TravelPlanResponse | null>(
+    `/ai/travel-plan/latest?goal_id=${encodeURIComponent(goalId)}`,
+  );
+}
+
 export interface TravelChecklistItem {
   id: string;
   aiContentId: string;
@@ -550,43 +560,114 @@ export interface TravelChecklistItem {
   createdAt?: string | null;
 }
 
+/**
+ * travel-checklist 三个接口在后端是直接返回裸对象/裸数组的（没有 {data: …} 包装）。
+ * 这里做一层兼容：两种形状都能吃，避免拿到 undefined（React Query 会直接报错、
+ * 清单永远显示空）。
+ */
+function unwrapChecklist<T>(res: T | { data: T }): T {
+  if (res && typeof res === "object" && !Array.isArray(res) && "data" in (res as object)) {
+    return (res as { data: T }).data;
+  }
+  return res as T;
+}
+
 export async function getTravelChecklist(aiContentId: string): Promise<TravelChecklistItem[]> {
-  const res = await apiFetch<{ data: TravelChecklistItem[] }>(
+  const res = await apiFetch<TravelChecklistItem[] | { data: TravelChecklistItem[] }>(
     `/ai/travel-plan/${aiContentId}/checklist`,
   );
-  return res.data;
+  return unwrapChecklist(res) ?? [];
 }
 
 export async function addTravelChecklistItem(
   aiContentId: string,
   payload: { item: string; note?: string },
 ): Promise<TravelChecklistItem> {
-  const res = await apiFetch<{ data: TravelChecklistItem }>(
+  const res = await apiFetch<TravelChecklistItem | { data: TravelChecklistItem }>(
     `/ai/travel-plan/${aiContentId}/checklist`,
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
   );
-  return res.data;
+  return unwrapChecklist(res);
 }
 
 export async function updateTravelChecklistItem(
   itemId: string,
   payload: Partial<Pick<TravelChecklistItem, "item" | "note" | "checked">>,
 ): Promise<TravelChecklistItem> {
-  const res = await apiFetch<{ data: TravelChecklistItem }>(
+  const res = await apiFetch<TravelChecklistItem | { data: TravelChecklistItem }>(
     `/ai/travel-plan/checklist/${itemId}`,
     {
       method: "PATCH",
       body: JSON.stringify(payload),
     },
   );
-  return res.data;
+  return unwrapChecklist(res);
 }
 
 export async function deleteTravelChecklistItem(itemId: string): Promise<void> {
   await apiFetch(`/ai/travel-plan/checklist/${itemId}`, { method: "DELETE" });
+}
+
+// ── 人生目标的 AI 规划（按分类生成，存在目标下）──────────────────────────
+// 旅游型走上面的 travel-plan（逐日行程结构更贴切）；其余分类走这里。
+// 两者的「保存到当前目标下」机制一致：都按 goal_id 归属存进 AI 内容表，可按目标回看。
+
+export interface GrowthPlanPhase {
+  name?: string | null;
+  days?: string | null;
+  tasks?: string[];
+}
+
+export interface GrowthPlanDay {
+  day?: number | null;
+  tasks?: string[];
+}
+
+export interface GrowthPlanResponse {
+  id: string;
+  aiContentId: string;
+  title?: string | null;
+  summary?: string | null;
+  category?: string | null;
+  goalId?: string | null;
+  phases: GrowthPlanPhase[];
+  dailyPlan: GrowthPlanDay[];
+  milestones: string[];
+  tips: string[];
+}
+
+/**
+ * 一键生成规划：只给目标 id，后端从目标上读标题、描述、预算、目标值、每周投入等
+ * 全部已知信息，用户不用再填一遍表。
+ */
+export async function generateLifePlan(payload: {
+  goalId: string;
+  category?: string | null;
+}): Promise<GrowthPlanResponse> {
+  return apiFetch<GrowthPlanResponse>("/ai/growth-plan", {
+    method: "POST",
+    body: JSON.stringify({ goalId: payload.goalId, category: payload.category ?? undefined }),
+  });
+}
+
+/** 取该目标已保存的最新规划；没有则返回 null（前端据此显示引导入口）。 */
+export async function getLatestLifePlan(goalId: string): Promise<GrowthPlanResponse | null> {
+  return apiFetch<GrowthPlanResponse | null>(
+    `/ai/growth-plan/latest?goal_id=${encodeURIComponent(goalId)}`,
+  );
+}
+
+/** 把规划里的逐日安排落成该目标下的成长任务。 */
+export async function generateTasksFromPlan(
+  aiContentId: string,
+): Promise<{ createdCount: number; taskIds: string[] }> {
+  return apiFetch<{ createdCount: number; taskIds: string[] }>(
+    `/ai/growth-plan/${aiContentId}/generate-tasks`,
+    { method: "POST" },
+  );
 }
 
 export interface LifeAssistantResponse {

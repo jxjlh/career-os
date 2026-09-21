@@ -72,7 +72,20 @@ export default function PlannerPage() {
       const activeGoals = (lifeGoals || []).filter(
         (g: any) => g.status === "pending" || g.status === "in_progress"
       );
-      const goalIds = activeGoals.map((g: any) => g.id);
+      // 本周内到期的目标优先；其余活跃目标最多再带 5 个，避免目标过多稀释计划
+      const ws = new Date();
+      ws.setDate(ws.getDate() - ((ws.getDay() + 6) % 7));
+      ws.setHours(0, 0, 0, 0);
+      const we = new Date(ws);
+      we.setDate(we.getDate() + 7);
+      const isThisWeek = (g: any) => {
+        if (!g.targetDate) return false;
+        const d = new Date(g.targetDate);
+        return d >= ws && d < we;
+      };
+      const weekGoals = activeGoals.filter(isThisWeek);
+      const rest = activeGoals.filter((g: any) => !isThisWeek(g)).slice(0, 5);
+      const goalIds = [...weekGoals, ...rest].map((g: any) => g.id);
       return apiFetch("/planner/generate", {
         method: "POST",
         body: JSON.stringify({ weeklyStudyMinutes: 420, goalIds }),
@@ -175,6 +188,7 @@ export default function PlannerPage() {
             totalTasks={planData?.totalTasks ?? 0}
             completedMinutes={planData?.completedMinutes ?? 0}
             totalMinutes={planData?.totalMinutes ?? 0}
+            weeklyMinutesBudget={planData?.weeklyMinutesBudget ?? null}
             weeklyFocus={planData?.weeklyFocus}
             rationale={planData?.rationale}
             tips={planData?.tips || []}
@@ -262,6 +276,7 @@ function ProgressHeader({
   totalTasks,
   completedMinutes,
   totalMinutes,
+  weeklyMinutesBudget,
   weeklyFocus,
   rationale,
   tips,
@@ -271,6 +286,7 @@ function ProgressHeader({
   totalTasks: number;
   completedMinutes: number;
   totalMinutes: number;
+  weeklyMinutesBudget: number | null;
   weeklyFocus: string | null;
   rationale: string | null;
   tips: string[];
@@ -310,6 +326,7 @@ function ProgressHeader({
             </p>
             <p className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
               {t("planner.minutes")}
+              {weeklyMinutesBudget ? ` / ${weeklyMinutesBudget}` : ""}
             </p>
           </div>
         </div>
@@ -347,6 +364,16 @@ function ProgressHeader({
             </p>
             <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">{rationale}</p>
           </div>
+        </div>
+      )}
+
+      {/* 超预算提示 */}
+      {weeklyMinutesBudget != null && totalMinutes > weeklyMinutesBudget && (
+        <div className="mt-4 flex items-start gap-2.5">
+          <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <p className="text-[12px] leading-relaxed text-warning">
+            {t("planner.overBudget")} {totalMinutes - weeklyMinutesBudget} {t("planner.minutes")}
+          </p>
         </div>
       )}
 
@@ -388,7 +415,13 @@ function WeekGoalsSection({ goals }: { goals: any[] }) {
       </div>
 
       {goals.length === 0 ? (
-        <p className="text-[12px] text-text-tertiary">{t("planner.noWeekGoals")}</p>
+        <p className="text-[12px] text-text-tertiary">
+          {t("planner.noWeekGoals")}
+          {" · "}
+          <Link href="/life/goals" className="text-primary hover:underline">
+            {t("planner.weekGoalsHint")}
+          </Link>
+        </p>
       ) : (
         <div className="space-y-2">
           {goals.map((g: any) => {

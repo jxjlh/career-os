@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from datetime import date, datetime, timedelta
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.errors import AppError
 from app.db.models import ListeningMaterial, UserWord, Word, WordBook
+from app.domains.english.prompts import LISTENING_MATERIAL_PROMPT
 from app.domains.english.repository import (
     ListeningAttemptRepository,
     ListeningRepository,
@@ -17,11 +21,34 @@ from app.domains.english.repository import (
     WordRepository,
 )
 from app.domains.english.srs import SRSInput, initial_state, schedule
+from app.providers.ai.base import extract_json
+from app.providers.ai.registry import get_ai_provider
+
+logger = logging.getLogger("app.english.listening")
 
 # 每日学习目标：新词量
 DEFAULT_DAILY_NEW_WORDS = 15
 # 最大队列长度
 MAX_QUEUE_SIZE = 50
+
+# 听力材料默认发音人（英式女声, 讯飞已授权）
+DEFAULT_LISTENING_VOICE = "catherine"
+# 补位选词时跳过词书最前面的基础词条数（避开 a/an/man 这类凑数词）
+SKIP_BASIC_WORDS = 60
+
+# level 文案 → 种子词书 code
+LEVEL_TO_BOOK_CODE = {
+    "CET-4": "cet4",
+    "CET-6": "cet6",
+    "考研": "kaoyan",
+    "雅思": "ielts",
+    "托福": "toefl",
+    "cet4": "cet4",
+    "cet6": "cet6",
+    "kaoyan": "kaoyan",
+    "ielts": "ielts",
+    "toefl": "toefl",
+}
 
 
 def word_dict(word: Word, uw: UserWord | None = None) -> dict:
@@ -397,6 +424,9 @@ class ListeningService:
         self.materials = ListeningRepository(db)
         self.attempts = ListeningAttemptRepository(db)
         self.sessions = StudySessionRepository(db)
+        self.books = WordBookRepository(db)
+        self.words = WordRepository(db)
+        self.user_words = UserWordRepository(db)
 
     def list_materials(self, book_id: str | None = None, difficulty: str | None = None) -> list[dict]:
         items = self.materials.list(book_id, difficulty)
@@ -432,3 +462,241 @@ class ListeningService:
         )
         self.sessions.add_listening(user_id, is_correct)
         return {"isCorrect": is_correct, "correctAnswer": q.get("answer", "")}
+
+    # ── 生成听力材料 ────────────────────────────────────────────────
+
+    def _resolve_book(self, user_id: str, book_id: str | None, level: str) -> WordBook | None:
+        """定位用于选词的词书.
+
+        优先用户显式指定 → 其次用户在学（有 user_words 记录）的词书 → 最后按 level 映射。
+        """
+        if book_id:
+            book = self.books.get(book_id)
+            if book is not None:
+                return book
+
+        # 用户有学习记录的词书里, 挑词量最多的那本
+        rows = (
+            self.db.query(UserWord.book_id, func.count(UserWord.id))
+            .filter(UserWord.user_id == user_id)
+            .group_by(UserWord.book_id)
+            .order_by(func.count(UserWord.id).desc())
+            .all()
+        )
+        for candidate_id, _count in rows:
+            book = self.books.get(candidate_id)
+            if book is not None:
+                return book
+
+        # 按 level 映射到种子词书
+        code = LEVEL_TO_BOOK_CODE.get((level or "").strip().upper()) or LEVEL_TO_BOOK_CODE.get(
+            (level or "").strip().lower()
+        )
+        if code:
+            for book in self.books.list_all():
+                if canonical_book_code(book) == code:
+                    return book
+        return self.books.list_all()[0] if self.books.list_all() else None
+
+    def _pick_vocabulary(
+        self, user_id: str, book: WordBook | None, limit: int = 12
+    ) -> list[tuple[Word, UserWord | None]]:
+        """挑出要嵌进听力材料的词.
+
+        优先级: 正在学/复习中（背过但不熟, 听力强化收益最大）→ 未学新词（按词书顺序）。
+        """
+        if book is None:
+            return []
+
+        picked: list[tuple[Word, UserWord]] = []
+        for status in ("learning", "review"):
+            rows = (
+                self.db.query(UserWord, Word)
+                .join(Word, Word.id == UserWord.word_id)
+                .filter(
+                    UserWord.user_id == user_id,
+                    UserWord.book_id == book.id,
+                    UserWord.status == status,
+                )
+                .order_by(UserWord.due_date)
+                .limit(limit)
+                .all()
+            )
+            picked.extend((word, uw) for uw, word in rows)
+            if len(picked) >= limit:
+                break
+
+        if len(picked) < limit:
+            picked_ids = {w.id for w, _ in picked}
+            # 跳过词书最前面的基础词（a / an / man 这类），并且过滤掉过短的词,
+            # 否则听力材料里会出现「凑数」的简单词, 拉低材料质量。
+            fresh = (
+                self.db.query(Word)
+                .filter(Word.book_id == book.id, func.length(Word.spelling) >= 3)
+                .order_by(Word.sort_order)
+                .offset(SKIP_BASIC_WORDS)
+                .limit(limit * 3)
+                .all()
+            )
+            for word in fresh:
+                if len(picked) >= limit:
+                    break
+                if word.id in picked_ids:
+                    continue
+                picked.append((word, None))
+
+        return picked[:limit]
+
+    def _vocabulary_text(self, vocab: list[tuple[Word, UserWord | None]]) -> str:
+        if not vocab:
+            return "（无词表, 请按级别自行选择难度合适的常用词）"
+        lines = []
+        for word, uw in vocab:
+            meaning = (word.meaning or "").strip().split("；")[0][:24]
+            pos = f"{word.pos} " if word.pos else ""
+            stage = ""
+            if uw is not None:
+                stage = " [正在复习]" if uw.status in ("learning", "review") else " [已学过]"
+            lines.append(f"- {word.spelling}{stage}: {pos}{meaning}")
+        return "\n".join(lines)
+
+    def _sanitize_questions(self, raw_questions: list) -> list[dict]:
+        """清洗 AI 产出的题目: 只保留结构完整、答案自洽的题."""
+        cleaned: list[dict] = []
+        for item in raw_questions or []:
+            if not isinstance(item, dict):
+                continue
+            q_type = str(item.get("type") or "").strip().lower()
+            question = str(item.get("question") or "").strip()
+            answer = str(item.get("answer") or "").strip()
+            if not question or not answer:
+                continue
+            if q_type == "choice":
+                options = [str(o).strip() for o in (item.get("options") or []) if str(o).strip()]
+                if len(options) < 2:
+                    continue
+                # answer 必须能对上某个选项, 否则丢弃（前端按逐字比较判分）
+                if not any(answer.lower() == o.lower() for o in options):
+                    continue
+                payload = {"type": "choice", "question": question, "options": options, "answer": answer}
+            else:
+                payload = {"type": "fill_blank", "question": question, "answer": answer}
+                hint = str(item.get("hint") or "").strip()
+                if hint:
+                    payload["hint"] = hint
+            cleaned.append(payload)
+            if len(cleaned) >= 5:
+                break
+        return cleaned
+
+    async def generate_material(
+        self,
+        user_id: str,
+        *,
+        level: str = "CET-4",
+        topic: str = "校园生活",
+        difficulty: str | None = None,
+        book_id: str | None = None,
+        voice: str = DEFAULT_LISTENING_VOICE,
+    ) -> dict:
+        """AI 生成一篇听力材料并合成音频.
+
+        流程: 挑词（用正在背的词书）→ AI 出原文/翻译/题目 → 落库 → 讯飞 TTS 合成 → 上传取 URL。
+        音频合成失败不会阻断返回, 材料仍可用于阅读与答题（前端有浏览器朗读兜底）。
+        """
+        book = self._resolve_book(user_id, book_id, level)
+        vocab = self._pick_vocabulary(user_id, book, limit=12)
+        diff = difficulty if difficulty in ("easy", "medium", "hard") else None
+        word_count = {"easy": 70, "medium": 110, "hard": 150}.get(diff or "medium", 110)
+
+        prompt = LISTENING_MATERIAL_PROMPT.format(
+            level=level,
+            topic=topic,
+            word_count=word_count,
+            vocabulary=self._vocabulary_text(vocab),
+        )
+
+        provider = get_ai_provider()
+        raw = await provider.complete(
+            [
+                {"role": "system", "content": prompt},
+                {
+                    "role": "user",
+                    "content": f"请生成一篇 {level} 难度的听力材料，主题「{topic}」，严格输出 JSON",
+                },
+            ],
+            response_format="json_object",
+            temperature=0.7,
+            max_tokens=2500,
+        )
+        parsed = extract_json(raw)
+        if not parsed or not str(parsed.get("transcript") or "").strip():
+            raise AppError(code="AI_OUTPUT_INVALID", message="听力材料生成失败，请重试", status=422)
+
+        transcript = str(parsed.get("transcript")).strip()
+        questions = self._sanitize_questions(parsed.get("questions") or [])
+        if not questions:
+            raise AppError(code="AI_OUTPUT_EMPTY", message="AI 没有生成可用题目，请重试", status=422)
+
+        # 用户手选的难度优先；没选时才用 AI 自评
+        ai_difficulty = str(parsed.get("difficulty") or "").strip().lower()
+        final_difficulty = diff or (ai_difficulty if ai_difficulty in ("easy", "medium", "hard") else "medium")
+
+        material = self.materials.create(
+            book_id=book.id if book else None,
+            title=(str(parsed.get("title") or "").strip() or f"{topic}听力练习")[:200],
+            transcript=transcript,
+            translation=str(parsed.get("translation") or "").strip() or None,
+            difficulty=final_difficulty,
+            questions=questions,
+            audio_status="pending",
+            is_ai_generated=True,
+        )
+
+        await self._synthesize_audio(material, voice=voice)
+        self.db.refresh(material)
+        result = material_dict(material)
+        result["vocabulary"] = [w.spelling for w, _ in vocab]
+        return result
+
+    async def _synthesize_audio(self, material: ListeningMaterial, voice: str = DEFAULT_LISTENING_VOICE) -> bool:
+        """合成并上传音频, 更新 audio_url / duration / audio_status. 失败返回 False."""
+        try:
+            from app.providers.tts.xfyun_tts_provider import XfyunTTSProvider
+            from app.providers.tts.mp3_util import mp3_duration_seconds
+            from app.services.storage import StorageService
+
+            tts = XfyunTTSProvider()
+            if not tts._configured():
+                logger.warning("listening: TTS not configured, skip audio synthesis")
+                return False
+
+            audio = await tts.synthesize(material.transcript, voice=voice)
+            if not audio:
+                return False
+            duration = mp3_duration_seconds(audio)
+            url = StorageService().upload_listening_audio(audio, material.id, voice=voice)
+            self.materials.update_audio(material.id, url, duration)
+            logger.info(
+                "listening: audio ready material=%s bytes=%d duration=%s voice=%s",
+                material.id, len(audio), duration, voice,
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.error("listening: audio synthesis failed material=%s: %s", material.id, exc)
+            self.db.query(ListeningMaterial).filter(ListeningMaterial.id == material.id).update(
+                {"audio_status": "failed"}
+            )
+            self.db.commit()
+            return False
+
+    async def ensure_audio(self, material_id: str, voice: str = DEFAULT_LISTENING_VOICE) -> ListeningMaterial | None:
+        """懒合成兜底: 材料还没有音频时现合成一次（供 /audio 端点与详情页使用）."""
+        material = self.materials.get(material_id)
+        if material is None:
+            return None
+        if material.audio_status == "ready" and material.audio_url:
+            return material
+        await self._synthesize_audio(material, voice=voice)
+        self.db.refresh(material)
+        return material

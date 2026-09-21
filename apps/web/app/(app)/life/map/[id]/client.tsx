@@ -145,11 +145,14 @@ export default function MapDetailPage() {
         <InfoCard icon={<Thermometer className="h-4 w-4 text-danger" />} label="温度/海拔" value={temperature != null ? `${temperature}°` : altitude != null ? `${altitude}m` : "未记录"} />
       </div>
 
-      {/* GPS 坐标 */}
+      {/* 具体位置（经纬度只作为 tooltip 备查，不再直接展示） */}
       {hasLocation && (
-        <div className="flex items-center gap-2 rounded-[12px] bg-surface-muted p-3 text-[12px] text-muted">
+        <div
+          className="flex items-center gap-2 rounded-[12px] bg-surface-muted p-3 text-[12px] text-muted"
+          title={`坐标：${latitude?.toFixed(4)}, ${longitude?.toFixed(4)}`}
+        >
           <MapPin className="h-4 w-4 text-primary" />
-          <span>GPS: {latitude?.toFixed(4)}, {longitude?.toFixed(4)}</span>
+          <span>📍 {[country, city].filter(Boolean).join(" · ") || "位置已记录"}</span>
         </div>
       )}
 

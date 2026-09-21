@@ -656,10 +656,12 @@ async def companion_chat(
 
 
 @router.get("/ai/journal-companion/games")
-async def companion_game_catalog(
-    current_user: Annotated[Profile, Depends(get_current_user)],
-) -> dict:
-    """解压小游戏目录 —— 前端按目录渲染，脚本由服务端统一维护。"""
+async def companion_game_catalog() -> dict:
+    """解压小游戏目录 —— 前端按目录渲染，脚本由服务端统一维护。
+
+    刻意不要求登录：这里只有静态游戏脚本，没有任何用户数据，
+    保证未登录时也能看到游戏入口（不然后续聊天会撞 401，体验断裂）。
+    """
     return {"data": get_catalog()}
 
 

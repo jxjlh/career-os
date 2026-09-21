@@ -71,6 +71,37 @@ export interface ListeningMaterial {
   isAiGenerated: boolean;
   attempted: boolean;
   createdAt?: string;
+  /** 生成时用到的词表（来自正在背的词书） */
+  vocabulary?: string[];
+}
+
+export interface GenerateListeningPayload {
+  level?: string;
+  topic?: string;
+  difficulty?: "easy" | "medium" | "hard";
+  bookId?: string;
+  voice?: string;
+}
+
+export const LISTENING_LEVELS = ["CET-4", "CET-6", "考研", "雅思", "托福"] as const;
+export const LISTENING_TOPICS = ["校园生活", "职场面试", "旅行出行", "科技前沿", "购物消费", "健康运动"] as const;
+export const LISTENING_VOICES = [
+  { key: "catherine", label: "英式女声" },
+  { key: "henry", label: "美式男声" },
+] as const;
+
+export const DIFFICULTY_LABELS: Record<string, string> = {
+  easy: "简单",
+  medium: "中等",
+  hard: "困难",
+};
+
+/** 时长格式化：秒 → m:ss（注意分钟要向下取整，否则 30 秒会被显示成 1:30） */
+export function formatDuration(seconds?: number | null) {
+  if (!seconds || seconds <= 0) return "--:--";
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export interface ListeningQuestion {
@@ -165,6 +196,15 @@ export const englishApi = {
     return apiFetch<{ data: ListeningMaterial[] }>(`/english/listening${q ? `?${q}` : ""}`);
   },
   getListening: (id: string) => apiFetch<{ data: ListeningMaterial }>(`/english/listening/${id}`),
+  /** AI 生成本篇听力材料（联动词书选词 + TTS 合成音频） */
+  generateListening: (payload: GenerateListeningPayload) =>
+    apiFetch<{ data: ListeningMaterial }>("/english/listening/generate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  /** 音频地址：材料没音频时后端会懒合成一次再重定向 */
+  listeningAudioUrl: (id: string, voice?: string) =>
+    `${API_BASE}/english/listening/${id}/audio${voice ? `?voice=${encodeURIComponent(voice)}` : ""}`,
   submitAttempt: (materialId: string, payload: { questionIndex: number; userAnswer: string; durationSeconds?: number }) =>
     apiFetch<{ data: { isCorrect: boolean; correctAnswer: string } }>(
       `/english/listening/${materialId}/attempts`,

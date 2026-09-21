@@ -6,65 +6,26 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 
 import { useI18n } from "@/lib/i18n";
-import { getLifeGoals, createLifeGoal, type LifeGoal, type LifeGoalInput } from "@/lib/life";
+import {
+  CATEGORY_META,
+  getLifeGoals,
+  createLifeGoal,
+  type LifeGoal,
+  type LifeGoalInput,
+} from "@/lib/life";
+import { buildCategoryValues, getCategoryFields } from "@/lib/life-fields";
 import { GoalRow } from "./goal-row";
 
-const CATEGORIES = [
-  {
-    key: "career",
-    label: "事业",
-    icon: "💼",
-    fields: [
-      { name: "targetRole", label: "目标职位", placeholder: "如: 高级前端工程师" },
-      { name: "targetDate", label: "目标日期", placeholder: "YYYY-MM-DD", type: "date" },
-    ],
-  },
-  {
-    key: "skill",
-    label: "技能",
-    icon: "🚀",
-    fields: [
-      { name: "skillName", label: "技能名称", placeholder: "如: React / Python / 设计" },
-      { name: "targetLevel", label: "目标水平", placeholder: "如: 熟练 / 精通" },
-    ],
-  },
-  {
-    key: "health",
-    label: "健康",
-    icon: "💪",
-    fields: [
-      { name: "targetWeight", label: "目标体重", placeholder: "如: 65kg" },
-      { name: "exerciseType", label: "运动类型", placeholder: "如: 跑步 / 健身 / 游泳" },
-    ],
-  },
-  {
-    key: "travel",
-    label: "旅行",
-    icon: "🌍",
-    fields: [
-      { name: "location", label: "目的地", placeholder: "如: 东京 / 巴黎" },
-      { name: "budget", label: "预算", placeholder: "如: 10000元" },
-      { name: "bestSeason", label: "最佳季节", placeholder: "如: 春季 / 秋季" },
-    ],
-  },
-  {
-    key: "finance",
-    label: "财富",
-    icon: "💰",
-    fields: [
-      { name: "targetAmount", label: "目标金额", placeholder: "如: 100000元" },
-      { name: "timeframe", label: "时间范围", placeholder: "如: 1年内" },
-    ],
-  },
-  {
-    key: "life",
-    label: "生活",
-    icon: "✨",
-    fields: [
-      { name: "description", label: "描述", placeholder: "详细描述你的目标..." },
-    ],
-  },
-] as const;
+/**
+ * 首页的快捷新建目标。
+ *
+ * 分类与字段统一读 `lib/life-fields.ts` 的 CATEGORY_FIELDS —— 以前这里自带一套
+ * 硬编码字段（事业/技能/健康/旅行/财富/生活），且除旅行外全被拍平成
+ * 「标签: 值」塞进 description，结构化数据全丢。现在按分类落到真正的列/custom_fields。
+ */
+
+const INPUT_CLASS =
+  "w-full rounded-[10px] border border-border bg-surface-elevated px-3 py-2 text-[13px] text-text placeholder:text-text-tertiary focus:border-primary/40 focus:outline-none";
 
 export function ActiveGoals() {
   const { t } = useI18n();
@@ -88,29 +49,28 @@ export function ActiveGoals() {
     return Math.min(95, Math.round((d / 5) * 100));
   };
 
-  const currentCategory = CATEGORIES.find((c) => c.key === category) ?? CATEGORIES[0];
+  const catMeta = CATEGORY_META[category] ?? CATEGORY_META.other;
+  const categoryFields = getCategoryFields(category);
 
   const handleCreate = async () => {
     if (!title.trim()) return;
     setCreating(true);
     setError(null);
     try {
-      const fieldParts = currentCategory.fields
-        .filter((f) => dynamicFields[f.name])
-        .map((f) => `${f.label}: ${dynamicFields[f.name]}`);
-      const description = fieldParts.length > 0 ? fieldParts.join("\n") : undefined;
+      const raw: Record<string, string> = {};
+      for (const field of categoryFields) {
+        raw[field.key] = dynamicFields[field.key] ?? "";
+      }
+      const { columns, customFields } = buildCategoryValues(categoryFields, raw);
 
       const payload: LifeGoalInput = {
         title: title.trim(),
         category,
         difficulty: 3,
-        description,
+        ...columns,
       };
-
-      if (category === "travel") {
-        if (dynamicFields.location) payload.location = dynamicFields.location;
-        if (dynamicFields.budget) payload.budget = dynamicFields.budget;
-        if (dynamicFields.bestSeason) payload.bestSeason = dynamicFields.bestSeason;
+      if (Object.keys(customFields).length > 0) {
+        payload.customFields = customFields;
       }
 
       await createLifeGoal(payload);
@@ -164,43 +124,75 @@ export function ActiveGoals() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                placeholder={`输入你的${currentCategory.label}目标...`}
+                placeholder={`输入你的${catMeta.labelZh}目标...`}
                 autoFocus
-                className="w-full rounded-[10px] border border-border bg-surface-elevated px-3 py-2 text-sm text-text placeholder:text-text-tertiary focus:border-primary/40 focus:outline-none"
+                className={INPUT_CLASS}
               />
 
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {CATEGORIES.map((cat) => (
+                {Object.entries(CATEGORY_META).map(([key, meta]) => (
                   <button
-                    key={cat.key}
-                    onClick={() => handleCategoryChange(cat.key)}
+                    key={key}
+                    onClick={() => handleCategoryChange(key)}
                     className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] transition-colors ${
-                      category === cat.key
+                      category === key
                         ? "bg-primary/10 text-primary ring-1 ring-primary/20"
                         : "bg-surface-elevated text-text-tertiary hover:bg-surface-muted"
                     }`}
                   >
-                    <span>{cat.icon}</span>
-                    {cat.label}
+                    <span>{meta.icon}</span>
+                    {meta.labelZh}
                   </button>
                 ))}
               </div>
 
-              <div className="mt-3 space-y-2">
-                {currentCategory.fields.map((field) => (
-                  <div key={field.name}>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {categoryFields.map((field) => (
+                  <div
+                    key={field.key}
+                    className={field.type === "textarea" ? "sm:col-span-2" : undefined}
+                  >
                     <label className="mb-1 block text-[11px] text-text-tertiary">
                       {field.label}
+                      {field.required && <span className="ml-1 text-danger">*</span>}
+                      {field.unit && <span className="ml-1">（{field.unit}）</span>}
                     </label>
-                    <input
-                      type={"type" in field && field.type === "date" ? "date" : "text"}
-                      value={dynamicFields[field.name] || ""}
-                      onChange={(e) =>
-                        setDynamicFields((prev) => ({ ...prev, [field.name]: e.target.value }))
-                      }
-                      placeholder={field.placeholder}
-                      className="w-full rounded-[10px] border border-border bg-surface-elevated px-3 py-2 text-[13px] text-text placeholder:text-text-tertiary focus:border-primary/40 focus:outline-none"
-                    />
+                    {field.type === "select" ? (
+                      <select
+                        value={dynamicFields[field.key] ?? ""}
+                        onChange={(e) =>
+                          setDynamicFields((prev) => ({ ...prev, [field.key]: e.target.value }))
+                        }
+                        className={INPUT_CLASS}
+                      >
+                        <option value="">未选择</option>
+                        {field.options?.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    ) : field.type === "textarea" ? (
+                      <textarea
+                        rows={2}
+                        value={dynamicFields[field.key] ?? ""}
+                        onChange={(e) =>
+                          setDynamicFields((prev) => ({ ...prev, [field.key]: e.target.value }))
+                        }
+                        placeholder={field.placeholder}
+                        className={INPUT_CLASS}
+                      />
+                    ) : (
+                      <input
+                        type={field.type === "number" ? "number" : "text"}
+                        value={dynamicFields[field.key] ?? ""}
+                        onChange={(e) =>
+                          setDynamicFields((prev) => ({ ...prev, [field.key]: e.target.value }))
+                        }
+                        placeholder={field.placeholder}
+                        className={INPUT_CLASS}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -211,7 +203,7 @@ export function ActiveGoals() {
                 disabled={!title.trim() || creating}
                 className="mt-3 w-full rounded-[10px] bg-primary py-2 text-[13px] font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {creating ? "创建中..." : `创建${currentCategory.label}目标`}
+                {creating ? "创建中..." : `创建${catMeta.labelZh}目标`}
               </button>
             </div>
           </motion.div>

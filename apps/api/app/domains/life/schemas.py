@@ -27,6 +27,9 @@ class LifeGoalCreate(BaseModel):
     region: str | None = Field(default=None, max_length=120)
     friends: list[str] = Field(default_factory=list)
     aiPlanMeta: dict = {}
+    # 分类专属字段（travel 的出发地/人数/兴趣、career 的目标岗位/关键结果…）。
+    # 刻意不做枚举式强校验：老目标、AI 生成目标、外部调用都可能只给一部分字段。
+    customFields: dict = {}
     status: LifeGoalStatus = "pending"
     isAiGenerated: bool = False
 
@@ -51,6 +54,7 @@ class LifeGoalUpdate(BaseModel):
     region: str | None = Field(default=None, max_length=120)
     friends: list[str] | None = None
     aiPlanMeta: dict | None = None
+    customFields: dict | None = None
     status: LifeGoalStatus | None = None
     isAiGenerated: bool | None = None
 

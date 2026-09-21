@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, Clock, CloudSun, Mountain, Navigation, Tags, Thermometer } from "lucide-react";
+import { Calendar, Clock, CloudSun, Mountain, Tags, Thermometer } from "lucide-react";
 
 import type { WatermarkOptions } from "@/components/life/watermark-canvas";
 
@@ -16,11 +16,11 @@ const ITEMS: Array<{
 }> = [
   { key: "date", label: "日期", icon: <Calendar className="h-3.5 w-3.5" /> },
   { key: "time", label: "时间", icon: <Clock className="h-3.5 w-3.5" /> },
-  { key: "city", label: "城市", icon: <Tags className="h-3.5 w-3.5" /> },
+  // 位置上水印的是「具体位置」地名（如 中国 · 北京市朝阳区），不再打经纬度
+  { key: "city", label: "位置", icon: <Tags className="h-3.5 w-3.5" /> },
   { key: "weather", label: "天气", icon: <CloudSun className="h-3.5 w-3.5" /> },
   { key: "temperature", label: "温度", icon: <Thermometer className="h-3.5 w-3.5" /> },
   { key: "altitude", label: "海拔", icon: <Mountain className="h-3.5 w-3.5" /> },
-  { key: "gps", label: "GPS", icon: <Navigation className="h-3.5 w-3.5" /> },
 ];
 
 /**

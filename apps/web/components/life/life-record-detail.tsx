@@ -8,6 +8,12 @@ import { getRecordMediaUrl, type LifeRecord } from "@/lib/life";
 
 export function LifeRecordDetail({ record }: { record: LifeRecord }) {
   const location = [record.country, record.city].filter(Boolean).join(" ");
+  // 经纬度不再直接显示：有地名就展示具体位置，坐标只放在 tooltip 里备查
+  const coords =
+    record.latitude != null && record.longitude != null
+      ? `${record.latitude.toFixed(5)}, ${record.longitude.toFixed(5)}`
+      : "";
+  const altitudeText = record.altitude != null ? `海拔 ${Math.round(record.altitude)}m` : "";
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   useEffect(() => {
     if (record.videoUrl) {
@@ -31,13 +37,16 @@ export function LifeRecordDetail({ record }: { record: LifeRecord }) {
           {record.weather && <Badge variant="ai">{record.weather}</Badge>}
         </div>
         <p className="text-sm text-muted">{record.createdAt?.replace("T", " ").slice(0, 16)}</p>
-        {location && <p className="text-sm">📍 {location}</p>}
-        {record.latitude != null && record.longitude != null && (
-          <p className="text-[13px] text-muted">
-            GPS：{record.latitude.toFixed(5)}, {record.longitude.toFixed(5)}
-            {record.altitude != null ? ` · 海拔 ${record.altitude}m` : ""}
+        {location ? (
+          <p className="text-sm" title={coords ? `坐标：${coords}` : undefined}>
+            📍 {location}
+            {altitudeText ? ` · ${altitudeText}` : ""}
           </p>
-        )}
+        ) : coords || altitudeText ? (
+          <p className="text-[13px] text-muted" title={coords ? `坐标：${coords}` : undefined}>
+            📍 位置已记录{altitudeText ? ` · ${altitudeText}` : ""}
+          </p>
+        ) : null}
         {record.content && <p className="rounded-[10px] bg-surface-muted p-3 text-sm leading-relaxed">{record.content}</p>}
       </div>
     </Card>

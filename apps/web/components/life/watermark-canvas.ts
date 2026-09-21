@@ -166,6 +166,7 @@ function buildDetailLine(meta: WatermarkMeta, options: WatermarkOptions): string
   if (enabled(options, "weather") && meta.weather) parts.push(meta.weather);
   if (enabled(options, "temperature") && meta.temperature != null) parts.push(`${meta.temperature}°C`);
   if (enabled(options, "altitude") && meta.altitude != null) parts.push(`海拔 ${Math.round(meta.altitude)}m`);
-  if (enabled(options, "gps") && meta.gps) parts.push(meta.gps);
+  // 与 city 重复时只打一次（现在 city 里放的就是具体位置地名）
+  if (enabled(options, "gps") && meta.gps && meta.gps !== meta.city) parts.push(meta.gps);
   return parts.join("   ·   ");
 }

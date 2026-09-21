@@ -100,7 +100,11 @@ export default function CompanionPage() {
     recog.start();
   };
 
-  const { data: gamesRes, isLoading: gamesLoading } = useQuery({
+  const {
+    data: gamesRes,
+    isLoading: gamesLoading,
+    refetch: refetchGames,
+  } = useQuery({
     queryKey: ["companion-games"],
     queryFn: () => journalCompanionApi.getGames(),
     enabled: mode === "game",
@@ -381,6 +385,17 @@ export default function CompanionPage() {
                     loading={gamesLoading}
                     onPick={pickGame}
                   />
+                  {!gamesLoading && games.length === 0 && (
+                    <div className="mt-3 flex items-center justify-center gap-2 text-[12px] text-text-tertiary">
+                      <span>游戏列表没加载出来</span>
+                      <button
+                        onClick={() => refetchGames()}
+                        className="rounded-full border border-border-subtle bg-surface px-3 py-1 text-[11px] text-text-secondary transition-colors hover:border-primary/40 hover:bg-surface-elevated hover:text-text"
+                      >
+                        重试
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="mt-5 flex flex-wrap items-center justify-center gap-2">

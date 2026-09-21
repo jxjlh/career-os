@@ -103,11 +103,15 @@ class GrowthPlanRequest(BaseModel):
         validation_alias=AliasChoices("goalId", "goal_id"),
     )
     goal_title: str | None = Field(default=None, validation_alias=AliasChoices("goalTitle", "goal_title"))
-    target_description: str = Field(
-        min_length=1,
+    # 表单式生成（只给 goalId）时可为空 —— 服务端会从人生目标上读取描述与分类。
+    target_description: str | None = Field(
+        default=None,
         max_length=300,
         validation_alias=AliasChoices("targetDescription", "target_description"),
     )
+    # 目标分类（travel/career/skill/health/finance/relationship/other）。
+    # 只在目标详情页「AI 生成规划」入口使用；不给则从 goal 上取，再兜底 other。
+    category: str | None = Field(default=None, max_length=40)
     current_status: str | None = Field(
         default=None,
         validation_alias=AliasChoices("currentStatus", "current_status"),
@@ -124,6 +128,9 @@ class GrowthPlanResponse(BaseModel):
     aiContentId: str
     title: str | None = None
     summary: str | None = None
+    # 规划所属目标分类，前端据此换文案/图标（如「健康生活」的规划不叫「成长计划」）
+    category: str | None = None
+    goalId: str | None = None
     phases: list[dict] = []
     dailyPlan: list[dict] = []
     milestones: list[str] = []

@@ -56,6 +56,7 @@ def ensure_columns() -> None:
             "region": "VARCHAR(120)",
             "friends": "JSON",
             "ai_plan_meta": "JSON",
+            "custom_fields": "JSON",
         },
         "user_profiles": {
             "life_motto": "VARCHAR(300)",

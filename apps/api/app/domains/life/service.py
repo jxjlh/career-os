@@ -78,6 +78,7 @@ def life_goal_dict(goal: LifeGoal) -> dict:
         "region": goal.region,
         "friends": goal.friends or [],
         "aiPlanMeta": goal.ai_plan_meta or {},
+        "customFields": goal.custom_fields or {},
         "status": goal.status,
         "isAiGenerated": goal.is_ai_generated,
         "createdAt": goal.created_at.isoformat() if goal.created_at else None,
@@ -139,6 +140,7 @@ class LifeGoalService:
         data["recommended_days"] = data.pop("recommendedDays", None)
         data["best_season"] = data.pop("bestSeason", None)
         data["ai_plan_meta"] = data.pop("aiPlanMeta", {})
+        data["custom_fields"] = data.pop("customFields", {}) or {}
         data["is_ai_generated"] = data.pop("isAiGenerated", False)
         goal = self.repository.create(user_id, **data)
         if goal.status == "completed":
@@ -175,6 +177,8 @@ class LifeGoalService:
             goal.best_season = data.pop("bestSeason")
         if "aiPlanMeta" in data:
             goal.ai_plan_meta = data.pop("aiPlanMeta") or {}
+        if "customFields" in data:
+            goal.custom_fields = data.pop("customFields") or {}
         if "friends" in data:
             goal.friends = data.pop("friends") or []
         if "isAiGenerated" in data:

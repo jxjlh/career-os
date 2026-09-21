@@ -7,8 +7,12 @@ from app.core.errors import AppError
 from app.db.models import AIContent, GoalTask, TravelChecklistItem
 from app.domains.ai.prompts.bucket_recommendation import BUCKET_RECOMMENDATION_PROMPT
 from app.domains.ai.prompts.friend_recommendation import FRIEND_RECOMMENDATION_PROMPT
-from app.domains.ai.prompts.growth_plan import GROWTH_PLAN_PROMPT
 from app.domains.ai.prompts.journal import JOURNAL_PROMPT
+from app.domains.ai.prompts.life_plan import (
+    CATEGORY_LABELS,
+    build_life_plan_prompt,
+    render_goal_context,
+)
 from app.domains.ai.prompts.map_insight import MAP_INSIGHT_PROMPT
 from app.domains.ai.prompts.photo_analysis import PHOTO_ANALYSIS_PROMPT
 from app.domains.ai.prompts.team_plan import TEAM_PLAN_PROMPT
@@ -132,6 +136,33 @@ class TravelPlanService:
             preparation=parsed.get("preparation") or [],
             tips=parsed.get("tips") or [],
         )
+
+    def latest(self, user_id: str, goal_id: str) -> TravelPlanResponse | None:
+        """取该人生目标最近一次生成、且确实包含逐日路线的旅行攻略。
+
+        对话式助手（/ai/travel-assistant）与表单式生成（/ai/travel-plan）都会落
+        content_type="travel_plan"，此处按 input_json.goal_id 归属过滤，只认有 route 的那条，
+        纯闲聊（还没出行程）不算，前端据此显示引导态。
+        """
+        for content in self.ai.repository.list_by_type(user_id, "travel_plan", limit=100):
+            input_data = content.input_json or {}
+            if str(input_data.get("goal_id") or "") != goal_id:
+                continue
+            parsed = content.output_json or {}
+            route = parsed.get("route") or []
+            if not route:
+                continue
+            return TravelPlanResponse(
+                id=content.id,
+                aiContentId=content.id,
+                title=parsed.get("title"),
+                summary=parsed.get("summary"),
+                bestTime=parsed.get("best_time"),
+                route=route,
+                preparation=parsed.get("preparation") or [],
+                tips=parsed.get("tips") or [],
+            )
+        return None
 
 
 class TravelAssistantService:
@@ -317,38 +348,103 @@ class GrowthPlanService:
         self.ai = AIService(db)
         self.goals = LifeGoalRepository(db)
 
+    @staticmethod
+    def _to_response(record: AIContent, parsed: dict, category: str | None) -> GrowthPlanResponse:
+        return GrowthPlanResponse(
+            id=record.id,
+            aiContentId=record.id,
+            title=parsed.get("title"),
+            summary=parsed.get("summary"),
+            category=category,
+            goalId=(record.input_json or {}).get("goal_id"),
+            phases=parsed.get("phases") or [],
+            dailyPlan=parsed.get("daily_plan") or [],
+            milestones=parsed.get("milestones") or [],
+            tips=parsed.get("tips") or [],
+        )
+
     async def generate(self, user_id: str, payload: GrowthPlanRequest) -> GrowthPlanResponse:
-        if payload.goal_id and self.goals.get_owned(user_id, payload.goal_id) is None:
-            raise AppError(code="NOT_FOUND", message="Life goal not found", status=404)
+        """按目标分类生成规划。
+
+        两种用法：
+        - 目标详情页的「AI 生成规划」：只传 goal_id（可带 category），标题/描述/预算/
+          目标值等全部从人生目标上读，用户不用再填一遍。
+        - 旧调用方：直接传 target_description 等字段，行为与之前一致。
+        """
+        goal = None
+        if payload.goal_id:
+            goal = self.goals.get_owned(user_id, payload.goal_id)
+            if goal is None:
+                raise AppError(code="NOT_FOUND", message="Life goal not found", status=404)
+
+        category = (payload.category or (goal.category if goal else None) or "other").strip() or "other"
+        title = payload.goal_title or (goal.title if goal else None) or "未命名目标"
+        description = payload.target_description or (goal.description if goal else None) or ""
+        if not description and payload.current_status:
+            description = payload.current_status
+
+        # 已知条件：目标上已有的结构化字段 + 调用方显式补充的现状/可投入时间
+        extra_parts: list[str] = []
+        if goal is not None:
+            rendered = render_goal_context(
+                {
+                    "budget": goal.budget,
+                    "recommended_days": goal.recommended_days,
+                    "best_season": goal.best_season,
+                    "region": goal.region,
+                    "location": goal.location,
+                    "difficulty": goal.difficulty,
+                    "friends": goal.friends,
+                    "custom_fields": goal.custom_fields,
+                }
+            )
+            if rendered:
+                extra_parts.append(rendered)
+        if payload.available_time:
+            extra_parts.append(f"- 可投入时间：{payload.available_time}")
+        if payload.current_status:
+            extra_parts.append(f"- 当前状态：{payload.current_status}")
+
+        prompt = build_life_plan_prompt(
+            category,
+            title=title,
+            category_label=CATEGORY_LABELS.get(category, category),
+            description=description,
+            extra_context="\n".join(extra_parts),
+            start_date=goal.start_date.isoformat() if goal is not None and goal.start_date else "未指定，按今天开始",
+            target_date=goal.target_date.isoformat() if goal is not None and goal.target_date else "未指定",
+        )
+
         input_data = {
             "goal_id": payload.goal_id,
-            "goal_title": payload.goal_title,
-            "target_description": payload.target_description,
+            "goal_title": title,
+            "target_description": description,
+            "category": category,
             "available_time": payload.available_time,
             "difficulty": payload.difficulty,
         }
-        prompt = GROWTH_PLAN_PROMPT.format(
-            target_description=payload.target_description,
-            current_status=payload.current_status or "未说明",
-            available_time=payload.available_time or "未说明",
-            difficulty=payload.difficulty or "medium",
-        )
         record, parsed = await self.ai.generate_content(
             user_id=user_id,
             content_type="growth_plan",
             input_data=input_data,
             prompt=prompt,
         )
-        return GrowthPlanResponse(
-            id=record.id,
-            aiContentId=record.id,
-            title=parsed.get("title"),
-            summary=parsed.get("summary"),
-            phases=parsed.get("phases") or [],
-            dailyPlan=parsed.get("daily_plan") or [],
-            milestones=parsed.get("milestones") or [],
-            tips=parsed.get("tips") or [],
-        )
+        return self._to_response(record, parsed, category)
+
+    def latest(self, user_id: str, goal_id: str) -> GrowthPlanResponse | None:
+        """取该人生目标最近一次生成、且确实产出内容（阶段/日程/里程碑任一非空）的规划。
+
+        详情页据此显示「已保存的规划」；只有闲聊式空结果不算，前端会回到引导态。
+        """
+        for content in self.ai.repository.list_by_type(user_id, "growth_plan", limit=100):
+            input_data = content.input_json or {}
+            if str(input_data.get("goal_id") or "") != goal_id:
+                continue
+            parsed = content.output_json or {}
+            if not (parsed.get("phases") or parsed.get("daily_plan") or parsed.get("milestones")):
+                continue
+            return self._to_response(content, parsed, input_data.get("category"))
+        return None
 
 
 class GrowthTaskGeneratorService:

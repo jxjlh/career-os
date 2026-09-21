@@ -1,12 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ChevronRight, CircleDashed, Clock, Plus, Sparkles, Trash2, Camera, Image as ImageIcon } from "lucide-react";
+import { CheckCircle2, ChevronRight, CircleDashed, Clock, Loader2, MapPin, Plus, Sparkles, Trash2, Camera, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, useMemo } from "react";
 
 import { LifeRecordImage } from "@/components/life/life-record-image";
 import { Badge, Button, Card, Input, Textarea } from "@/components/ui";
+import { buildCategoryValues, getCategoryFields } from "@/lib/life-fields";
+import { formatPlace, getLocationState, reverseGeocode } from "@/lib/location";
 import {
   CATEGORY_META,
   createLifeGoal,
@@ -22,6 +24,55 @@ interface LifeGoalBoardProps {
   goals: LifeGoal[];
 }
 
+/**
+ * 删除人生目标（带二次确认）。
+ * 删掉后目标下的记录会级联删除，所以要把目标/地图/看板缓存一起失效。
+ */
+function DeleteGoalButton({
+  goalId,
+  title,
+  onDeleted,
+  className = "",
+}: {
+  goalId: string;
+  title: string;
+  onDeleted?: () => void;
+  className?: string;
+}) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => deleteLifeGoal(goalId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["life-goals"] });
+      queryClient.invalidateQueries({ queryKey: ["life-map"] });
+      queryClient.invalidateQueries({ queryKey: ["life-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["life-goal-suggestions"] });
+      onDeleted?.();
+    },
+    onError: (e: Error) => alert(e.message || "删除失败，请稍后重试"),
+  });
+
+  return (
+    <button
+      type="button"
+      title="删除目标"
+      aria-label={`删除目标「${title}」`}
+      disabled={mutation.isPending}
+      onClick={(e) => {
+        // 卡片本身是 Link / 可点击区域，这里必须阻止冒泡，否则会跳详情页
+        e.preventDefault();
+        e.stopPropagation();
+        if (confirm(`确定要删除「${title}」吗？\n该目标下的记录也会一并删除。`)) {
+          mutation.mutate();
+        }
+      }}
+      className={`shrink-0 rounded-[6px] p-1 text-muted transition-colors hover:bg-red-500/10 hover:text-red-500 disabled:opacity-40 ${className}`}
+    >
+      {mutation.isPending ? <Clock className="h-3.5 w-3.5 animate-pulse" /> : <Trash2 className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
 function GoalColumn({
   title,
   icon,
@@ -29,6 +80,7 @@ function GoalColumn({
   tone,
   onSelect,
   selectedId,
+  onGoalDeleted,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -36,6 +88,7 @@ function GoalColumn({
   tone: "slate" | "emerald" | "sky";
   onSelect?: (goal: LifeGoal) => void;
   selectedId?: string | null;
+  onGoalDeleted?: (goalId: string) => void;
 }) {
   const toneClass =
     tone === "emerald"
@@ -75,6 +128,11 @@ function GoalColumn({
                     {goal.bestSeason && <Badge variant="success">{goal.bestSeason}</Badge>}
                   </div>
                 </div>
+                <DeleteGoalButton
+                  goalId={goal.id}
+                  title={goal.title}
+                  onDeleted={() => onGoalDeleted?.(goal.id)}
+                />
               </div>
               {goal.status !== "completed" && (
                 <span className="mt-2 flex items-center gap-0.5 text-[10px] font-medium text-primary">
@@ -128,17 +186,9 @@ function CompletedGoalDetail({ goal, onDeleteGoal }: { goal: LifeGoal; onDeleteG
   });
   const items = records.data || [];
   const first = items[0];
-  const queryClient = useQueryClient();
   const [showAddRecord, setShowAddRecord] = useState(false);
   const [reflection, setReflection] = useState("");
-  
-  const deleteGoalMutation = useMutation({
-    mutationFn: () => deleteLifeGoal(goal.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["life-goals"] });
-      onDeleteGoal();
-    },
-  });
+  const queryClient = useQueryClient();
 
   const addRecordMutation = useMutation({
     mutationFn: () =>
@@ -161,17 +211,7 @@ function CompletedGoalDetail({ goal, onDeleteGoal }: { goal: LifeGoal; onDeleteG
           <Link href={`/life/goals/${goal.id}`} className="text-xs font-medium text-primary">
             查看完整目标 →
           </Link>
-          <button
-            onClick={() => {
-              if (confirm("确定要删除这个目标吗？")) {
-                deleteGoalMutation.mutate();
-              }
-            }}
-            className="p-1 rounded hover:bg-red-500/10 text-muted hover:text-red-400"
-            title="删除目标"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          <DeleteGoalButton goalId={goal.id} title={goal.title} onDeleted={onDeleteGoal} />
         </div>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr]">
@@ -285,6 +325,9 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
   const [selectedCompleted, setSelectedCompleted] = useState<string | null>(null);
   const [newCategoryMode, setNewCategoryMode] = useState(false);
   const [form, setForm] = useState<LifeGoalInput>({ title: "", category: "travel" });
+  const [locating, setLocating] = useState(false);
+  /** 分类专属字段的输入缓存（含列字段），key = `${category}:${fieldKey}` */
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
 
   const total = goals.length;
   const completed = useMemo(() => goals.filter((g) => g.status === "completed"), [goals]);
@@ -305,11 +348,12 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
   );
 
   const createMutation = useMutation({
-    mutationFn: () => createLifeGoal(form),
+    mutationFn: () => createLifeGoal(buildInput()),
     onSuccess: () => {
       setCreating(false);
       setNewCategoryMode(false);
       setForm({ title: "", category: "travel" });
+      setCustomValues({});
       queryClient.invalidateQueries({ queryKey: ["life-goals"] });
       queryClient.invalidateQueries({ queryKey: ["life-dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["life-map"] });
@@ -318,6 +362,30 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
 
   const set = <K extends keyof LifeGoalInput>(key: K, value: LifeGoalInput[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  /**
+   * 分类专属字段的输入缓存。key 前面带上分类名，切换分类时互不串值
+   * （health 和 relationship 都有「频率」，含义不同）。
+   */
+  const categoryFields = getCategoryFields(form.category);
+
+  const setCustomValue = (key: string, value: string) =>
+    setCustomValues((prev) => ({ ...prev, [`${form.category}:${key}`]: value }));
+
+  const buildInput = (): LifeGoalInput => {
+    const raw: Record<string, string> = {};
+    for (const spec of categoryFields) {
+      raw[spec.key] = customValues[`${form.category}:${spec.key}`] ?? "";
+    }
+    const { columns, customFields } = buildCategoryValues(categoryFields, raw);
+    const payload: LifeGoalInput = { ...form, ...columns };
+    if (Object.keys(customFields).length > 0) {
+      payload.customFields = customFields;
+    } else {
+      delete payload.customFields;
+    }
+    return payload;
+  };
 
   const handleCategoryChange = (value: string) => {
     if (value === "__new__") {
@@ -330,6 +398,35 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
   };
 
   const selectedGoal = completed.find((g) => g.id === selectedCompleted) || null;
+
+  /** 目标被删除后清掉选中态，避免下方详情面板指向一个已不存在的目标 */
+  const handleGoalDeleted = (goalId: string) => {
+    setSelectedCompleted((prev) => (prev === goalId ? null : prev));
+  };
+
+  /** 一键把「地点」填成当前所在的具体位置（同时存下经纬度，供地图/水印使用） */
+  const useCurrentLocation = async () => {
+    setLocating(true);
+    try {
+      const result = await getLocationState();
+      if (result.status !== "ready" || !result.location) {
+        alert(result.error || "未能获取定位，请检查定位权限");
+        return;
+      }
+      const { latitude, longitude } = result.location;
+      const place = await reverseGeocode(latitude, longitude);
+      const text = formatPlace(place);
+      setForm((prev) => ({
+        ...prev,
+        location: text || prev.location,
+        latitude,
+        longitude,
+      }));
+      if (!text) alert("已记录当前位置坐标，但没能解析出地名，可以手动补一下地点。");
+    } finally {
+      setLocating(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -345,6 +442,7 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
             }
           }}
           selectedId={selectedCompleted}
+          onGoalDeleted={handleGoalDeleted}
         />
         <GoalColumn
           title="已完成"
@@ -353,6 +451,7 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
           tone="emerald"
           onSelect={(goal) => setSelectedCompleted((prev) => (prev === goal.id ? null : goal.id))}
           selectedId={selectedCompleted}
+          onGoalDeleted={handleGoalDeleted}
         />
         <GoalColumn
           title="未完成"
@@ -360,6 +459,7 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
           goals={incomplete}
           tone="sky"
           onSelect={(goal) => setSelectedCompleted(null)}
+          onGoalDeleted={handleGoalDeleted}
         />
       </div>
 
@@ -421,29 +521,77 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted">地点</label>
-              <Input value={form.location || ""} onChange={(e) => set("location", e.target.value)} />
+              <div className="flex gap-2">
+                <Input
+                  value={form.location || ""}
+                  onChange={(e) => set("location", e.target.value)}
+                  placeholder="如：北京 / 冰岛雷克雅未克"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void useCurrentLocation()}
+                  disabled={locating}
+                  title="用当前位置自动填充地点"
+                  className="shrink-0"
+                >
+                  {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
+                  当前位置
+                </Button>
+              </div>
+              {form.latitude != null && form.longitude != null && (
+                <p className="mt-1 text-[11px] text-muted">已带上当前位置，地图上会自动打点。</p>
+              )}
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted">预算</label>
-              <Input value={form.budget || ""} onChange={(e) => set("budget", e.target.value)} placeholder="如 10000" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted">推荐天数</label>
-              <Input
-                type="number"
-                min={1}
-                value={form.recommendedDays || ""}
-                onChange={(e) => set("recommendedDays", Number(e.target.value) || undefined)}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted">最佳季节</label>
-              <Input value={form.bestSeason || ""} onChange={(e) => set("bestSeason", e.target.value)} placeholder="如 6-9月" />
-            </div>
+            {/* ── 分类专属字段：由 lib/life-fields.ts 的 CATEGORY_FIELDS 驱动 ── */}
+            {categoryFields.map((spec) => {
+              const value = customValues[`${form.category}:${spec.key}`] ?? "";
+              return (
+                <div key={spec.key} className={spec.type === "textarea" ? "sm:col-span-2" : undefined}>
+                  <label className="mb-1 block text-xs font-medium text-muted">
+                    {spec.label}
+                    {spec.required && <span className="ml-1 text-danger">*</span>}
+                    {spec.unit && <span className="ml-1 font-normal text-muted">（{spec.unit}）</span>}
+                  </label>
+                  {spec.type === "textarea" ? (
+                    <Textarea
+                      rows={2}
+                      value={value}
+                      placeholder={spec.placeholder}
+                      onChange={(e) => setCustomValue(spec.key, e.target.value)}
+                    />
+                  ) : spec.type === "select" ? (
+                    <select
+                      className="h-10 w-full rounded-[10px] border border-border bg-surface/80 px-3 text-sm"
+                      value={value}
+                      onChange={(e) => setCustomValue(spec.key, e.target.value)}
+                    >
+                      <option value="">未选择</option>
+                      {spec.options?.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      type={spec.type === "number" ? "number" : "text"}
+                      value={value}
+                      placeholder={spec.placeholder}
+                      onChange={(e) => setCustomValue(spec.key, e.target.value)}
+                    />
+                  )}
+                </div>
+              );
+            })}
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs font-medium text-muted">描述</label>
               <Textarea rows={3} value={form.description || ""} onChange={(e) => set("description", e.target.value)} />
             </div>
+            <p className="text-[11px] text-muted sm:col-span-2">
+              带 <span className="text-danger">*</span> 的是建议填写的字段，先空着也能创建。
+            </p>
           </div>
           <div className="mt-3 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setCreating(false)}>

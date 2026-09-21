@@ -8,6 +8,11 @@ export interface GeoLocation {
 export interface GeoPlace {
   city?: string;
   country?: string;
+  /** 具体位置（省+市+区/街道 组合后的可读地名，如「北京市朝阳区」） */
+  place?: string;
+  province?: string;
+  district?: string;
+  road?: string;
 }
 
 export interface WeatherInfo {
@@ -101,26 +106,119 @@ export async function getCurrentLocation(): Promise<GeoLocation | null> {
   return state.location;
 }
 
-/**
- * 通过 OpenStreetMap Nominatim 反向地理编码, 将 GPS 转为 城市/国家.
- * 失败返回 null; 该接口公开免费但有限流, 失败时不应阻塞拍照流程.
- */
-export async function reverseGeocode(lat: number, lng: number): Promise<GeoPlace | null> {
+/** Nominatim 有速率限制（1 req/s），同一位置短时间内重复反查直接走缓存。 */
+const geocodeCache = new Map<string, GeoPlace | null>();
+
+/** 依粒度从细到粗拼接地名，去掉重复层级（如 北京市/北京市/朝阳区 → 北京市朝阳区）。 */
+function buildPlaceText(parts: (string | undefined)[], maxParts = 3): string {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const raw of parts) {
+    const part = (raw || "").trim();
+    if (!part || seen.has(part)) continue;
+    // 上级名已被更细层级覆盖时跳过（如 province=北京市, city=北京市）
+    if (kept.some((k) => k.includes(part))) continue;
+    seen.add(part);
+    kept.push(part);
+    if (kept.length >= maxParts) break; // 最多保留 3 级，避免水印/卡片上过长
+  }
+  return kept.join("");
+}
+
+/** 带超时的 JSON 拉取：反查接口不稳定/被限流时不能把界面挂住。 */
+async function fetchJsonWithTimeout(url: string, timeoutMs = 6000): Promise<any | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=zh-CN`,
-      { headers: { Accept: "application/json" } },
-    );
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
     if (!res.ok) return null;
-    const data: { address?: Record<string, string> } = await res.json();
-    const addr = data.address || {};
-    return {
-      city: addr.city || addr.town || addr.village || addr.county || addr.state || undefined,
-      country: addr.country || undefined,
-    };
+    return await res.json();
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/** 主源：OpenStreetMap Nominatim（结构化地址最细，但免费接口有限流，偶发 502） */
+async function nominatimLookup(lat: number, lng: number): Promise<GeoPlace | null> {
+  const data = await fetchJsonWithTimeout(
+    `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=zh-CN`,
+  );
+  if (!data) return null;
+  const addr: Record<string, string> = data.address || {};
+  const country = addr.country || undefined;
+  const province = addr.province || addr.state || addr.region || undefined;
+  const city =
+    addr.city || addr.town || addr.village || addr.municipality || addr.county || addr.state || undefined;
+  const district =
+    addr.city_district || addr.district || addr.borough || addr.county || addr.suburb || undefined;
+  const road = addr.road || addr.neighbourhood || addr.suburb || addr.hamlet || undefined;
+  const place =
+    buildPlaceText([province, city, district, road]) ||
+    buildPlaceText([city, addr.suburb, country]) ||
+    undefined;
+  if (!place && !city && !country) return null;
+  return { country, city, province, district, road, place };
+}
+
+/**
+ * 备用源：BigDataCloud reverse-geocode-client（免费、无需 Key，国内可达性通常更好）。
+ * 只在主源拿不到地名时启用，字段较少，够用即可。
+ */
+async function bigDataCloudLookup(lat: number, lng: number): Promise<GeoPlace | null> {
+  const data = await fetchJsonWithTimeout(
+    `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=zh`,
+  );
+  if (!data) return null;
+  const admin: Array<{ name?: string; adminLevel?: number; order?: number }> =
+    data.localityInfo?.administrative ?? [];
+  const country = data.countryName || undefined;
+  const province = data.principalSubdivision || undefined;
+  const city = data.city || data.locality || undefined;
+  const district =
+    [...admin]
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map((a) => a.name)
+      .filter((name): name is string => Boolean(name) && name !== city && name !== province)
+      .pop() || undefined;
+  const place = buildPlaceText([province, city, district]) || undefined;
+  if (!place && !city && !country) return null;
+  return { country, city, province, district, place };
+}
+
+/**
+ * 反向地理编码: GPS → 可读地名（具体位置 / 市 / 国家）。
+ * 先试 Nominatim，失败再试 BigDataCloud；两个都失败返回 null（调用方兜底，不要阻塞拍照流程）。
+ */
+export async function reverseGeocode(lat: number, lng: number): Promise<GeoPlace | null> {
+  const cacheKey = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+  if (geocodeCache.has(cacheKey)) {
+    return geocodeCache.get(cacheKey) ?? null;
+  }
+
+  let result = await nominatimLookup(lat, lng);
+  if (!result?.place) {
+    const backup = await bigDataCloudLookup(lat, lng);
+    // 主源有部分字段就合并，没有就用备用源
+    result = result ? { ...backup, ...result, place: result.place || backup?.place } : backup;
+  }
+
+  geocodeCache.set(cacheKey, result);
+  return result;
+}
+
+/**
+ * 取用于展示/记录的地名：优先具体位置，退化到 市 + 国家。
+ * 都没有时返回空串（调用方自己决定兜底文案，不要硬塞经纬度）。
+ */
+export function formatPlace(place?: GeoPlace | null): string {
+  if (!place) return "";
+  if (place.place) return place.place;
+  return [place.city, place.country].filter(Boolean).join(" ").trim();
 }
 
 /**
