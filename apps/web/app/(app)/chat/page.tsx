@@ -48,6 +48,7 @@ export default function ChatPage() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [pendingMessage, setPendingMessage] = useState(false); // 发送中的消息状态
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -107,10 +108,31 @@ export default function ChatPage() {
   // 已在好友关系中的 ID 集合
   const friendIds = new Set(mappedFriends.map((f) => f.id).filter(Boolean));
 
-  // 滚动到底部
+  // 滚动到底部 —— 只滚消息容器本身，不动外层文档
+  // （scrollIntoView 会连带滚动 window，导致手机端输入框跟着页面一起抖）
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, activeConversation]);
+
+  // 手机端锁定页面滚动：聊天页 body 存在约 24px 的滚动余量，
+  // 任何交互都会让整页滚动、输入框跟着上下晃。挂载期间锁死 html/body，
+  // 消息列表用自己的滚动容器滚动，卸载时恢复。
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.matchMedia("(max-width: 639px)").matches) return;
+    const doc = document.documentElement;
+    const body = document.body;
+    const prevDoc = doc.style.overflow;
+    const prevBody = body.style.overflow;
+    doc.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    return () => {
+      doc.style.overflow = prevDoc;
+      body.style.overflow = prevBody;
+    };
+  }, []);
 
   // 表情选择处理
   const handleEmojiSelect = useCallback((emoji: string) => {
@@ -377,7 +399,9 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-background relative">
+    // 手机端：fixed 锚定 header 底 ~ 悬浮导航上方，输入框固定不随页面滚动/键盘抖动
+    // 桌面端：保持原 flex + 视口高度
+    <div className="flex bg-background relative h-[calc(100dvh-4rem)] max-sm:fixed max-sm:inset-x-0 max-sm:z-20 max-sm:top-[calc(4rem+env(safe-area-inset-top))] max-sm:bottom-[calc(5rem+env(safe-area-inset-bottom))] max-sm:h-auto">
       {/* Toast 提示 */}
       {toast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-surface-elevated border border-border-subtle rounded-xl px-4 py-2 text-sm shadow-lg animate-in fade-in-0">
@@ -407,7 +431,7 @@ export default function ChatPage() {
               placeholder="搜索用户..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9"
+              className="pl-9 h-9 max-sm:text-[16px]"
             />
             {searchQuery && (
               <button
@@ -447,7 +471,10 @@ export default function ChatPage() {
           </div>
 
           {/* 消息列表 */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div
+            ref={messagesContainerRef}
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3"
+          >
             {msgLoading ? (
               <div className="text-center text-muted py-8">加载中...</div>
             ) : messages.length === 0 ? (
@@ -469,7 +496,7 @@ export default function ChatPage() {
           </div>
 
           {/* 输入区 */}
-          <div className="p-4 border-t border-border-subtle bg-surface-muted/20 relative">
+          <div className="shrink-0 p-3 sm:p-4 border-t border-border-subtle bg-surface/95 backdrop-blur max-sm:bg-surface max-sm:backdrop-blur-none relative">
             <div className="flex items-center gap-2">
               <input
                 ref={fileInputRef}
@@ -512,8 +539,9 @@ export default function ChatPage() {
                     handleSendMessage();
                   }
                 }}
-                className="flex-1"
+                className="flex-1 max-sm:text-[16px]" // 手机端字号 ≥16px，避免 iOS 聚焦时自动放大页面
                 disabled={pendingMessage}
+                enterKeyHint="send"
               />
               <Button
                 variant="primary"

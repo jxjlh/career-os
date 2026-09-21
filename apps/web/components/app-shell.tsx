@@ -109,14 +109,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <main className="relative mx-auto w-full max-w-[1100px] flex-1 p-4 pb-40 sm:p-6 md:pb-32 lg:pb-8">
           <Breadcrumb />
-          <motion.div
-            key={pathname}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={easeStandard}
-          >
-            {children}
-          </motion.div>
+          {/* 聊天页跳过进入动画：其移动端输入区用 fixed 定位锚定视口，
+              motion.div 的 transform 动画会把 fixed 的包含块劫持到自身，导致定位抖动 */}
+          {pathname === "/chat" ? (
+            children
+          ) : (
+            <motion.div
+              key={pathname}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={easeStandard}
+            >
+              {children}
+            </motion.div>
+          )}
           {/* 移动端底部渐变遮罩：提示下方有内容，避免 FixedNav 突然遮挡的突兀感 */}
           <div
             aria-hidden
