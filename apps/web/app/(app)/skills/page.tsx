@@ -98,11 +98,12 @@ export default function SkillsPage() {
   });
 
   const radarOption = {
-    tooltip: {},
+    tooltip: { valueFormatter: (value: number) => `${Math.round(value * 10)}%` },
     radar: { indicator: items.slice(0, 8).map((skill: any) => ({ name: skill.name, max: 10 })), radius: "65%" },
     series: [{ type: "radar", data: [
-      { value: items.slice(0, 8).map((skill: any) => skill.currentLevel || 0), name: "当前水平", areaStyle: { opacity: 0.18 } },
-      { value: items.slice(0, 8).map((skill: any) => skill.targetLevel || 0), name: "目标水平" },
+      // 当前水平 = 真实掌握度（由学习任务完成情况算出），不再是手填等级
+      { value: items.slice(0, 8).map((skill: any) => (Number(skill.masteryPercent) || 0) / 10), name: "真实掌握度", areaStyle: { opacity: 0.18 } },
+      { value: items.slice(0, 8).map((skill: any) => Number(skill.targetLevel) || 0), name: "目标水平" },
     ] }],
     legend: { bottom: 0, textStyle: { color: "var(--muted)" } },
   };
@@ -181,7 +182,26 @@ export default function SkillsPage() {
 function SkillCard({ skill, selected, onSelect, onMove, onRename, onDelete }: { skill: any; selected: boolean; onSelect: () => void; onMove: () => void; onRename: (name: string) => void; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(skill.name);
-  const progress = Number(skill.masteryPercent ?? Math.min(100, Math.round(((skill.currentLevel || 0) / 10) * 100)));
+  const evidence = skill.evidence || {};
+  const hasEvidence = Boolean(evidence.hasEvidence);
+  // 综合掌握度：后端按 evidence > self_assessed(mastered) > none 优先级算出
+  const source: string = skill.masterySource || (hasEvidence ? "evidence" : "none");
+  const progress = Number(skill.masteryPercent ?? 0);
+  // 进度条颜色：有真实证据=主色蓝，自评已掌握=绿色，无记录=灰色
+  const barColor = source === "evidence" ? "bg-primary" : source === "self_assessed" ? "bg-success" : "bg-border";
+  // 状态文案
+  const statusText =
+    source === "evidence"
+      ? `完成任务 ${evidence.doneTasks}/${evidence.totalTasks} · 累计 ${evidence.doneMinutes} 分钟`
+      : source === "self_assessed"
+      ? "自评已掌握（去周计划标记任务可验证真实进度）"
+      : "暂无学习记录，去周计划添加任务并标记完成";
+  const masteryLabel =
+    source === "evidence"
+      ? `掌握度 ${progress}%`
+      : source === "self_assessed"
+      ? `掌握度 ${progress}%（自评）`
+      : "暂无记录";
   const moveLabel = skill.learningStatus === "mastered" ? "移到想学" : "移到已经会";
 
   return (
@@ -193,8 +213,12 @@ function SkillCard({ skill, selected, onSelect, onMove, onRename, onDelete }: { 
         </div>
         <Badge variant={selected ? "primary" : "default"}>{skill.currentLevel || 0}/{skill.targetLevel || 0}</Badge>
       </div>
-      <div className="mt-4 h-2 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} /></div>
-      <div className="mt-2 flex items-center justify-between text-[11px] text-muted"><span>掌握度 {progress}%</span><Target className="h-3.5 w-3.5" /></div>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-surface-muted"><div className={`h-full rounded-full ${barColor}`} style={{ width: `${progress}%` }} /></div>
+      <div className="mt-2 flex items-center justify-between text-[11px] text-muted">
+        <span>{masteryLabel}</span>
+        <Target className="h-3.5 w-3.5" />
+      </div>
+      <p className="mt-1 text-[11px] text-muted">{statusText}</p>
       <div className="mt-3 flex flex-wrap gap-1.5" onClick={(event) => event.stopPropagation()}>
         {editing ? <Button size="sm" onClick={() => { onRename(name.trim()); setEditing(false); }}>保存名称</Button> : <Button size="sm" variant="ghost" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5" />修改</Button>}
         <Button size="sm" variant="ghost" onClick={onMove}>{moveLabel}</Button>
@@ -297,7 +321,10 @@ function SkillDetail({ skill, detailKey, onProgress }: { skill: any; detailKey: 
   };
 
   const progressPercent = Math.min(100, Math.round((current / Math.max(target, 1)) * 100));
-  const masteryPercent = Number(currentSkill.masteryPercent ?? Math.min(100, current * 10));
+  // 综合掌握度：后端按 evidence > self_assessed(mastered) > none 优先级算出
+  const masteryPercent = Number(currentSkill.masteryPercent ?? 0);
+  const evidence = currentSkill.evidence || {};
+  const masterySource: string = currentSkill.masterySource || (evidence.hasEvidence ? "evidence" : "none");
   const dailyProgress = Array.from({ length: 7 }, (_, index) => {
     const dayTasks = (data.tasks || []).filter((task: any) => task.day === index + 1);
     return dayTasks.length ? Math.round((dayTasks.filter((task: any) => task.status === "done").length / dayTasks.length) * 100) : 0;
@@ -309,11 +336,39 @@ function SkillDetail({ skill, detailKey, onProgress }: { skill: any; detailKey: 
       <SectionHeader title={`${currentSkill.name} · 技能详情`} subtitle="点击技能后才显示等级、资源、考核和学习计划。" action={<Badge variant="ai"><Sparkles className="h-3.5 w-3.5" />AI 学习工作区</Badge>} />
       {detail.isLoading ? <Skeleton className="h-32" /> : <>
         <div className="grid gap-3 md:grid-cols-4">
-          <Stat label="当前等级" value={`${current}/10`} />
+          <Stat label="自评等级（参考）" value={`${current}/10`} />
           <Stat label="目标等级" value={`${target}/10`} />
-          <Stat label="掌握度" value={`${masteryPercent}%`} />
+          <Stat label="掌握度" value={masterySource === "none" ? "—" : `${masteryPercent}%`} />
           <Stat label="本周完成" value={`${data.planStats?.done || 0}/${data.planStats?.total || 0}`} />
         </div>
+
+        <Card className="p-4">
+          <SectionHeader title="掌握度是怎么算出来的" subtitle="有学习记录用真实数据，没记录但标记「已掌握」用自评，不拍脑袋、不调 AI。" />
+          {masterySource === "evidence" ? (
+            <div className="grid gap-3 md:grid-cols-4">
+              <Stat label="已完成任务" value={`${evidence.doneTasks}/${evidence.totalTasks}`} />
+              <Stat label="累计学习分钟" value={`${evidence.doneMinutes}`} />
+              <Stat label="时长目标" value={`${evidence.goalMinutes} 分钟`} />
+              <Stat label="掌握度（真实）" value={`${masteryPercent}%`} />
+            </div>
+          ) : masterySource === "self_assessed" ? (
+            <div className="rounded-xl bg-success/8 p-4">
+              <p className="text-sm">
+                你已把这个技能标记为「<b className="text-success">已经会</b>」，当前掌握度按自评等级
+                <b> {masteryPercent}% </b>显示。去「周计划」给这个技能添加任务并标记完成，
+                系统会用真实学习记录覆盖自评，得到更准确的掌握度。
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted">
+              这个技能还没有学习记录。去「周计划」生成任务并勾选完成，掌握度会自动算出来
+              （公式：60% 任务完成率 + 40% 学习时长达标率）。
+            </p>
+          )}
+          <p className="mt-3 text-xs text-muted">
+            优先级：真实学习任务 &gt; 自评（仅「已掌握」技能）&gt; 无记录。自评等级只作参考，有真实记录后以真实为准。
+          </p>
+        </Card>
 
         <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
           <Card className="p-4"><SectionHeader title="技能等级管理" subtitle="只管理当前选中的技能。" /><div className="space-y-3"><LevelSlider label="当前等级" value={current} onChange={setCurrent} /><LevelSlider label="目标等级" value={target} min={1} onChange={setTarget} /><LevelSlider label="信心度" value={confidence} max={100} onChange={setConfidence} /><Button size="sm" onClick={() => onProgress(current, target, confidence)}><Check className="h-3.5 w-3.5" />保存等级</Button></div></Card>

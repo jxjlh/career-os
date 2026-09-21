@@ -6,7 +6,7 @@
  *  - API/POST 等动态请求 → 直通网络，不缓存
  * 仅用于增强 PWA 体验，iOS 不依赖 SW 即可"添加到主屏幕"。
  */
-const CACHE = "lifeos-shell-v1";
+const CACHE = "lifeos-shell-v2";
 const SHELL_PRECACHE = ["/", "/icons/career-os-appicon-192.png", "/icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {

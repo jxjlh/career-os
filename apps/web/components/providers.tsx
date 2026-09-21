@@ -12,9 +12,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 30_000,
+            staleTime: 15_000,
             gcTime: 5 * 60_000,
-            refetchOnWindowFocus: false,
+            // 开启窗口聚焦自动刷新：手机端改了数据，切到电脑端（或反向）时自动同步
+            refetchOnWindowFocus: true,
             refetchOnReconnect: true,
             retry: 1,
           },
