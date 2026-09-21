@@ -73,7 +73,7 @@ export function NotificationBell() {
   }, [open]);
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative max-sm:static">
       <button
         className={cn(
           "relative flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-muted hover:text-text",
@@ -94,7 +94,7 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-[min(24rem,calc(100vw-1.5rem))] max-sm:fixed max-sm:inset-x-2 max-sm:top-[calc(4.5rem+env(safe-area-inset-top))] max-sm:mt-0 max-sm:w-auto max-h-[70vh] flex flex-col rounded-xl border border-border-subtle bg-surface shadow-xl z-[100] overflow-hidden">
+        <div className="absolute right-0 top-full mt-2 w-[min(24rem,calc(100vw-1.5rem))] max-sm:left-2 max-sm:right-2 max-sm:top-full max-sm:mt-0 max-sm:w-auto max-h-[70vh] flex flex-col rounded-xl border border-border-subtle bg-surface shadow-xl z-[100] overflow-hidden">
           <div className="flex items-center justify-between p-3 border-b border-border-subtle shrink-0">
             <h3 className="font-semibold text-sm">通知</h3>
             <div className="flex items-center gap-2">
