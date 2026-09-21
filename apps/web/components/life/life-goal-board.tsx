@@ -404,8 +404,9 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
     setSelectedCompleted((prev) => (prev === goalId ? null : prev));
   };
 
-  /** 一键把「地点」填成当前所在的具体位置（同时存下经纬度，供地图/水印使用） */
-  const useCurrentLocation = async () => {
+  /** 一键把「地点」填成当前所在的具体位置（同时存下经纬度，供地图/水印使用）
+   *  注意：名字不能以 use 开头 —— 它是普通函数不是 Hook，ESLint 会把它当 Hook 调用报 error */
+  const locateNow = async () => {
     setLocating(true);
     try {
       const result = await getLocationState();
@@ -531,7 +532,7 @@ export function LifeGoalBoard({ goals }: LifeGoalBoardProps) {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => void useCurrentLocation()}
+                  onClick={() => void locateNow()}
                   disabled={locating}
                   title="用当前位置自动填充地点"
                   className="shrink-0"

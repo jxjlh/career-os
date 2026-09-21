@@ -3,7 +3,7 @@
 from datetime import date, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -247,6 +247,111 @@ def current_plan(
         db.commit()
         db.refresh(plan)
     return {"data": _plan_dict(db, plan)}
+
+
+@router.get("/planner/weeks")
+def list_recent_weeks(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(16, ge=2, le=52),
+    includeEmpty: bool = Query(True),
+) -> dict:
+    """近 N 周的周计划摘要（按周升序）, 供日历与历史完成率可视化使用.
+
+    includeEmpty=True 时会补上没有计划的周（completionRate=0）, 这样图表是连续的一段。
+    """
+    current_start = _week_start()
+    earliest = current_start - timedelta(weeks=limit - 1)
+    plans = (
+        db.query(WeeklyPlan)
+        .filter(
+            WeeklyPlan.user_id == current_user.id,
+            WeeklyPlan.week_start >= earliest,
+            WeeklyPlan.week_start <= current_start,
+        )
+        .all()
+    )
+    by_start = {p.week_start: p for p in plans}
+    plan_ids = [p.id for p in plans]
+    tasks = db.query(PlanTask).filter(PlanTask.plan_id.in_(plan_ids)).all() if plan_ids else []
+    tasks_by_plan: dict[str, list[PlanTask]] = {}
+    for t in tasks:
+        tasks_by_plan.setdefault(t.plan_id, []).append(t)
+
+    items: list[dict] = []
+    for offset in range(limit - 1, -1, -1):
+        ws = current_start - timedelta(weeks=offset)
+        plan = by_start.get(ws)
+        if plan is None:
+            if not includeEmpty:
+                continue
+            items.append(
+                {
+                    "weekStart": ws.isoformat(),
+                    "weekEnd": (ws + timedelta(days=6)).isoformat(),
+                    "title": None,
+                    "status": "empty",
+                    "aiGenerated": False,
+                    "totalTasks": 0,
+                    "completedTasks": 0,
+                    "completionRate": 0.0,
+                    "totalMinutes": 0,
+                    "completedMinutes": 0,
+                    "weeklyFocus": None,
+                    "isCurrent": offset == 0,
+                    "taskTypes": {},
+                }
+            )
+            continue
+
+        plan_tasks = tasks_by_plan.get(plan.id, [])
+        type_counts: dict[str, int] = {}
+        for t in plan_tasks:
+            key = t.task_type or "learning"
+            type_counts[key] = type_counts.get(key, 0) + 1
+        items.append(
+            {
+                "weekStart": ws.isoformat(),
+                "weekEnd": (ws + timedelta(days=6)).isoformat(),
+                "title": plan.title,
+                "status": plan.status,
+                "aiGenerated": plan.ai_generated,
+                "totalTasks": len(plan_tasks),
+                "completedTasks": sum(1 for t in plan_tasks if t.status == "done"),
+                "completionRate": plan.completion_rate,
+                "totalMinutes": plan.total_minutes,
+                "completedMinutes": plan.completed_minutes,
+                "weeklyFocus": plan.weekly_focus,
+                "isCurrent": offset == 0,
+                "taskTypes": type_counts,
+            }
+        )
+
+    return {
+        "data": items,
+        "meta": {"currentWeekStart": current_start.isoformat(), "limit": limit},
+    }
+
+
+@router.get("/planner/week")
+def week_plan(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    weekStart: date = Query(...),
+) -> dict:
+    """查指定周的计划（日历里点某周时用）. 该周没有计划时 data 返回 null."""
+    start = weekStart - timedelta(days=weekStart.weekday())
+    plan = (
+        db.query(WeeklyPlan)
+        .filter(WeeklyPlan.user_id == current_user.id, WeeklyPlan.week_start == start)
+        .first()
+    )
+    if plan is None:
+        return {"data": None, "meta": {"weekStart": start.isoformat(), "exists": False}}
+    return {
+        "data": _plan_dict(db, plan),
+        "meta": {"weekStart": start.isoformat(), "exists": True},
+    }
 
 
 @router.post("/planner/generate")
