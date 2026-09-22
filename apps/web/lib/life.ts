@@ -483,11 +483,13 @@ export async function getLifeMap(): Promise<LifeMapData> {
 
 export interface TravelPlanRequest {
   goalId?: string;
-  destination: string;
-  days: number;
+  /** 用户自然语言写下的旅行需求；提供后优先走自由文本生成，结构化字段可留空。 */
+  requirement?: string;
+  destination?: string;
+  days?: number;
   budget?: string;
   people?: string;
-  interests: string[];
+  interests?: string[];
 }
 
 export interface TravelDay {
@@ -505,6 +507,16 @@ export interface TravelPlanResponse {
   route: TravelDay[];
   preparation: string[];
   tips: string[];
+}
+
+/** 人工修改攻略：只传要改的字段，未传的保持原值。 */
+export interface TravelPlanUpdateRequest {
+  title?: string | null;
+  summary?: string | null;
+  bestTime?: string | null;
+  route?: TravelDay[];
+  preparation?: string[];
+  tips?: string[];
 }
 
 export interface TravelAssistantMessage {
@@ -534,6 +546,7 @@ export async function generateTravelPlan(payload: TravelPlanRequest): Promise<Tr
     method: "POST",
     body: JSON.stringify({
       goal_id: payload.goalId,
+      requirement: payload.requirement,
       destination: payload.destination,
       days: payload.days,
       budget: payload.budget,
@@ -548,6 +561,17 @@ export async function getLatestTravelPlan(goalId: string): Promise<TravelPlanRes
   return apiFetch<TravelPlanResponse | null>(
     `/ai/travel-plan/latest?goal_id=${encodeURIComponent(goalId)}`,
   );
+}
+
+/** 人工修改已生成的攻略：PATCH 指定 ai_content 的 output_json，只覆盖传了的字段。 */
+export async function updateTravelPlan(
+  aiContentId: string,
+  payload: TravelPlanUpdateRequest,
+): Promise<TravelPlanResponse> {
+  return apiFetch<TravelPlanResponse>(`/ai/travel-plan/${aiContentId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export interface TravelChecklistItem {

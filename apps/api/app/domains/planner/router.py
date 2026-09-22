@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.errors import AppError
 from app.core.security import get_current_user
+from app.core.timeutil import today, week_start
 from app.db.models import (
     LifeGoal,
     PlanTask,
@@ -21,10 +23,13 @@ from app.db.models import (
 )
 from app.domains.planner.service import (
     PlannerService,
+    daily_review_dict,
     delete_task,
+    list_daily_reviews,
     submit_review,
     toggle_task,
     update_task,
+    upsert_daily_review,
 )
 
 router = APIRouter(tags=["planner"])
@@ -53,6 +58,9 @@ class TaskUpdate(BaseModel):
     day: int | None = Field(default=None, ge=1, le=7)
     estimatedMinutes: int | None = Field(default=None, ge=10, le=600)
     priority: str | None = None  # low/medium/high
+    difficulty: str | None = None  # easy/medium/hard
+    taskType: str | None = None  # learning/practice/project/review/english/reading/rest
+    estimatedOutcome: str | None = Field(default=None, max_length=200)
     notes: str | None = None
 
 
@@ -61,12 +69,24 @@ class ReviewRequest(BaseModel):
     reflection: str | None = None
 
 
+class DailyReviewUpdate(BaseModel):
+    """每日总结 + 反思 + 心情（一天一条，多端同步）。"""
+
+    summary: str | None = None
+    reflection: str | None = None
+    mood: int | None = Field(default=None, ge=0, le=5)  # 1-5 心情；0 或 null = 不改/清空
+
+
 # ─────────────────────────────── Helpers ───────────────────────────────
 
 
 def _week_start(day: date | None = None) -> date:
-    target = day or date.today()
-    return target - timedelta(days=target.weekday())
+    """周一为一周起点，按用户时区计算（服务器是 UTC，直接用 date.today() 会跨周错位）。"""
+    return week_start(day)
+
+
+def _today() -> date:
+    return today()
 
 
 def _goal_lookup(db: Session, user_id: str) -> dict[str, str]:
@@ -118,7 +138,7 @@ def _week_goals_payload(db: Session, user_id: str, week_start: date) -> list[dic
                 "status": g.status,
                 "targetDate": g.target_date.isoformat() if g.target_date else None,
                 "dayIndex": (g.target_date - week_start).days + 1 if g.target_date else None,
-                "daysLeft": (g.target_date - date.today()).days if g.target_date else None,
+                "daysLeft": (g.target_date - today()).days if g.target_date else None,
                 "subTasks": [
                     {
                         "id": t.id,
@@ -495,6 +515,9 @@ def patch_task(
         estimated_minutes=payload.estimatedMinutes,
         title=payload.title,
         day=payload.day,
+        difficulty=payload.difficulty,
+        task_type=payload.taskType,
+        estimated_outcome=payload.estimatedOutcome,
     )
     goals = _goal_lookup(db, current_user.id)
     skills = _skill_lookup(db, current_user.id)
@@ -509,6 +532,54 @@ def remove_task(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     delete_task(db, current_user.id, task_id)
+
+
+def _parse_date(value: str | None) -> date:
+    if not value:
+        return today()
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise AppError(code="INVALID_DATE", message="日期格式应为 YYYY-MM-DD", status=422) from exc
+
+
+@router.get("/planner/daily")
+def get_daily(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    date_: str | None = Query(default=None, alias="date"),
+) -> dict:
+    """读取某一天的总结/反思/心情 + 当天任务统计。缺省为今天。"""
+    return {"data": daily_review_dict(db, current_user.id, _parse_date(date_))}
+
+
+@router.put("/planner/daily")
+def save_daily(
+    payload: DailyReviewUpdate,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    date_: str | None = Query(default=None, alias="date"),
+) -> dict:
+    """写入（upsert）某一天的总结/反思/心情。"""
+    upsert_daily_review(
+        db,
+        current_user.id,
+        _parse_date(date_),
+        summary=payload.summary,
+        reflection=payload.reflection,
+        mood=payload.mood,
+    )
+    return {"data": daily_review_dict(db, current_user.id, _parse_date(date_))}
+
+
+@router.get("/planner/daily/range")
+def list_daily(
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    days: int = Query(default=30, ge=1, le=180),
+) -> dict:
+    """最近 N 天的每日记录（含任务统计），供成长分析与日历使用。"""
+    return {"data": {"items": list_daily_reviews(db, current_user.id, days)}}
 
 
 @router.post("/planner/{plan_id}/review")
@@ -553,7 +624,7 @@ def planner_progress(
         plan_id = plan.id
         plan_title = plan.title
         weekly_focus = plan.weekly_focus
-        today_weekday = date.today().weekday() + 1
+        today_weekday = today().weekday() + 1
         today_tasks = (
             db.query(PlanTask)
             .filter(PlanTask.plan_id == plan.id, PlanTask.day == today_weekday)

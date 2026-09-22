@@ -60,3 +60,9 @@ class AIContentRepository(BaseRepository[AIContent]):
             .order_by(AIContent.created_at.desc())
             .first()
         )
+
+    def update_output(self, content: AIContent, output_json: dict) -> AIContent:
+        content.output_json = output_json
+        self.db.commit()
+        self.db.refresh(content)
+        return content

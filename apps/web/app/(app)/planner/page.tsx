@@ -10,6 +10,9 @@ import {
   Languages,
   Lightbulb,
   Loader2,
+  NotebookPen,
+  Pencil,
+  Plus,
   Rocket,
   Search,
   Sparkles,
@@ -21,10 +24,21 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { Badge, Button, EmptyState, SectionHeader, Skeleton, Textarea } from "@/components/ui";
+import { WeekCalendar } from "@/components/planner/week-calendar";
+import { DailyReviewPanel } from "@/components/planner/daily-review-panel";
+import { WeekTrend } from "@/components/planner/week-trend";
 import { apiFetch } from "@/lib/api";
 import { getLifeGoals } from "@/lib/life";
 import { useI18n } from "@/lib/i18n";
 import { easeStandard, easeFast, useTaskCompleteFeedback } from "@/lib/motion";
+import {
+  formatWeekRange,
+  getWeekSummaries,
+  parseIso,
+  shiftWeeks,
+  toIso,
+  type WeekSummary,
+} from "@/lib/planner";
 
 type Envelope = { data: any };
 
@@ -56,10 +70,36 @@ export default function PlannerPage() {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [reviewSummary, setReviewSummary] = useState("");
   const [reviewReflection, setReviewReflection] = useState("");
+  // null = 本周；否则是选中周的周一 ISO 日期（看历史计划用）
+  const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
+  const [todayIso, setTodayIso] = useState("");
+  // 正在给哪一天添加任务 + 草稿
+  const [addingDay, setAddingDay] = useState<number | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftMinutes, setDraftMinutes] = useState("30");
+
+  // 挂载后再算「今天」，避免服务端/客户端时间不同导致 hydration 不一致
+  useEffect(() => {
+    setTodayIso(toIso(new Date()));
+  }, []);
+
+  const weeksQuery = useQuery<WeekSummary[]>({
+    queryKey: ["planner-weeks", 16],
+    queryFn: () => getWeekSummaries(16),
+  });
+  const weeks = weeksQuery.data ?? [];
+  // 「本周」以服务端返回的 isCurrent 为准，客户端时间只做兜底
+  const currentWeekStart = weeks.find((w) => w.isCurrent)?.weekStart ?? "";
+
+  const isCurrentWeek = selectedWeek === null;
+  const activeWeek = selectedWeek ?? currentWeekStart;
 
   const plan = useQuery<Envelope>({
-    queryKey: ["planner-current"],
-    queryFn: () => apiFetch("/planner/current"),
+    queryKey: isCurrentWeek ? ["planner-current"] : ["planner-week", selectedWeek],
+    queryFn: () =>
+      isCurrentWeek
+        ? apiFetch("/planner/current")
+        : apiFetch(`/planner/week?weekStart=${selectedWeek}`),
   });
 
   const { data: lifeGoals } = useQuery({
@@ -91,7 +131,11 @@ export default function PlannerPage() {
         body: JSON.stringify({ weeklyStudyMinutes: 420, goalIds }),
       });
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["planner-current"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["planner-current"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-week"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-weeks"] });
+    },
   });
 
   const toggleTask = useMutation({
@@ -99,6 +143,8 @@ export default function PlannerPage() {
       apiFetch(`/planner/tasks/${taskId}/toggle`, { method: "PATCH" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["planner-current"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-week"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-weeks"] });
       queryClient.invalidateQueries({ queryKey: ["planner-progress"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
@@ -109,6 +155,42 @@ export default function PlannerPage() {
       apiFetch(`/planner/tasks/${taskId}`, { method: "DELETE" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["planner-current"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-week"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-weeks"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-progress"] });
+    },
+  });
+
+  /** 手动改每天的任务：标题/时长/类型/难度/优先级/挪到别的天 */
+  const updateTask = useMutation({
+    mutationFn: ({ taskId, payload }: { taskId: string; payload: any }) =>
+      apiFetch(`/planner/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["planner-current"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-week"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-weeks"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-progress"] });
+      queryClient.invalidateQueries({ queryKey: ["skill-matrix"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-overview"] });
+    },
+  });
+
+  /** 在指定天手动加一条任务 */
+  const addTask = useMutation({
+    mutationFn: ({ day, title, minutes }: { day: number; title: string; minutes: number }) =>
+      apiFetch("/planner/tasks", {
+        method: "POST",
+        body: JSON.stringify({ title, day, estimatedMinutes: minutes }),
+      }),
+    onSuccess: () => {
+      setAddingDay(null);
+      setDraftTitle("");
+      queryClient.invalidateQueries({ queryKey: ["planner-current"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-week"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-weeks"] });
       queryClient.invalidateQueries({ queryKey: ["planner-progress"] });
     },
   });
@@ -122,11 +204,17 @@ export default function PlannerPage() {
         body: JSON.stringify({ summary: reviewSummary, reflection: reviewReflection }),
       });
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["planner-current"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["planner-current"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-week"] });
+      queryClient.invalidateQueries({ queryKey: ["planner-weeks"] });
+    },
   });
 
-  const planData = plan.data?.data;
+  const planData = plan.data?.data ?? null;
   const tasks = planData?.tasks || [];
+  /** 选中的历史周没有计划 */
+  const weekHasNoPlan = !plan.isLoading && !isCurrentWeek && !planData;
 
   // 同步复盘文本 (plan 加载后填回)
   useEffect(() => {
@@ -136,29 +224,79 @@ export default function PlannerPage() {
 
   const completionPct = Math.round((planData?.completionRate ?? 0) * 100);
 
+  const selectWeek = (weekStart: string) => {
+    setSelectedWeek(weekStart === currentWeekStart ? null : weekStart);
+    setExpandedTaskId(null);
+  };
+
   return (
-    <div>
+    <div className="space-y-6">
       <SectionHeader
         title={t("planner.title")}
-        subtitle={planData?.weekStart || ""}
-        action={
-          <Button
-            onClick={() => generate.mutate()}
-            disabled={generate.isPending}
-            variant="primary"
-          >
-            {generate.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4" />
-            )}
-            {planData?.aiGenerated ? t("planner.regenerate") : t("planner.generate")}
-          </Button>
+        subtitle={
+          isCurrentWeek
+            ? planData?.weekStart || ""
+            : `${formatWeekRange(activeWeek)}${planData ? "" : ` · ${t("planner.noPlanThatWeek")}`}`
         }
+        action={
+          isCurrentWeek ? (
+            <Button
+              onClick={() => generate.mutate()}
+              disabled={generate.isPending}
+              variant="primary"
+            >
+              {generate.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {planData?.aiGenerated ? t("planner.regenerate") : t("planner.generate")}
+            </Button>
+          ) : (
+            <Button variant="ghost" onClick={() => setSelectedWeek(null)}>
+              <CalendarClock className="h-4 w-4" />
+              {t("planner.backToCurrent")}
+            </Button>
+          )
+        }
+      />
+
+      {/* ── 最顶端：历史周完成率可视化 ── */}
+      <WeekTrend
+        weeks={weeks}
+        selectedWeek={activeWeek}
+        onSelect={selectWeek}
+        title={t("planner.historyTitle")}
+        emptyHint={t("planner.historyEmpty")}
+      />
+
+      {/* ── 日历：按周切换历史计划 ── */}
+      <WeekCalendar
+        weeks={weeks}
+        selectedWeek={activeWeek}
+        onSelect={selectWeek}
+        todayIso={todayIso}
+        footHint={t("planner.calendarHint")}
+        weekLabel={t("planner.weekLabel")}
+        noPlanLabel={t("planner.noPlanThatWeek")}
+        backToThisWeekLabel={t("planner.backToCurrent")}
+        isCurrentSelected={isCurrentWeek}
+        onBackToCurrent={() => setSelectedWeek(null)}
       />
 
       {plan.isLoading ? (
         <Skeleton className="h-64" />
+      ) : weekHasNoPlan ? (
+        <EmptyState
+          title={t("planner.weekNoPlanTitle")}
+          description={t("planner.weekNoPlanDesc")}
+          action={
+            <Button variant="primary" size="sm" onClick={() => setSelectedWeek(null)}>
+              <CalendarClock className="h-4 w-4" />
+              {t("planner.backToCurrent")}
+            </Button>
+          }
+        />
       ) : tasks.length === 0 ? (
         <EmptyState
           title={t("planner.empty")}
@@ -205,9 +343,13 @@ export default function PlannerPage() {
             {Array.from({ length: 7 }, (_, i) => i + 1).map((day) => {
               const dayTasks = tasks.filter((task: any) => task.day === day);
               const dayDone = dayTasks.filter((t: any) => t.status === "done").length;
-              const today = new Date().getDay();
-              const todayIdx = today === 0 ? 7 : today; // 1-7
-              const isToday = day === todayIdx;
+              // 只有查看「本周」时才高亮今天那一列
+              const todayWeekday = todayIso
+                ? parseIso(todayIso).getDay() === 0
+                  ? 7
+                  : parseIso(todayIso).getDay()
+                : -1;
+              const isToday = isCurrentWeek && day === todayWeekday;
               return (
                 <motion.div
                   key={day}
@@ -237,17 +379,92 @@ export default function PlannerPage() {
                         }
                         onToggleStatus={() => toggleTask.mutate(task.id)}
                         onDelete={() => deleteTask.mutate(task.id)}
+                        onSave={(payload) => updateTask.mutate({ taskId: task.id, payload })}
+                        saving={updateTask.isPending}
                         t={t}
                       />
                     ))}
                     {dayTasks.length === 0 && (
                       <p className="py-4 text-center text-[11px] text-text-tertiary">—</p>
                     )}
+
+                    {/* 手动给这一天加任务 */}
+                    {isCurrentWeek &&
+                      (addingDay === day ? (
+                        <div className="space-y-1.5 rounded-[10px] border border-border-subtle bg-surface/60 p-2">
+                          <input
+                            autoFocus
+                            value={draftTitle}
+                            onChange={(event) => setDraftTitle(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" && draftTitle.trim()) {
+                                addTask.mutate({
+                                  day,
+                                  title: draftTitle.trim(),
+                                  minutes: Number(draftMinutes) || 30,
+                                });
+                              }
+                              if (event.key === "Escape") setAddingDay(null);
+                            }}
+                            placeholder={t("planner.addTaskPlaceholder")}
+                            className="w-full rounded-[8px] border border-border-subtle bg-transparent px-2 py-1.5 text-[12px] text-text outline-none focus:border-primary/60"
+                          />
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min={10}
+                              max={600}
+                              value={draftMinutes}
+                              onChange={(event) => setDraftMinutes(event.target.value)}
+                              className="w-16 rounded-[8px] border border-border-subtle bg-transparent px-2 py-1 text-[11px] text-text outline-none focus:border-primary/60"
+                            />
+                            <span className="text-[10px] text-text-tertiary">
+                              {t("planner.minutes")}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              className="ml-auto"
+                              disabled={!draftTitle.trim() || addTask.isPending}
+                              onClick={() =>
+                                addTask.mutate({
+                                  day,
+                                  title: draftTitle.trim(),
+                                  minutes: Number(draftMinutes) || 30,
+                                })
+                              }
+                            >
+                              {addTask.isPending ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Plus className="h-3 w-3" />
+                              )}
+                              {t("planner.addTask")}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddingDay(day);
+                            setDraftTitle("");
+                            setDraftMinutes("30");
+                          }}
+                          className="flex w-full items-center justify-center gap-1 rounded-[10px] border border-dashed border-border-subtle py-1.5 text-[11px] text-text-tertiary transition-colors hover:border-primary/50 hover:text-primary"
+                        >
+                          <Plus className="h-3 w-3" />
+                          {t("planner.addTask")}
+                        </button>
+                      ))}
                   </div>
                 </motion.div>
               );
             })}
           </div>
+
+          {/* ── 每日总结与反思（服务端存储，多端同步） ── */}
+          {isCurrentWeek && <DailyReviewPanel days={7} />}
 
           {/* ── 周复盘区 ── */}
           <ReviewSection
@@ -258,6 +475,7 @@ export default function PlannerPage() {
             onSubmit={() => submitReview.mutate()}
             isSubmitting={submitReview.isPending}
             submitted={planData?.status === "reviewed"}
+            readOnly={!isCurrentWeek}
             t={t}
           />
         </div>
@@ -559,6 +777,8 @@ function TaskCard({
   onToggleExpand,
   onToggleStatus,
   onDelete,
+  onSave,
+  saving = false,
   t,
 }: {
   task: any;
@@ -566,10 +786,48 @@ function TaskCard({
   onToggleExpand: () => void;
   onToggleStatus: () => void;
   onDelete: () => void;
+  onSave: (payload: any) => void;
+  saving?: boolean;
   t: (key: string) => string;
 }) {
   const { playing, trigger } = useTaskCompleteFeedback();
   const isDone = task.status === "done";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({
+    title: task.title,
+    minutes: String(task.estimatedMinutes ?? 60),
+    day: String(task.day ?? 1),
+    taskType: task.taskType ?? "learning",
+    difficulty: task.difficulty ?? "medium",
+    priority: task.priority ?? "medium",
+    notes: task.notes ?? "",
+  });
+
+  // 服务端数据更新后同步草稿
+  useEffect(() => {
+    setDraft({
+      title: task.title,
+      minutes: String(task.estimatedMinutes ?? 60),
+      day: String(task.day ?? 1),
+      taskType: task.taskType ?? "learning",
+      difficulty: task.difficulty ?? "medium",
+      priority: task.priority ?? "medium",
+      notes: task.notes ?? "",
+    });
+  }, [task]);
+
+  const commitEdit = () => {
+    onSave({
+      title: draft.title.trim(),
+      estimatedMinutes: Number(draft.minutes) || 60,
+      day: Number(draft.day) || 1,
+      taskType: draft.taskType,
+      difficulty: draft.difficulty,
+      priority: draft.priority,
+      notes: draft.notes,
+    });
+    setEditing(false);
+  };
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -715,9 +973,123 @@ function TaskCard({
                         : task.resourceUrl}
                     </a>
                   )}
-                  {task.notes && (
+                  {task.notes && !editing && (
                     <p className="text-[11px] text-text-tertiary">{task.notes}</p>
                   )}
+
+                  {/* ── 编辑这条任务（AI 生成后也能改） ── */}
+                  {editing ? (
+                    <div className="space-y-2 rounded-[10px] bg-surface-muted/40 p-2">
+                      <input
+                        value={draft.title}
+                        onChange={(event) =>
+                          setDraft((prev) => ({ ...prev, title: event.target.value }))
+                        }
+                        className="w-full rounded-[8px] border border-border-subtle bg-transparent px-2 py-1.5 text-[12px] text-text outline-none focus:border-primary/60"
+                        placeholder={t("planner.addTaskPlaceholder")}
+                      />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <label className="flex items-center gap-1 text-[10px] text-text-tertiary">
+                          {t("planner.minutes")}
+                          <input
+                            type="number"
+                            min={10}
+                            max={600}
+                            value={draft.minutes}
+                            onChange={(event) =>
+                              setDraft((prev) => ({ ...prev, minutes: event.target.value }))
+                            }
+                            className="w-16 rounded-[8px] border border-border-subtle bg-transparent px-1.5 py-1 text-[11px] text-text outline-none focus:border-primary/60"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1 text-[10px] text-text-tertiary">
+                          {t("planner.moveToDay")}
+                          <select
+                            value={draft.day}
+                            onChange={(event) =>
+                              setDraft((prev) => ({ ...prev, day: event.target.value }))
+                            }
+                            className="rounded-[8px] border border-border-subtle bg-transparent px-1.5 py-1 text-[11px] text-text outline-none focus:border-primary/60"
+                          >
+                            {(t("planner.days") as unknown as string[]).map((label, index) => (
+                              <option key={label} value={String(index + 1)}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <select
+                          value={draft.taskType}
+                          onChange={(event) =>
+                            setDraft((prev) => ({ ...prev, taskType: event.target.value }))
+                          }
+                          className="rounded-[8px] border border-border-subtle bg-transparent px-1.5 py-1 text-[11px] text-text outline-none focus:border-primary/60"
+                        >
+                          {["learning", "practice", "project", "review", "english", "reading", "rest"].map(
+                            (value) => (
+                              <option key={value} value={value}>
+                                {t(`planner.taskType.${value}`) as string}
+                              </option>
+                            ),
+                          )}
+                        </select>
+                        <select
+                          value={draft.difficulty}
+                          onChange={(event) =>
+                            setDraft((prev) => ({ ...prev, difficulty: event.target.value }))
+                          }
+                          className="rounded-[8px] border border-border-subtle bg-transparent px-1.5 py-1 text-[11px] text-text outline-none focus:border-primary/60"
+                        >
+                          {["easy", "medium", "hard"].map((value) => (
+                            <option key={value} value={value}>
+                              {t(`planner.difficulty.${value}`) as string}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          disabled={!draft.title.trim() || saving}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            commitEdit();
+                          }}
+                        >
+                          {saving ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Check className="h-3 w-3" />
+                          )}
+                          {t("planner.saveTask")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setEditing(false);
+                          }}
+                        >
+                          {t("planner.cancel")}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setEditing(true);
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] text-text-secondary transition-colors hover:text-primary"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      {t("planner.editTask")}
+                    </button>
+                  )}
+
                   <div className="flex items-center justify-between pt-1">
                     <button
                       type="button"
@@ -754,6 +1126,7 @@ function ReviewSection({
   onSubmit,
   isSubmitting,
   submitted,
+  readOnly = false,
   t,
 }: {
   summary: string;
@@ -763,6 +1136,7 @@ function ReviewSection({
   onSubmit: () => void;
   isSubmitting: boolean;
   submitted: boolean;
+  readOnly?: boolean;
   t: (key: string) => string;
 }) {
   return (
@@ -781,6 +1155,7 @@ function ReviewSection({
           <Textarea
             rows={3}
             value={summary}
+            disabled={readOnly}
             onChange={(e) => onSummaryChange(e.target.value)}
             placeholder="本周完成了什么、收获了什么..."
           />
@@ -792,14 +1167,18 @@ function ReviewSection({
           <Textarea
             rows={3}
             value={reflection}
+            disabled={readOnly}
             onChange={(e) => onReflectionChange(e.target.value)}
             placeholder="哪里做得不够好、下周如何调整..."
           />
         </div>
-        <Button variant="primary" size="sm" onClick={onSubmit} disabled={isSubmitting}>
+        <Button variant="primary" size="sm" onClick={onSubmit} disabled={isSubmitting || readOnly}>
           {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
           {t("planner.submitReview")}
         </Button>
+        {readOnly && (
+          <p className="text-[11px] text-text-tertiary">{t("planner.reviewReadOnly")}</p>
+        )}
       </div>
     </div>
   );

@@ -29,6 +29,7 @@ from app.domains.ai.schemas import (
     TravelChecklistItemUpdate,
     TravelPlanRequest,
     TravelPlanResponse,
+    TravelPlanUpdateRequest,
     YearReviewRequest,
     YearReviewResponse,
     YearSummaryRequest,
@@ -70,6 +71,17 @@ def latest_travel_plan(
 ) -> TravelPlanResponse | None:
     """目标详情页用：取该目标已保存的最新旅行攻略，没有则返回 null。"""
     return TravelPlanService(db).latest(current_user.id, goal_id)
+
+
+@router.patch("/ai/travel-plan/{ai_content_id}", response_model=TravelPlanResponse)
+def update_travel_plan(
+    ai_content_id: str,
+    payload: TravelPlanUpdateRequest,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> TravelPlanResponse:
+    """人工修改已生成的旅行攻略：只覆盖传了的字段，其余保留。"""
+    return TravelPlanService(db).update(current_user.id, ai_content_id, payload)
 
 
 @router.post("/ai/travel-assistant", response_model=TravelAssistantResponse)

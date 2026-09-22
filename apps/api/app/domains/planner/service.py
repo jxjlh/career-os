@@ -10,13 +10,15 @@
 """
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.core.timeutil import today
 from app.db.models import (
+    DailyReview,
     EnglishStudySession,
     GoalTask,
     LifeGoal,
@@ -102,7 +104,7 @@ class PlannerContextBuilder:
         milestones_text, milestone_ids = self._milestones_text(milestones)
         english_text = self._english_text(english)
 
-        today_weekday = date.today().weekday() + 1  # 1=周一 ... 7=周日
+        today_weekday = today().weekday() + 1  # 1=周一 ... 7=周日
         # 单任务最少 25 分钟 → 任务数上限, 避免 AI 排太多导致总时长必然超标
         max_tasks = max(7, weekly_minutes // 25)
         prompt = WEEKLY_PLAN_PROMPT.format(
@@ -251,7 +253,7 @@ class PlannerContextBuilder:
                 .filter(
                     UserWord.user_id == user_id,
                     UserWord.book_id == book_id,
-                    UserWord.due_date <= date.today(),
+                    UserWord.due_date <= today(),
                     UserWord.status.in_(["learning", "review"]),
                 )
                 .count()
@@ -298,7 +300,7 @@ class PlannerContextBuilder:
 
         # 连续打卡天数
         streak = 0
-        cursor = date.today()
+        cursor = today()
         recent_dates = {
             s.session_date
             for s in self.db.query(EnglishStudySession)
@@ -314,7 +316,7 @@ class PlannerContextBuilder:
             self.db.query(WordReviewLog)
             .filter(
                 WordReviewLog.user_id == user_id,
-                WordReviewLog.reviewed_at >= date.today() - timedelta(days=7),
+                WordReviewLog.reviewed_at >= today() - timedelta(days=7),
             )
             .count()
         )
@@ -471,7 +473,7 @@ class PlannerContextBuilder:
         )
 
     def _last_week_summary(self, user_id: str) -> str:
-        last_week_start = date.today() - timedelta(days=date.today().weekday() + 7)
+        last_week_start = today() - timedelta(days=today().weekday() + 7)
         tasks = (
             self.db.query(PlanTask)
             .join(WeeklyPlan, WeeklyPlan.id == PlanTask.plan_id)
@@ -954,7 +956,7 @@ def toggle_task(db: Session, user_id: str, task_id: str) -> PlanTask:
         task.completed_at = None
     else:
         task.status = "done"
-        task.completed_at = date.today()
+        task.completed_at = today()
 
     plan = db.query(WeeklyPlan).filter(WeeklyPlan.id == task.plan_id).first()
     if plan is not None:
@@ -974,6 +976,9 @@ def update_task(
     estimated_minutes: int | None = None,
     title: str | None = None,
     day: int | None = None,
+    difficulty: str | None = None,
+    task_type: str | None = None,
+    estimated_outcome: str | None = None,
 ) -> PlanTask:
     task = (
         db.query(PlanTask)
@@ -992,6 +997,15 @@ def update_task(
         task.title = title.strip()[:300]
     if day is not None and 1 <= day <= 7:
         task.day = int(day)
+    if difficulty is not None and difficulty in DIFFICULTIES:
+        task.difficulty = difficulty
+    if task_type is not None and task_type in TASK_TYPES:
+        task.task_type = task_type
+    if estimated_outcome is not None:
+        task.estimated_outcome = estimated_outcome.strip()[:200] or None
+    # 用户手改过的任务不再标记为纯 AI 生成
+    if any(v is not None for v in (title, day, difficulty, task_type, estimated_minutes)):
+        task.ai_generated = False
     plan = db.query(WeeklyPlan).filter(WeeklyPlan.id == task.plan_id).first()
     if plan is not None:
         _recompute_plan_stats(db, plan)
@@ -1050,3 +1064,134 @@ def _recompute_plan_stats(db: Session, plan: WeeklyPlan) -> None:
     plan.total_minutes = total
     plan.completed_minutes = done_minutes
     plan.completion_rate = round(done_count / len(tasks), 4) if tasks else 0.0
+
+
+# ────────────────────────── 每日总结与反思 ──────────────────────────
+
+
+def _day_index(target: date) -> int:
+    """周一=1 … 周日=7，与 PlanTask.day 对齐。"""
+    return target.weekday() + 1
+
+
+def daily_task_stats(db: Session, user_id: str, target: date) -> dict:
+    """某一天的任务统计（取该天所属周计划里 day 相同的任务）。"""
+    week_start = target - timedelta(days=target.weekday())
+    plan = (
+        db.query(WeeklyPlan)
+        .filter(WeeklyPlan.user_id == user_id, WeeklyPlan.week_start == week_start)
+        .first()
+    )
+    if plan is None:
+        return {"totalTasks": 0, "doneTasks": 0, "plannedMinutes": 0, "doneMinutes": 0}
+    tasks = (
+        db.query(PlanTask)
+        .filter(PlanTask.plan_id == plan.id, PlanTask.day == _day_index(target))
+        .all()
+    )
+    done = [t for t in tasks if t.status == "done"]
+    return {
+        "totalTasks": len(tasks),
+        "doneTasks": len(done),
+        "plannedMinutes": sum(t.estimated_minutes or 0 for t in tasks),
+        "doneMinutes": sum(t.estimated_minutes or 0 for t in done),
+    }
+
+
+def get_daily_review(db: Session, user_id: str, target: date) -> DailyReview | None:
+    return (
+        db.query(DailyReview)
+        .filter(DailyReview.user_id == user_id, DailyReview.review_date == target)
+        .first()
+    )
+
+
+def daily_review_dict(db: Session, user_id: str, target: date) -> dict:
+    row = get_daily_review(db, user_id, target)
+    stats = daily_task_stats(db, user_id, target)
+    return {
+        "date": target.isoformat(),
+        "summary": row.summary if row else None,
+        "reflection": row.reflection if row else None,
+        "mood": row.mood if row else None,
+        "updatedAt": row.updated_at.isoformat() if (row and row.updated_at) else None,
+        "stats": stats,
+    }
+
+
+def upsert_daily_review(
+    db: Session,
+    user_id: str,
+    target: date,
+    *,
+    summary: str | None = None,
+    reflection: str | None = None,
+    mood: int | None = None,
+) -> DailyReview:
+    row = get_daily_review(db, user_id, target)
+    if row is None:
+        row = DailyReview(user_id=user_id, review_date=target)
+        db.add(row)
+    if summary is not None:
+        row.summary = summary.strip() or None
+    if reflection is not None:
+        row.reflection = reflection.strip() or None
+    if mood is not None:
+        row.mood = max(1, min(5, int(mood))) if mood else None
+    stats = daily_task_stats(db, user_id, target)
+    row.total_tasks = stats["totalTasks"]
+    row.done_tasks = stats["doneTasks"]
+    row.planned_minutes = stats["plannedMinutes"]
+    row.done_minutes = stats["doneMinutes"]
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_daily_reviews(db: Session, user_id: str, days: int = 30) -> list[dict]:
+    """最近 N 天（含今天）的每日记录，供成长分析/日历使用。"""
+    end = today()
+    start = end - timedelta(days=max(1, days) - 1)
+    rows = (
+        db.query(DailyReview)
+        .filter(
+            DailyReview.user_id == user_id,
+            DailyReview.review_date >= start,
+            DailyReview.review_date <= end,
+        )
+        .order_by(DailyReview.review_date.desc())
+        .all()
+    )
+    by_date = {r.review_date: r for r in rows}
+    result = []
+    for offset in range(max(1, days)):
+        day = end - timedelta(days=offset)
+        row = by_date.get(day)
+        if row is not None:
+            result.append(
+                {
+                    "date": day.isoformat(),
+                    "summary": row.summary,
+                    "reflection": row.reflection,
+                    "mood": row.mood,
+                    "totalTasks": row.total_tasks or 0,
+                    "doneTasks": row.done_tasks or 0,
+                    "plannedMinutes": row.planned_minutes or 0,
+                    "doneMinutes": row.done_minutes or 0,
+                    "hasReview": bool(row.summary or row.reflection),
+                }
+            )
+        else:
+            stats = daily_task_stats(db, user_id, day)
+            result.append(
+                {
+                    "date": day.isoformat(),
+                    "summary": None,
+                    "reflection": None,
+                    "mood": None,
+                    **stats,
+                    "hasReview": False,
+                }
+            )
+    return result

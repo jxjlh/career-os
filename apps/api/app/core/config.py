@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "dev"
+    # 业务日期（本周/今天）按该时区计算，避免服务器 UTC 导致跨天/跨周错位
+    app_timezone: str = "Asia/Shanghai"
     database_url: str = "sqlite:///./career_os.db"
     api_prefix: str = "/api/v1"
     cors_origins: str = "http://localhost:3000"
@@ -38,6 +40,15 @@ class Settings(BaseSettings):
     supabase_jwks_url: str = ""
     supabase_service_role_key: str = ""
     supabase_storage_bucket: str = "life-records"
+
+    # ── 邮件发送（密码重置验证码等，走 163 SMTP）──
+    smtp_host: str = "smtp.163.com"
+    smtp_port: int = 465  # 465 = SSL, 587 = STARTTLS
+    smtp_user: str = ""
+    smtp_pass: str = ""  # 邮箱授权码，非登录密码
+    smtp_sender_name: str = "CareerOS"
+    # 是否用 SSL 直连（163/QQ 的 465 需要 True；587 STARTTLS 用 False）
+    smtp_use_ssl: bool = True
 
     tavily_api_key: str = ""
     exa_api_key: str = ""

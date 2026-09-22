@@ -1,48 +1,54 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 
+import { apiFetch } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
 const MOODS = ["😵", "😐", "🙂", "😎", "✨"] as const;
 
-function todayKey() {
+type Envelope = { data: any };
+
+function todayIso() {
   const d = new Date();
-  return `career_os_mood_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
 }
 
 /**
- * TODAY'S MOOD —— 5 emoji 一键选择，localStorage 持久化当日心情。
- * 不做成问卷，记录后显示"今天还不错"。极轻量，无 API 依赖。
- * TODO: 后端 /life/mood POST 接口就绪后切换到 react-query mutation。
+ * TODAY'S MOOD —— 5 emoji 一键选择。
+ * 存在服务端（/planner/daily 的 mood 字段），手机端与电脑端同一账号看到同一份心情。
  */
 export function MoodPicker() {
   const { t } = useI18n();
-  const [selected, setSelected] = useState<number | null>(null);
-  const [recorded, setRecorded] = useState(false);
+  const queryClient = useQueryClient();
+  const [date, setDate] = useState("");
 
+  // 挂载后再算「今天」，避免服务端/客户端时间不同导致 hydration 不一致
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(todayKey());
-      if (saved !== null) {
-        setSelected(Number(saved));
-        setRecorded(true);
-      }
-    } catch {
-      // ignore
-    }
+    setDate(todayIso());
   }, []);
 
-  const pick = (i: number) => {
-    setSelected(i);
-    setRecorded(true);
-    try {
-      localStorage.setItem(todayKey(), String(i));
-    } catch {
-      // ignore
-    }
-  };
+  const daily = useQuery<Envelope>({
+    queryKey: ["planner-daily", date],
+    queryFn: () => apiFetch(`/planner/daily?date=${date}`),
+    enabled: Boolean(date),
+  });
+  const saved: number | null = daily.data?.data?.mood ?? null;
+
+  const saveMood = useMutation({
+    mutationFn: (mood: number) =>
+      apiFetch(`/planner/daily?date=${date}`, {
+        method: "PUT",
+        body: JSON.stringify({ mood }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["planner-daily"] });
+    },
+  });
 
   return (
     <section className="mt-10">
@@ -54,12 +60,12 @@ export function MoodPicker() {
         {MOODS.map((m, i) => (
           <motion.button
             key={m}
-            onClick={() => pick(i)}
+            onClick={() => saveMood.mutate(i + 1)}
             whileHover={{ scale: 1.15 }}
             whileTap={{ scale: 0.95 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
             className={`flex h-11 w-11 items-center justify-center rounded-[12px] text-xl transition-colors ${
-              selected === i
+              saved === i + 1
                 ? "bg-primary/12 ring-1 ring-primary/40"
                 : "bg-surface/40 hover:bg-surface-elevated/60"
             }`}
@@ -68,7 +74,7 @@ export function MoodPicker() {
             {m}
           </motion.button>
         ))}
-        {recorded && (
+        {saved !== null && (
           <motion.span
             initial={{ opacity: 0, x: -4 }}
             animate={{ opacity: 1, x: 0 }}

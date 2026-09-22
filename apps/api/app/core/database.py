@@ -132,6 +132,39 @@ def ensure_columns() -> None:
         "message_reads": {
             "read_at": timestamp_ddl,
         },
+        # ── 阅读书单文件支持（file_path / file_format 缺列会直接 500，必须纳入自动补列）──
+        "reading_books": {
+            "file_path": "TEXT",
+            "file_format": "VARCHAR(16)",
+        },
+        # ── 面试中心：简历上传 + JD 驱动 ──
+        "resumes": {
+            "raw_text": "TEXT",
+            "source_file": "VARCHAR(255)",
+            "parse_method": "VARCHAR(32)",
+        },
+        "interviews": {
+            "resume_id": "VARCHAR(36)",
+            "resume_text": "TEXT",
+            "resume_facts": "JSON",
+            "jd_text": "TEXT",
+            "jd_facts": "JSON",
+            "jd_source": "VARCHAR(32)",
+            "jd_meta": "JSON",
+        },
+        "interview_questions": {
+            "jd_requirement": "TEXT",
+            "resume_hook": "TEXT",
+            "intent": "TEXT",
+            "follow_up": "TEXT",
+            "is_gap": "BOOLEAN DEFAULT FALSE",
+            "follow_up_count": "INTEGER DEFAULT 0",
+        },
+        "interview_feedback": {
+            "jd_match_score": "FLOAT",
+            "jd_coverage": "JSON",
+            "resume_advice": "JSON",
+        },
     }
     tables = set(inspect(engine).get_table_names())
     for table, columns in additions.items():

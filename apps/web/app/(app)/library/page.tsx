@@ -23,6 +23,7 @@ function ReadingSection() {
   const [sourceMessages, setSourceMessages] = useState<Record<string, string>>({});
   const [sourceResults, setSourceResults] = useState<Record<string, any[]>>({});
   const [savingSource, setSavingSource] = useState<string | null>(null);
+  const [recommendMessage, setRecommendMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [populateMessage, setPopulateMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   const books = useQuery<Envelope>({
@@ -48,8 +49,21 @@ function ReadingSection() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["reading-books"] }),
   });
   const recommend = useMutation({
-    mutationFn: () => apiFetch<Envelope>("/library/reading/recommendations", { method: "POST" }),
-    onSuccess: (response) => setRecommendations(response.data.books || []),
+    mutationFn: () => {
+      setRecommendMessage(null);
+      // 客户端超时：AI provider 限流/卡顿时避免最长等待 120s 的 read 超时
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      return apiFetch<Envelope>("/library/reading/recommendations", { method: "POST", signal: controller.signal }).finally(() => clearTimeout(timer));
+    },
+    onSuccess: (response) => {
+      setRecommendations(response.data.books || []);
+      setRecommendMessage(null);
+    },
+    onError: (error: unknown) => {
+      const msg = error instanceof Error ? error.message : "AI 推荐暂时不可用，请稍后重试。";
+      setRecommendMessage({ text: msg, type: "error" });
+    },
   });
   const populateClassics = useMutation({
     mutationFn: () => apiFetch<Envelope>("/library/reading/populate-classics", { method: "POST" }),
@@ -161,9 +175,10 @@ function ReadingSection() {
   return (
     <div className="space-y-4">
       <Card className="p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold">阅读书籍</h2><p className="mt-1 text-xs text-muted">AI 推荐完整出版书籍，也可以搜索书名；系统会记住你的页码、状态和阅读计划。</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => populateClassics.mutate()} disabled={populateClassics.isPending}>{populateClassics.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Library className="h-4 w-4" />}导入必读书单</Button><Button size="sm" onClick={() => recommend.mutate()} disabled={recommend.isPending}><Sparkles className="h-4 w-4" />AI 推荐好书</Button></div></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold">阅读书籍</h2><p className="mt-1 text-xs text-muted">AI 推荐完整出版书籍，也可以搜索书名；系统会记住你的页码、状态和阅读计划。</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => populateClassics.mutate()} disabled={populateClassics.isPending}>{populateClassics.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Library className="h-4 w-4" />}导入必读书单</Button><Button size="sm" onClick={() => recommend.mutate()} disabled={recommend.isPending}>{recommend.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}AI 推荐好书</Button></div></div>
         <div className="mt-4 flex gap-2"><Input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); searchBooks(); } }} placeholder="搜索书名；精确匹配可输入：书名 - 作者" /><Button variant="outline" onClick={searchBooks} disabled={searching || !query.trim()}>{searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}搜索书籍</Button></div>
         {populateMessage && <div className={`mt-3 rounded-lg border p-3 text-xs ${populateMessage.type === "success" ? "border-success/30 bg-success/5 text-success" : "border-danger/30 bg-danger/5 text-danger"}`}>{populateMessage.text}<button type="button" onClick={() => setPopulateMessage(null)} className="ml-2 text-muted hover:text-text-primary">×</button></div>}
+        {recommendMessage && <div className={`mt-3 rounded-lg border p-3 text-xs ${recommendMessage.type === "success" ? "border-success/30 bg-success/5 text-success" : "border-danger/30 bg-danger/5 text-danger"}`}>{recommendMessage.text}<button type="button" onClick={() => setRecommendMessage(null)} className="ml-2 text-muted hover:text-text-primary">×</button></div>}
         {(recommendations.length > 0 || searchResults.length > 0) && <div className="mt-4 grid gap-3 md:grid-cols-2">{[...recommendations.map((item) => ({ ...item, recommendation: true })), ...searchResults].map((item: any, index) => <div key={`${item.title}-${item.url || index}`} className="rounded-xl border border-border p-3"><div className="flex items-start justify-between gap-2"><p className="text-sm font-semibold">{item.title}</p>{item.isExactMatch && <Badge variant="success">精确匹配</Badge>}</div><p className="mt-1 text-xs text-muted">{item.author || item.sourceName || item.provider}</p><p className="mt-2 line-clamp-3 text-xs text-text-secondary">{item.description || item.reason || item.snippet || "可加入书单后设置自己的阅读计划。"}</p><div className="mt-3 flex gap-2"><Button size="sm" onClick={() => void addBook(item)} disabled={createBook.isPending || searching}><Plus className="h-3.5 w-3.5" />加入想看</Button>{item.url && <a href={item.url} target="_blank" rel="noreferrer"><Button size="sm" variant="outline">查看来源<ExternalLink className="h-3.5 w-3.5" /></Button></a>}{item.downloadUrl && <a href={item.downloadUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="primary">下载 {item.downloadFormat || "文件"}</Button></a>}</div></div>)}</div>}
       </Card>
 

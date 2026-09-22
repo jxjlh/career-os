@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.errors import AppError
 from app.core.security import get_current_user
 from app.db.models import (
     Interview,
@@ -15,11 +16,20 @@ from app.db.models import (
     InterviewQuestion,
     InterviewSession,
     Profile,
+    Resume,
+)
+from app.domains.interviews.service import (
+    InterviewFeedbackService,
+    InterviewFollowupService,
+    InterviewPrepService,
+    InterviewQuestionService,
 )
 from app.providers.ai import registry as ai_registry
 from app.providers.ai.base import extract_json
 
 router = APIRouter(tags=["interviews"])
+
+_MAX_FOLLOWUP_ROUNDS = 2
 
 
 class InterviewCreate(BaseModel):
@@ -29,6 +39,17 @@ class InterviewCreate(BaseModel):
     role: str | None = None
     difficulty: str = "intermediate"
     config: dict = {}
+
+
+class InterviewPrepare(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    role: str = Field(min_length=1, max_length=120)
+    company: str | None = None
+    mode: str = "behavioral"
+    difficulty: str = "intermediate"
+    resumeId: str | None = None
+    resumeText: str | None = None
+    jdText: str | None = None
 
 
 class InterviewUpdate(BaseModel):
@@ -45,6 +66,7 @@ class AnswerCreate(BaseModel):
     answerText: str = Field(min_length=1)
     audioPath: str | None = None
     durationSeconds: int | None = None
+    followUpQuestion: str | None = None
 
 
 def question_templates(mode: str, role: str | None) -> list[str]:
@@ -74,6 +96,21 @@ def question_templates(mode: str, role: str | None) -> list[str]:
     ]
 
 
+def _question_dict(q: InterviewQuestion) -> dict:
+    return {
+        "id": q.id,
+        "question": q.question,
+        "type": q.type,
+        "sortOrder": q.sort_order,
+        "expectedKeywords": q.expected_keywords or [],
+        "jdRequirement": q.jd_requirement,
+        "resumeHook": q.resume_hook,
+        "intent": q.intent,
+        "followUp": q.follow_up,
+        "gap": q.is_gap,
+    }
+
+
 def interview_dict(db: Session, interview: Interview) -> dict:
     sessions = (
         db.query(InterviewSession)
@@ -90,6 +127,10 @@ def interview_dict(db: Session, interview: Interview) -> dict:
         "difficulty": interview.difficulty,
         "status": interview.status,
         "config": interview.config,
+        "jdSource": interview.jd_source,
+        "jdFacts": interview.jd_facts,
+        "jdMeta": interview.jd_meta,
+        "resumeId": interview.resume_id,
         "sessions": [
             {
                 "id": s.id,
@@ -154,6 +195,90 @@ def create_interview(
     return {"data": interview_dict(db, interview)}
 
 
+@router.post("/interviews/prepare", status_code=201)
+async def prepare_interview(
+    payload: InterviewPrepare,
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """三步准备：定简历 → 归一 JD → 匹配预览，创建一场『有素材』的面试."""
+    service = InterviewPrepService(db)
+
+    # 1. 取简历文本
+    resume_id: str | None = payload.resumeId
+    resume_text: str | None = None
+    if payload.resumeText and len(payload.resumeText.strip()) >= 20:
+        resume_text = payload.resumeText.strip()
+    elif payload.resumeId:
+        resume = (
+            db.query(Resume)
+            .filter(Resume.id == payload.resumeId, Resume.user_id == current_user.id)
+            .first()
+        )
+        if resume is None:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Resume not found"})
+        resume_text = resume.raw_text or (resume.sections or {}).get("raw")
+        resume_id = resume.id
+    if not resume_text or len(resume_text) < 20:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "RESUME_REQUIRED", "message": "请先上传简历或粘贴简历内容"},
+        )
+
+    # 2. 简历事实
+    resume_facts = await service.extract_resume_facts(resume_text)
+    if resume_facts is None:
+        resume_facts = {
+            "experiences": [],
+            "projects": [],
+            "skills": [],
+            "notableMetrics": [],
+            "risks": ["（简历事实抽取未成功，以下为简历原文）" + resume_text[:3000]],
+        }
+
+    # 3. 归一 JD
+    try:
+        jd_text, jd_facts, jd_source, jd_meta = await service.resolve_jd(
+            payload.role, payload.company, payload.jdText
+        )
+    except AppError as exc:
+        raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
+
+    match_preview = service.build_match_preview(resume_text, resume_facts, jd_facts)
+
+    interview = Interview(
+        user_id=current_user.id,
+        title=payload.title,
+        interview_type="mock",
+        mode=payload.mode,
+        role=payload.role,
+        difficulty=payload.difficulty,
+        status="draft",
+        resume_id=resume_id,
+        resume_text=resume_text,
+        resume_facts=resume_facts,
+        jd_text=jd_text,
+        jd_facts=jd_facts,
+        jd_source=jd_source,
+        jd_meta=jd_meta,
+    )
+    db.add(interview)
+    db.commit()
+    db.refresh(interview)
+
+    return {
+        "data": {
+            "interviewId": interview.id,
+            "jdText": jd_text,
+            "jdFacts": jd_facts,
+            "jdSource": jd_source,
+            "jdMeta": jd_meta,
+            "resumeFacts": resume_facts,
+            "matchPreview": match_preview,
+        }
+    }
+
+
 @router.get("/interviews/{interview_id}")
 def get_interview(
     interview_id: str,
@@ -192,7 +317,7 @@ def delete_interview(
 
 
 @router.post("/interviews/{interview_id}/sessions", status_code=201)
-def start_session(
+async def start_session(
     interview_id: str,
     payload: SessionCreate,
     current_user: Annotated[Profile, Depends(get_current_user)],
@@ -202,15 +327,38 @@ def start_session(
     session = InterviewSession(interview_id=interview.id, user_id=current_user.id, status="in_progress")
     db.add(session)
     db.flush()
-    for index, question in enumerate(question_templates(interview.mode, interview.role)[: payload.questionCount]):
+
+    generated: list[dict] = []
+    if (interview.jd_facts or {}).get("title") or interview.resume_text:
+        generated = (
+            await InterviewQuestionService().generate(
+                interview, payload.questionCount, interview.mode, interview.difficulty
+            )
+            or []
+        )
+
+    if not generated:
+        for index, question in enumerate(
+            question_templates(interview.mode, interview.role)[: payload.questionCount]
+        ):
+            generated.append({"question": question})
+
+    for index, item in enumerate(generated):
         db.add(
             InterviewQuestion(
                 session_id=session.id,
                 user_id=current_user.id,
-                question=question,
+                question=item.get("question", ""),
                 type=interview.mode,
                 difficulty=interview.difficulty,
                 sort_order=index,
+                expected_keywords=item.get("expectedKeywords") or [],
+                jd_requirement=item.get("jdRequirement"),
+                resume_hook=item.get("resumeHook"),
+                intent=item.get("intent"),
+                follow_up=item.get("followUp"),
+                is_gap=bool(item.get("gap")),
+                ai_generated=bool(item.get("question")),
             )
         )
     interview.status = "in_progress"
@@ -226,15 +374,13 @@ def start_session(
         "data": {
             "sessionId": session.id,
             "status": session.status,
-            "questions": [
-                {"id": q.id, "question": q.question, "type": q.type, "sortOrder": q.sort_order} for q in questions
-            ],
+            "questions": [_question_dict(q) for q in questions],
         }
     }
 
 
 @router.post("/sessions/{session_id}/answer")
-def submit_answer(
+async def submit_answer(
     session_id: str,
     payload: AnswerCreate,
     current_user: Annotated[Profile, Depends(get_current_user)],
@@ -258,17 +404,44 @@ def submit_answer(
             "answerText": payload.answerText,
             "audioPath": payload.audioPath,
             "durationSeconds": payload.durationSeconds,
+            "followUpQuestion": payload.followUpQuestion,
             "answeredAt": datetime.utcnow().isoformat(),
         }
     )
     session.transcript = {**transcript, "answers": answers}
     db.commit()
     db.refresh(answer)
-    return {"data": {"answerId": answer.id, "saved": True}}
+
+    follow_up: dict | None = None
+    question = (
+        db.query(InterviewQuestion).filter(InterviewQuestion.id == payload.questionId).first()
+        if payload.questionId
+        else None
+    )
+    if question is not None and question.follow_up_count < _MAX_FOLLOWUP_ROUNDS:
+        decision = await InterviewFollowupService().decide(
+            question=question.question,
+            intent=question.intent,
+            keywords=question.expected_keywords or [],
+            answer=payload.answerText,
+            current_round=question.follow_up_count + 1,
+            max_rounds=_MAX_FOLLOWUP_ROUNDS,
+        )
+        if decision and decision.get("needFollowUp") and decision.get("followUp"):
+            question.follow_up_count += 1
+            db.commit()
+            follow_up = {
+                "questionId": question.id,
+                "text": str(decision["followUp"]),
+                "reason": decision.get("reason"),
+                "round": question.follow_up_count,
+            }
+
+    return {"data": {"answerId": answer.id, "saved": True, "followUp": follow_up}}
 
 
 @router.post("/sessions/{session_id}/answers/voice")
-def submit_voice_answer(
+async def submit_voice_answer(
     session_id: str,
     payload: AnswerCreate,
     current_user: Annotated[Profile, Depends(get_current_user)],
@@ -280,7 +453,7 @@ def submit_voice_answer(
         audio_paths.append(payload.audioPath)
         session.audio_paths = audio_paths
     db.commit()
-    return submit_answer(session_id, payload, current_user, db)
+    return await submit_answer(session_id, payload, current_user, db)
 
 
 @router.get("/sessions/{session_id}/transcript")
@@ -321,23 +494,22 @@ async def finish_session(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
     session = get_owned_session(db, current_user.id, session_id)
+    interview = get_owned_interview(db, current_user.id, session.interview_id)
     session.status = "completed"
     session.ended_at = datetime.utcnow()
 
-    answers = (
-        db.query(InterviewAnswer)
-        .filter(InterviewAnswer.session_id == session.id)
-        .order_by(InterviewAnswer.created_at)
-        .all()
-    )
+    question_map = {
+        q.id: q
+        for q in db.query(InterviewQuestion).filter(InterviewQuestion.session_id == session.id).all()
+    }
     qa_lines: list[str] = []
-    for a in answers:
-        question = (
-            db.query(InterviewQuestion).filter(InterviewQuestion.id == a.question_id).first()
-            if a.question_id
-            else None
-        )
-        qa_lines.append(f"问: {question.question if question else '(无)'}\n答: {a.answer_text}")
+    transcript = session.transcript or {}
+    for entry in transcript.get("answers", []):
+        question = question_map.get(entry.get("questionId"))
+        q_text = question.question if question else "(无)"
+        qa_lines.append(f"问: {q_text}\n答: {entry.get('answerText', '')}")
+        if entry.get("followUpQuestion"):
+            qa_lines.append(f"追问: {entry['followUpQuestion']}")
     qa_text = "\n\n".join(qa_lines)
 
     overall_score = 78
@@ -351,36 +523,31 @@ async def finish_session(
     strengths = "逻辑清晰，案例完整"
     improvements = "增加数据结果、量化指标与复盘"
     sample_answer = "参考答案：使用 STAR 结构，先说明背景与任务，再描述行动，最后用 2-3 个数字展示结果。"
+    jd_match_score: float | None = None
+    jd_coverage: list = []
+    resume_advice: list = []
     ai_provider_name = "fallback"
 
-    if qa_text.strip():
-        provider = ai_registry.get_ai_provider()
-        prompt = (
-            "你是资深面试官。基于以下面试问答, 从结构、STAR 完整度、表达、技术深度、时间控制五个维度评分(0-100), "
-            "并给出优势、改进建议和参考答案。\n"
-            f"问答记录:\n{qa_text}\n\n"
-            "请严格只返回 JSON, 不要其他文本, 格式:\n"
-            '{"overall_score": 78, "dimensions": {"structure": {"score": 80, "comment": "..."}, '
-            '"star": {"score": 75, "comment": "..."}, "expression": {"score": 82, "comment": "..."}, '
-            '"technical_depth": {"score": 70, "comment": "..."}, "time_control": {"score": 78, "comment": "..."}}, '
-            '"strengths": "...", "improvements": "...", "sample_answer": "..."}'
-        )
+    if qa_text.strip() and (interview.jd_facts or {}).get("title"):
         try:
-            reply = await provider.complete(
-                [{"role": "user", "content": prompt}], temperature=0.4, max_tokens=1000
+            evaluated = await InterviewFeedbackService().evaluate(
+                jd_text=interview.jd_text or "",
+                jd_facts=interview.jd_facts or {},
+                resume_facts=interview.resume_facts or {},
+                qa_text=qa_text,
             )
-            parsed = extract_json(reply)
         except Exception:
-            parsed = None
+            evaluated = None
 
-        if parsed:
+        if evaluated:
+            provider = ai_registry.get_ai_provider()
             ai_provider_name = provider.name
-            if isinstance(parsed.get("overall_score"), (int, float)):
-                overall_score = int(parsed["overall_score"])
-            if isinstance(parsed.get("dimensions"), dict):
+            if isinstance(evaluated.get("overall_score"), (int, float)):
+                overall_score = int(evaluated["overall_score"])
+            if isinstance(evaluated.get("dimensions"), dict):
                 merged = {}
                 for dim_key, dim_default in dimensions.items():
-                    ai_dim = parsed["dimensions"].get(dim_key, {})
+                    ai_dim = evaluated["dimensions"].get(dim_key, {})
                     if isinstance(ai_dim, dict):
                         merged[dim_key] = {
                             "score": int(ai_dim.get("score", dim_default["score"])),
@@ -389,12 +556,18 @@ async def finish_session(
                     else:
                         merged[dim_key] = dim_default
                 dimensions = merged
-            if parsed.get("strengths"):
-                strengths = str(parsed["strengths"])
-            if parsed.get("improvements"):
-                improvements = str(parsed["improvements"])
-            if parsed.get("sample_answer"):
-                sample_answer = str(parsed["sample_answer"])
+            if isinstance(evaluated.get("jdMatchScore"), (int, float)):
+                jd_match_score = int(evaluated["jdMatchScore"])
+            if isinstance(evaluated.get("jdCoverage"), list):
+                jd_coverage = evaluated["jdCoverage"]
+            if isinstance(evaluated.get("resumeAdvice"), list):
+                resume_advice = evaluated["resumeAdvice"]
+            if evaluated.get("strengths"):
+                strengths = str(evaluated["strengths"])
+            if evaluated.get("improvements"):
+                improvements = str(evaluated["improvements"])
+            if evaluated.get("sample_answer"):
+                sample_answer = str(evaluated["sample_answer"])
 
     feedback = InterviewFeedback(
         session_id=session.id,
@@ -404,6 +577,9 @@ async def finish_session(
         strengths=strengths,
         improvements=improvements,
         sample_answer=sample_answer,
+        jd_match_score=jd_match_score,
+        jd_coverage=jd_coverage,
+        resume_advice=resume_advice,
         ai_provider=ai_provider_name,
         ai_model=get_settings().spark_model,
     )
@@ -432,6 +608,9 @@ def get_feedback(
             "id": feedback.id,
             "overallScore": feedback.overall_score,
             "dimensions": feedback.dimensions,
+            "jdMatchScore": feedback.jd_match_score,
+            "jdCoverage": feedback.jd_coverage or [],
+            "resumeAdvice": feedback.resume_advice or [],
             "strengths": feedback.strengths,
             "improvements": feedback.improvements,
             "sampleAnswer": feedback.sample_answer,

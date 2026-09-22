@@ -17,7 +17,7 @@ from app.domains.ai.prompts.map_insight import MAP_INSIGHT_PROMPT
 from app.domains.ai.prompts.photo_analysis import PHOTO_ANALYSIS_PROMPT
 from app.domains.ai.prompts.team_plan import TEAM_PLAN_PROMPT
 from app.domains.ai.prompts.travel_assistant import TRAVEL_ASSISTANT_PROMPT
-from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_PROMPT
+from app.domains.ai.prompts.travel_plan import TRAVEL_PLAN_FREE_PROMPT, TRAVEL_PLAN_PROMPT
 from app.domains.ai.prompts.year_summary import YEAR_SUMMARY_PROMPT
 from app.domains.ai.repository import AIContentRepository
 from app.domains.ai.schemas import (
@@ -48,6 +48,7 @@ from app.domains.ai.schemas import (
     TravelChecklistItemUpdate,
     TravelPlanRequest,
     TravelPlanResponse,
+    TravelPlanUpdateRequest,
     YearSummaryRequest,
     YearSummaryResponse,
 )
@@ -112,14 +113,22 @@ class TravelPlanService:
     async def generate(self, user_id: str, payload: TravelPlanRequest) -> TravelPlanResponse:
         if payload.goal_id and self.goals.get_owned(user_id, payload.goal_id) is None:
             raise AppError(code="NOT_FOUND", message="Life goal not found", status=404)
-        input_data = payload.model_dump()
-        prompt = TRAVEL_PLAN_PROMPT.format(
-            destination=payload.destination,
-            days=payload.days,
-            budget=payload.budget or "未指定",
-            people=payload.people or "未指定",
-            interests="、".join(payload.interests) or "未指定",
-        )
+
+        requirement = (payload.requirement or "").strip()
+        if requirement:
+            # 用户自由书写需求：直接把原文交给 AI，由它推断目的地/天数/预算等，
+            # 不再要求填结构化字段。攻略生成后照常按 goal_id 归属存进 AI 内容表。
+            input_data = {"goal_id": payload.goal_id, "requirement": requirement}
+            prompt = TRAVEL_PLAN_FREE_PROMPT.format(requirement=requirement)
+        else:
+            input_data = payload.model_dump()
+            prompt = TRAVEL_PLAN_PROMPT.format(
+                destination=payload.destination or "未指定",
+                days=payload.days,
+                budget=payload.budget or "未指定",
+                people=payload.people or "未指定",
+                interests="、".join(payload.interests) or "未指定",
+            )
         record, parsed = await self.ai.generate_content(
             user_id=user_id,
             content_type="travel_plan",
@@ -129,6 +138,41 @@ class TravelPlanService:
         return TravelPlanResponse(
             id=record.id,
             aiContentId=record.id,
+            title=parsed.get("title"),
+            summary=parsed.get("summary"),
+            bestTime=parsed.get("best_time"),
+            route=parsed.get("route") or [],
+            preparation=parsed.get("preparation") or [],
+            tips=parsed.get("tips") or [],
+        )
+
+    def update(
+        self, user_id: str, ai_content_id: str, payload: TravelPlanUpdateRequest
+    ) -> TravelPlanResponse:
+        """人工修改已生成的攻略：只覆盖传了的字段，其余保留原 AI 输出。"""
+        content = self.ai.repository.get_by_id(user_id, ai_content_id)
+        if content is None or content.content_type != "travel_plan":
+            raise AppError(code="NOT_FOUND", message="Travel plan not found", status=404)
+
+        output = dict(content.output_json or {})
+        if payload.title is not None:
+            output["title"] = payload.title
+        if payload.summary is not None:
+            output["summary"] = payload.summary
+        if payload.bestTime is not None:
+            output["best_time"] = payload.bestTime
+        if payload.route is not None:
+            output["route"] = payload.route
+        if payload.preparation is not None:
+            output["preparation"] = payload.preparation
+        if payload.tips is not None:
+            output["tips"] = payload.tips
+
+        updated = self.ai.repository.update_output(content, output)
+        parsed = updated.output_json or {}
+        return TravelPlanResponse(
+            id=updated.id,
+            aiContentId=updated.id,
             title=parsed.get("title"),
             summary=parsed.get("summary"),
             bestTime=parsed.get("best_time"),

@@ -1,12 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db.models import BackgroundJob, Profile, Project, Resume, ResumeVersion, Skill, UserSkill
+from app.domains.interviews.resume_parser import extract_resume_text
 
 router = APIRouter(tags=["resume"])
 
@@ -97,6 +98,50 @@ def create_resume(
     db.commit()
     db.refresh(resume)
     return {"data": resume_dict(resume)}
+
+
+@router.post("/resumes/upload", status_code=201)
+async def upload_resume(
+    file: Annotated[UploadFile, File(...)],
+    current_user: Annotated[Profile, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    title: Annotated[str, Form()] = "我的简历",
+) -> dict:
+    """上传真实简历文件（PDF/Word/图片/文本），解析为可结构化使用的文本."""
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail={"code": "EMPTY_FILE", "message": "文件为空"})
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail={"code": "FILE_TOO_LARGE", "message": "文件超过 10MB"})
+
+    from app.core.errors import AppError
+
+    try:
+        text, method = await extract_resume_text(content, file.filename or "", file.content_type or "")
+    except AppError as exc:
+        raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
+
+    resume = Resume(
+        user_id=current_user.id,
+        title=(title or file.filename or "我的简历")[:200],
+        language="zh",
+        status="ready",
+        sections={"raw": text},
+        raw_text=text,
+        source_file=file.filename,
+        parse_method=method,
+    )
+    db.add(resume)
+    db.commit()
+    db.refresh(resume)
+    return {
+        "data": {
+            **resume_dict(resume),
+            "rawText": text,
+            "parseMethod": method,
+            "charCount": len(text),
+        }
+    }
 
 
 @router.get("/resumes/{resume_id}")

@@ -31,7 +31,11 @@ class TravelPlanRequest(BaseModel):
         default=None,
         validation_alias=AliasChoices("goalId", "goal_id"),
     )
-    destination: str
+    # 自由文本需求：用户用自然语言写下旅行想法（如「去大理 7 天，预算 5000，喜欢美食和徒步」）。
+    # 提供了 requirement 就优先走自由文本生成，由 AI 自行推断目的地/天数/预算等，
+    # 结构化字段（destination/days/...）作为可选补充，缺失维度由 AI 按默认补全。
+    requirement: str | None = Field(default=None, max_length=2000)
+    destination: str | None = None
     days: int = 7
     budget: str | None = None
     people: str | None = None
@@ -47,6 +51,19 @@ class TravelPlanResponse(BaseModel):
     route: list[dict] = []
     preparation: list[str] = []
     tips: list[str] = []
+
+
+class TravelPlanUpdateRequest(BaseModel):
+    """人工修改已生成的旅行攻略：只传要改的字段，未传的保持不变。"""
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+    title: str | None = None
+    summary: str | None = None
+    bestTime: str | None = None
+    route: list[dict] | None = None
+    preparation: list[str] | None = None
+    tips: list[str] | None = None
 
 
 class TravelAssistantMessage(BaseModel):

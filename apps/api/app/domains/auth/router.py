@@ -1,4 +1,10 @@
-from datetime import date
+from datetime import date, datetime, timedelta
+from email.header import Header
+from email.mime.text import MIMEText
+from email.utils import formataddr
+import logging
+import secrets
+import smtplib
 from typing import Annotated
 
 import httpx
@@ -11,7 +17,10 @@ from app.core.database import get_db
 from app.core.storage import resolve_object_url
 from app.core.security import get_current_user
 from app.db.models import BackgroundJob, Profile, Skill, UserLimit, UserSkill
+from app.db.password_reset import PasswordResetCode
 from app.services.storage import StorageService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 
@@ -301,3 +310,170 @@ def submit_onboarding(
             "pollUrl": f"/api/v1/explore/jobs/{job.id}",
         }
     }
+
+
+# ── 密码重置：邮箱验证码（自研流程，走自己的 SMTP，秒到不进垃圾箱）──
+
+RESET_CODE_TTL_MINUTES = 10
+RESET_CODE_COOLDOWN_SECONDS = 60  # 同一邮箱两次获取的最小间隔
+RESET_CODE_MAX_ATTEMPTS = 5
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    code: str = Field(min_length=4, max_length=8)
+    password: str = Field(min_length=6, max_length=128)
+
+
+def _send_reset_code_email(to_email: str, code: str) -> None:
+    """用后端自己的 SMTP（默认 163）发送验证码，失败抛异常由调用方处理."""
+    settings = get_settings()
+    if not (settings.smtp_host and settings.smtp_user and settings.smtp_pass):
+        raise RuntimeError("SMTP_NOT_CONFIGURED")
+
+    body = (
+        f"你在 CareerOS 申请重置密码，验证码是：\n\n    {code}\n\n"
+        f"验证码 {RESET_CODE_TTL_MINUTES} 分钟内有效，逾期请重新获取。\n"
+        "如果不是你本人操作，请忽略本邮件，你的密码不会被修改。\n"
+    )
+    message = MIMEText(body, "plain", "utf-8")
+    message["Subject"] = Header("CareerOS 密码重置验证码", "utf-8")
+    message["From"] = formataddr((settings.smtp_sender_name, settings.smtp_user), "utf-8")
+    message["To"] = to_email
+
+    if settings.smtp_use_ssl:
+        server: smtplib.SMTP = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=15)
+    else:
+        server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15)
+    try:
+        if not settings.smtp_use_ssl:
+            server.starttls()
+        server.login(settings.smtp_user, settings.smtp_pass)
+        server.sendmail(settings.smtp_user, [to_email], message.as_string())
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
+
+
+def _supabase_admin_headers() -> tuple[str, dict[str, str]]:
+    settings = get_settings()
+    if not (settings.supabase_url and settings.supabase_service_role_key):
+        raise RuntimeError("SUPABASE_NOT_CONFIGURED")
+    base = settings.supabase_url.rstrip("/")
+    return base, {
+        "apikey": settings.supabase_service_role_key,
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "Content-Type": "application/json",
+    }
+
+
+def _resolve_supabase_user_id(email: str, db: Session) -> str | None:
+    """拿 Supabase 用户 id：本地 profiles 优先（signup 时两边同 id），
+    本地没有则回退到 Supabase Admin 用户列表按邮箱过滤。"""
+    profile = db.query(Profile).filter(Profile.email.ilike(email)).first()
+    if profile:
+        return profile.id
+
+    base, headers = _supabase_admin_headers()
+    with httpx.Client(timeout=15.0) as client:
+        resp = client.get(f"{base}/auth/v1/admin/users", headers=headers, params={"page": 1, "per_page": 200})
+    if resp.status_code >= 400:
+        logger.warning("supabase admin list users failed: %s %s", resp.status_code, resp.text[:200])
+        return None
+    users = (resp.json() or {}).get("users") or []
+    for user in users:
+        if (user.get("email") or "").lower() == email.lower():
+            return user.get("id")
+    return None
+
+
+@router.post("/auth/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
+    """向邮箱发送密码重置验证码（走后端自己的 SMTP，不依赖 Supabase 邮件）."""
+    email = payload.email.strip().lower()
+
+    if not _resolve_supabase_user_id(email, db):
+        raise HTTPException(status_code=404, detail={"code": "EMAIL_NOT_FOUND", "message": "该邮箱未注册"})
+
+    cooldown_since = datetime.utcnow() - timedelta(seconds=RESET_CODE_COOLDOWN_SECONDS)
+    recent = (
+        db.query(PasswordResetCode)
+        .filter(PasswordResetCode.email == email, PasswordResetCode.created_at >= cooldown_since)
+        .order_by(PasswordResetCode.created_at.desc())
+        .first()
+    )
+    if recent:
+        raise HTTPException(status_code=429, detail={"code": "TOO_FREQUENT", "message": "验证码已发送，请稍后再试"})
+
+    # 作废该邮箱所有未使用的旧验证码
+    db.query(PasswordResetCode).filter(
+        PasswordResetCode.email == email, PasswordResetCode.used.is_(False)
+    ).update({PasswordResetCode.used: True}, synchronize_session=False)
+
+    code = f"{secrets.randbelow(1000000):06d}"
+    record = PasswordResetCode(
+        email=email,
+        code=code,
+        expires_at=datetime.utcnow() + timedelta(minutes=RESET_CODE_TTL_MINUTES),
+    )
+    db.add(record)
+    db.commit()
+
+    try:
+        _send_reset_code_email(email, code)
+    except Exception as exc:
+        # 发信失败就把刚建的验证码作废，避免出现「有码但用户收不到」
+        logger.error("send reset code email failed: %s", exc, exc_info=True)
+        record.used = True
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "EMAIL_SEND_FAILED", "message": "验证码邮件发送失败，请稍后重试"},
+        ) from exc
+
+    return {"data": {"sent": True, "expiresInMinutes": RESET_CODE_TTL_MINUTES}}
+
+
+@router.post("/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Annotated[Session, Depends(get_db)]) -> dict:
+    """校验验证码并通过 Supabase Admin API 直接重置密码."""
+    email = payload.email.strip().lower()
+    code = payload.code.strip()
+
+    record = (
+        db.query(PasswordResetCode)
+        .filter(PasswordResetCode.email == email, PasswordResetCode.used.is_(False))
+        .order_by(PasswordResetCode.created_at.desc())
+        .first()
+    )
+    if record is None:
+        raise HTTPException(status_code=400, detail={"code": "CODE_INVALID", "message": "验证码错误或已失效，请重新获取"})
+    if record.attempts >= RESET_CODE_MAX_ATTEMPTS:
+        raise HTTPException(status_code=400, detail={"code": "TOO_MANY_ATTEMPTS", "message": "尝试次数过多，请重新获取验证码"})
+    if record.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail={"code": "CODE_EXPIRED", "message": "验证码已过期，请重新获取"})
+    if record.code != code:
+        record.attempts += 1
+        db.commit()
+        raise HTTPException(status_code=400, detail={"code": "CODE_INVALID", "message": "验证码错误，请重新输入"})
+
+    user_id = _resolve_supabase_user_id(email, db)
+    if not user_id:
+        raise HTTPException(status_code=404, detail={"code": "EMAIL_NOT_FOUND", "message": "该邮箱未注册"})
+
+    base, headers = _supabase_admin_headers()
+    with httpx.Client(timeout=15.0) as client:
+        resp = client.put(f"{base}/auth/v1/admin/users/{user_id}", headers=headers, json={"password": payload.password})
+    if resp.status_code >= 400:
+        logger.error("supabase admin update password failed: %s %s", resp.status_code, resp.text[:200])
+        raise HTTPException(status_code=502, detail={"code": "RESET_FAILED", "message": "密码重置失败，请稍后重试"})
+
+    record.used = True
+    db.commit()
+    return {"data": {"reset": True}}

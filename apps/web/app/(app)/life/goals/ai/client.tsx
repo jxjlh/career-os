@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
-import { TravelChat } from "@/components/life/ai/travel-chat";
+import { TravelRequirementForm } from "@/components/life/ai/travel-requirement";
 import { TravelPlanView } from "@/components/life/ai/travel-plan-view";
 import { Button, Skeleton } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
@@ -35,7 +35,7 @@ export default function LifeGoalAiPage() {
       </Link>
 
       {!plan && (
-        <TravelChat
+        <TravelRequirementForm
           goalId={goalId}
           onPlanGenerated={(result) => {
             setPlan(result);
@@ -52,7 +52,7 @@ export default function LifeGoalAiPage() {
               重新生成
             </Button>
           </div>
-          <TravelPlanView plan={plan} />
+          <TravelPlanView plan={plan} onSaved={(next) => setPlan(next)} />
         </div>
       )}
     </div>

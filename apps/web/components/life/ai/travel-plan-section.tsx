@@ -67,7 +67,7 @@ export function TravelPlanSection({ goalId }: { goalId: string }) {
           </Button>
         </Link>
       </div>
-      <TravelPlanView plan={plan} />
+      <TravelPlanView plan={plan} onSaved={() => planQuery.refetch()} />
     </div>
   );
 }

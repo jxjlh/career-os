@@ -304,6 +304,33 @@ class PlanTask(Base):
     milestone_id: Mapped[str | None] = mapped_column(ForeignKey("roadmap_milestones.id", ondelete="SET NULL"), index=True)
 
 
+class DailyReview(Base):
+    """每日总结与反思（多端同步：不再存 localStorage）。
+
+    一天一条，按 (user_id, review_date) 唯一。
+    summary    = 今天做了什么（总结）
+    reflection = 学到什么 / 卡在哪 / 明天怎么调整（反思）
+    mood       = 当日心情 1-5（原 dashboard 的 TODAY'S MOOD，已迁到服务端）
+    """
+
+    __tablename__ = "daily_reviews"
+    __table_args__ = (UniqueConstraint("user_id", "review_date", name="uq_daily_review_user_date"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    review_date: Mapped[date] = mapped_column(Date, index=True)
+    summary: Mapped[str | None] = mapped_column(Text)
+    reflection: Mapped[str | None] = mapped_column(Text)
+    mood: Mapped[int | None] = mapped_column(SmallInteger)
+    # 当天快照（写入时计算，便于成长分析直接读，不必反复 join）
+    total_tasks: Mapped[int] = mapped_column(Integer, default=0)
+    done_tasks: Mapped[int] = mapped_column(Integer, default=0)
+    done_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    planned_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class AiChat(Base):
     __tablename__ = "ai_chats"
 
@@ -371,6 +398,14 @@ class Interview(Base):
     difficulty: Mapped[str] = mapped_column(String(32), default="intermediate")
     status: Mapped[str] = mapped_column(String(32), default="draft")
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # ── 面试素材：简历 + JD（出题与面评的唯一上下文来源）──
+    resume_id: Mapped[str | None] = mapped_column(String(36))
+    resume_text: Mapped[str | None] = mapped_column(Text)
+    resume_facts: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    jd_text: Mapped[str | None] = mapped_column(Text)
+    jd_facts: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    jd_source: Mapped[str | None] = mapped_column(String(32))
+    jd_meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -402,6 +437,14 @@ class InterviewQuestion(Base):
     difficulty: Mapped[str | None] = mapped_column(String(32))
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     ai_generated: Mapped[bool] = mapped_column(Boolean, default=True)
+    # ── 双绑定：每题都要咬住一条 JD 要求 + 锚住一段简历经历 ──
+    jd_requirement: Mapped[str | None] = mapped_column(Text)
+    resume_hook: Mapped[str | None] = mapped_column(Text)
+    intent: Mapped[str | None] = mapped_column(Text)
+    follow_up: Mapped[str | None] = mapped_column(Text)
+    is_gap: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 动态追问：本题已追问的轮数
+    follow_up_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -429,6 +472,10 @@ class InterviewFeedback(Base):
     strengths: Mapped[str | None] = mapped_column(Text)
     improvements: Mapped[str | None] = mapped_column(Text)
     sample_answer: Mapped[str | None] = mapped_column(Text)
+    # ── JD 匹配度评估 + 简历优化建议 ──
+    jd_match_score: Mapped[float | None] = mapped_column(Float)
+    jd_coverage: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    resume_advice: Mapped[list[Any]] = mapped_column(JSON, default=list)
     ai_provider: Mapped[str | None] = mapped_column(String(64))
     ai_model: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
@@ -445,6 +492,10 @@ class Resume(Base):
     template: Mapped[str] = mapped_column(String(64), default="clean")
     sections: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    # ── 面试中心：用户上传的真实简历文件 ──
+    raw_text: Mapped[str | None] = mapped_column(Text)
+    source_file: Mapped[str | None] = mapped_column(String(255))
+    parse_method: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -1608,3 +1659,7 @@ class FinanceRecommendation(Base):
     rule_triggers: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+# PasswordResetCode（密码重置验证码）已拆到 app/db/password_reset.py，
+# 避免同名表在同一个 MetaData 里重复定义；router 导入该模块即完成注册。

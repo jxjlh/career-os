@@ -99,7 +99,7 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 10, scale: 0.95 }}
         transition={{ duration: 0.15, ease: "easeOut" }}
-        className="absolute bottom-full left-0 mb-2 w-80 h-72 bg-surface-elevated rounded-xl shadow-xl border border-border-subtle overflow-hidden flex flex-col z-50"
+        className="absolute bottom-full left-0 mb-2 w-80 max-sm:w-[min(20rem,calc(100vw-1.5rem))] h-72 bg-surface-elevated rounded-xl shadow-xl border border-border-subtle overflow-hidden flex flex-col z-50"
       >
         {/* 最近使用 */}
         {recentEmojis.length > 0 && (
