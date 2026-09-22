@@ -1,0 +1,133 @@
+name: Deploy API hotfix (career-os-api-next)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "apps/api/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-api-hotfix
+  cancel-in-progress: false
+
+jobs:
+  hotfix-api:
+    name: Build + swap career-os-api-next
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax-check + pack apps/api source
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          python3 -m compileall -q apps/api/app
+          tar -czf api_app.tar.gz -C apps/api app
+          ls -lh api_app.tar.gz
+
+      - name: Upload + hotfix via SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PASS: ${{ secrets.VPS_PASSWORD }}
+          VPS_PORT: ${{ secrets.VPS_PORT || 22 }}
+        run: |
+          set -euo pipefail
+          export SSHPASS="$VPS_PASS"
+          PORT="${VPS_PORT:-22}"
+          TAG="hf$(date +%m%d%H%M%S)"
+          sshpass -e scp -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            api_app.tar.gz "$VPS_USER@$VPS_HOST:/tmp/api_app.tar.gz"
+          sshpass -e ssh -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -o TCPKeepAlive=yes \
+            "$VPS_USER@$VPS_HOST" bash -s -- "$TAG" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          TAG="${1:?missing tag}"
+          APP_DIR="/opt/ai-life-os"
+          HOTFIX="$APP_DIR/api-hotfix"
+          CONTAINER="career-os-api-next"
+          ENV_FILE="$APP_DIR/api-env.txt"
+
+          echo "--- 1. unpack new app source ---"
+          mkdir -p "$HOTFIX/apps/api"
+          tar -xzf /tmp/api_app.tar.gz -C "$HOTFIX/apps/api"
+          rm -f /tmp/api_app.tar.gz
+          find "$HOTFIX/apps/api/app" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+          if command -v python3 >/dev/null 2>&1; then python3 -m compileall -q "$HOTFIX/apps/api/app"; fi
+
+          echo "--- 2. ensure SMTP env vars (idempotent) ---"
+          touch "$ENV_FILE"
+          if ! grep -q "^SMTP_HOST=" "$ENV_FILE"; then
+            printf '%s\n' \
+              'SMTP_HOST=smtp.163.com' \
+              'SMTP_PORT=465' \
+              'SMTP_USER=13170037342@163.com' \
+              'SMTP_PASS=CLws3xKy3JgZ88ZP' \
+              'SMTP_SENDER_NAME=CareerOS' \
+              'SMTP_USE_SSL=true' >> "$ENV_FILE"
+          fi
+          chmod 600 "$ENV_FILE"
+
+          echo "--- 3. build new image ---"
+          docker build -f "$HOTFIX/Dockerfile.hotfix" -t "career-os-api:$TAG" "$HOTFIX"
+
+          echo "--- 4. snapshot + safety check on current container ---"
+          docker inspect "$CONTAINER" > "/tmp/inspect-career-os-api-next-$TAG.json"
+          MOUNTS=$(docker inspect -f '{{json .Mounts}}' "$CONTAINER")
+          echo "mounts: $MOUNTS"
+          if [ -n "$MOUNTS" ] && [ "$MOUNTS" != "[]" ] && [ "$MOUNTS" != "null" ]; then
+            echo "ABORT: container has volume mounts; auto-swap disabled to avoid data loss."
+            exit 1
+          fi
+
+          echo "--- 5. swap container ---"
+          docker rename "$CONTAINER" "career-os-api-prev-$TAG"
+          docker stop "career-os-api-prev-$TAG" >/dev/null
+          if docker run -d --name "$CONTAINER" \
+            -p 127.0.0.1:8004:8000 \
+            --restart unless-stopped \
+            --env-file "$ENV_FILE" \
+            "career-os-api:$TAG"; then
+            echo "new container started"
+          else
+            echo "run failed - rolling back"
+            docker rm -f "$CONTAINER" 2>/dev/null || true
+            docker rename "career-os-api-prev-$TAG" "$CONTAINER"
+            docker start "$CONTAINER" >/dev/null
+            exit 1
+          fi
+
+          echo "--- 6. health check (startup takes ~2.5 min) ---"
+          CODE=000
+          for i in $(seq 1 30); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 http://127.0.0.1:8004/ready || echo 000)
+            if [ "$CODE" = "200" ]; then echo "OK /ready 200 (attempt $i)"; break; fi
+            echo "waiting /ready=$CODE (attempt $i)"
+            sleep 10
+          done
+          if [ "$CODE" != "200" ]; then
+            echo "HEALTH FAIL - rolling back"
+            docker logs --tail 60 "$CONTAINER" || true
+            docker rm -f "$CONTAINER" || true
+            docker rename "career-os-api-prev-$TAG" "$CONTAINER"
+            docker start "$CONTAINER" >/dev/null
+            exit 1
+          fi
+
+          echo "--- 7. verify password-reset endpoint is live ---"
+          RESP=$(curl -s -X POST http://127.0.0.1:8004/api/v1/auth/forgot-password \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"route-probe@example.com"}' || true)
+          echo "probe: $RESP"
+          echo "$RESP" | grep -q "EMAIL_NOT_FOUND" || { echo "endpoint probe failed"; exit 1; }
+
+          echo "--- 8. prune old prev containers (keep newest) ---"
+          docker ps -a --format '{{.Names}}' | grep '^career-os-api-prev' | sort | head -n -1 | xargs -r docker rm -f 2>/dev/null || true
+
+          echo "HOTFIX DONE: $TAG"
+          REMOTE_SCRIPT
