@@ -1663,3 +1663,45 @@ class FinanceRecommendation(Base):
 
 # PasswordResetCode（密码重置验证码）已拆到 app/db/password_reset.py，
 # 避免同名表在同一个 MetaData 里重复定义；router 导入该模块即完成注册。
+
+
+class HealthDailyMetric(Base):
+    """手机健康数据 · 按天聚合，一人一天一行（多来源按优先级合并，不累加）。"""
+
+    __tablename__ = "health_daily_metrics"
+    __table_args__ = (
+        UniqueConstraint("user_id", "metric_date", name="uq_health_daily_user_day"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    metric_date: Mapped[date] = mapped_column(Date, index=True)
+
+    # 核心六项：采不到的留 NULL（不填 0，避免把「没数据」当「数据是零」）
+    steps: Mapped[int | None] = mapped_column(Integer)
+    distance_km: Mapped[float | None] = mapped_column(Float)
+    active_energy_kcal: Mapped[float | None] = mapped_column(Float)
+    exercise_minutes: Mapped[int | None] = mapped_column(Integer)
+    sleep_minutes: Mapped[int | None] = mapped_column(Integer)
+    resting_hr: Mapped[int | None] = mapped_column(Integer)
+
+    # apple_watch > iphone > android > manual（见 domains/health/metrics.py 的合并规则）
+    source: Mapped[str] = mapped_column(String(24), default="manual")
+    raw: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # 原始推送留档，日后加指标可回溯
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
+
+
+class HealthSyncToken(Base):
+    """设备同步令牌：快捷指令等外部设备拿不到 Supabase JWT，用它鉴权。明文只展示一次，库存 sha256。"""
+
+    __tablename__ = "health_sync_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    device_label: Mapped[str] = mapped_column(String(80), default="iPhone 快捷指令")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

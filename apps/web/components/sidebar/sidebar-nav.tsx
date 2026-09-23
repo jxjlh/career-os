@@ -7,6 +7,7 @@ import {
   Compass,
   FolderKanban,
   Home,
+  HeartPulse,
   Images,
   Library,
   WalletCards,
@@ -44,6 +45,7 @@ const NAV: NavItem[] = [
   { key: "lifeMap", href: "/life/map", icon: MapPin, group: "now" },
   { key: "lifeRecords", href: "/life/records", icon: Images, group: "now" },
   { key: "journal", href: "/journal", icon: NotebookPen, group: "now" },
+  { key: "health", href: "/health", icon: HeartPulse, group: "now" },
   { key: "contacts", href: "/contacts", icon: Users, group: "now" },
   // 我的职业
   { key: "career", href: "/career", icon: Briefcase, group: "career" },

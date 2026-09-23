@@ -27,6 +27,7 @@ from app.domains.explorer.router import router as explorer_router
 from app.domains.finance.router import router as finance_router
 from app.domains.goals.router import router as goals_router
 from app.domains.health.router import router as health_router
+from app.domains.health.metrics import router as health_data_router
 from app.domains.interviews.router import router as interviews_router
 from app.domains.jobs.router import router as jobs_router
 from app.domains.journal.router import router as journal_router
@@ -161,6 +162,8 @@ app.include_router(social_router, prefix=settings.api_prefix)
 app.include_router(english_router, prefix=settings.api_prefix)
 
 app.include_router(chat_router, prefix=settings.api_prefix)
+
+app.include_router(health_data_router, prefix=settings.api_prefix)
 
 # ---------- 前端静态文件托管 ----------
 # 将 Next.js 构建产物 (apps/web/out) 作为静态资源提供服务，

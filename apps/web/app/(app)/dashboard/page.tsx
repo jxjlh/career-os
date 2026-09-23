@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { Sparkles, Briefcase, Rocket, Heart, Leaf, MoreHorizontal, CheckCircle2, Circle, Quote, Image, Pencil, Loader2, CalendarDays } from "lucide-react";
+import { Sparkles, Heart, CheckCircle2, Circle, Quote, Image, Pencil, Loader2, CalendarDays, Footprints, Moon, Activity, Flame } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
@@ -16,6 +16,7 @@ import {
 } from "@/components/dashboard";
 import { resolveMediaUrl } from "@/lib/chat";
 import { journalApi, TIME_SLOTS, MOODS, type Journal } from "@/lib/journal";
+import { healthApi, formatNumber, formatSleep, type HealthDay } from "@/lib/health";
 
 type Envelope = { data: any };
 
@@ -54,14 +55,7 @@ export default function DashboardPage() {
     return list;
   }, [planData]);
 
-  // ---- 快捷入口配置 ----
-  const quickEntries = [
-    { icon: Briefcase, label: "求职", color: "bg-blue-100 text-blue-600", href: "/portfolio" },
-    { icon: Rocket, label: "技能", color: "bg-purple-100 text-purple-600", href: "/skills" },
-    { icon: Leaf, label: "生活方式", color: "bg-green-100 text-green-600", href: "/life" },
-    { icon: Heart, label: "健康", color: "bg-pink-100 text-pink-600", href: "/health" },
-    { icon: MoreHorizontal, label: "更多", color: "bg-amber-100 text-amber-600", href: "/explore" },
-  ];
+  // ---- 快捷入口已移除：卡片只保留「今日健康」数据条 ----
 
   const completedTasks = weeklyTasks.filter((t: any) => t.status === "done").length;
 
@@ -85,29 +79,9 @@ export default function DashboardPage() {
       {/* ===== 1. 座右铭 Banner ===== */}
       <MottoBanner />
 
-      {/* ===== 2. 快捷入口栏（12 列，flex 横向排列）===== */}
+      {/* ===== 2. 今日健康卡片 ===== */}
       <div className="rounded-2xl border border-border-subtle bg-surface p-5 shadow-sm">
-        <div className="flex items-center justify-around gap-2">
-          {quickEntries.map((entry) => {
-            const Icon = entry.icon;
-            return (
-              <Link
-                key={entry.label}
-                href={entry.href}
-                className="group flex flex-col items-center gap-2"
-              >
-                <div
-                  className={`flex h-14 w-14 items-center justify-center rounded-full ${entry.color} transition-transform duration-200 group-hover:scale-110`}
-                >
-                  <Icon className="h-6 w-6" />
-                </div>
-                <span className="text-[11px] font-medium text-text-secondary group-hover:text-text">
-                  {entry.label}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
+        <TodayHealthStrip />
       </div>
 
       {/* ===== 4. 三栏卡片区（4 + 4 + 4）===== */}
@@ -485,6 +459,87 @@ function DailyJournal() {
 }
 
 const MOTTO_STORAGE_KEY = "career_os_motto";
+
+const SOURCE_LABELS: Record<string, string> = {
+  apple_watch: "Apple Watch",
+  iphone: "iPhone",
+  android: "安卓",
+  manual: "手动",
+};
+
+/** 今日健康数据条：放在快捷入口上方，展示步数 / 睡眠 / 静息心率 / 活动能量 */
+function TodayHealthStrip() {
+  const todayStr = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["health-today", todayStr],
+    queryFn: () => healthApi.daily(todayStr, todayStr),
+    staleTime: 5 * 60_000,
+  });
+
+  const day: HealthDay | undefined = data?.data?.days?.[0];
+  const hasData = day != null && [day.steps, day.sleepMinutes, day.restingHr, day.activeEnergyKcal].some((v) => v != null);
+
+  const items = [
+    { icon: Footprints, label: "步数", value: day ? formatNumber(day.steps) : "--", color: "text-blue-600 bg-blue-100" },
+    { icon: Moon, label: "睡眠", value: day ? formatSleep(day.sleepMinutes) : "--", color: "text-indigo-600 bg-indigo-100" },
+    { icon: Activity, label: "静息心率", value: day ? (day.restingHr != null ? `${day.restingHr} 次/分` : "--") : "--", color: "text-rose-600 bg-rose-100" },
+    { icon: Flame, label: "活动能量", value: day ? formatNumber(day.activeEnergyKcal != null ? Math.round(day.activeEnergyKcal) : null, " 千卡") : "--", color: "text-orange-600 bg-orange-100" },
+  ];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 pb-1 text-[12px] text-text-tertiary">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 加载今日健康数据…
+      </div>
+    );
+  }
+
+  if (!hasData) {
+    return (
+      <Link href="/health" className="flex items-center justify-between rounded-xl bg-surface-elevated px-4 py-3 transition-colors hover:bg-primary/5">
+        <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
+          <Heart className="h-4 w-4 text-rose-500/70" />
+          还没有今日健康数据，连接手机后自动同步到这里
+        </div>
+        <span className="text-[12px] text-primary">去设置 →</span>
+      </Link>
+    );
+  }
+
+  return (
+    <Link href="/health" className="block">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+          今日健康
+        </span>
+        <span className="text-[10px] text-text-tertiary/70">
+          {day?.source ? `来源：${SOURCE_LABELS[day.source] ?? day.source}` : ""}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <div key={item.label} className="flex items-center gap-3 rounded-xl bg-surface-elevated px-3 py-2.5">
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${item.color}`}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-[15px] font-semibold leading-tight text-text">{item.value}</p>
+                <p className="mt-0.5 text-[10px] text-text-tertiary">{item.label}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Link>
+  );
+}
+
 const DEFAULT_MOTTO = "持续成长，每一天都在遇见更好的自己";
 const MOTTO_COLORS = ["#FFFFFF", "#1A1A1A", "#5B9DFF", "#C49A5C", "#F5F8FF"];
 const MOTTO_SIZES = [
