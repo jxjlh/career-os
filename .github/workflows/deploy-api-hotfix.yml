@@ -27,7 +27,9 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
           python3 -m compileall -q apps/api/app
-          tar -czf api_app.tar.gz --exclude='._*' -C apps/api app
+          # 同时打包 migrations：热修复镜像启动跑 alembic，迁移修复（如 c7d8e9f0a1b2 幂等补列）
+          # 必须进构建上下文，否则 VPS 上仍用旧迁移导致启动崩溃。
+          tar -czf api_app.tar.gz --exclude='._*' -C apps/api app migrations
           ls -lh api_app.tar.gz
 
       - name: Upload + hotfix via SSH
