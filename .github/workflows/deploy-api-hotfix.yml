@@ -51,7 +51,7 @@ jobs:
           APP_DIR="/opt/ai-life-os"
           HOTFIX="$APP_DIR/api-hotfix"
           CONTAINER="career-os-api-next"
-          ENV_FILE="$APP_DIR/api-env.txt"
+          ENV_FILE="$HOTFIX/api-env.txt"
 
           echo "--- 1. unpack new app source ---"
           mkdir -p "$HOTFIX/apps/api"
