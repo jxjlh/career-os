@@ -65,14 +65,7 @@ jobs:
           # 宿主机 python 版本可能低于容器内 3.13，无法解析 PEP695 泛型语法；
           # 语法已由 runner 端 compileall + 镜像构建（python:3.13）双重保证，跳过宿主机校验
 
-          echo "--- 2. build env file from production env (idempotent) ---"
-          # 复用生产完整 env（DATABASE_URL / SUPABASE_* / AI keys ...）。
-          # 只写 SMTP 会让容器缺 DATABASE_URL → 回落空 SQLite → 全站数据读不到。
-          # ⚠️ 曾因此打挂线上：2026-09-24 hotfix 只写 SMTP，容器无 DATABASE_URL → SQLite 空库。
-          FULL_ENV="$APP_DIR/api-env.txt"
-          if [ -f "$FULL_ENV" ]; then
-            cp -f "$FULL_ENV" "$ENV_FILE" 2>/dev/null || sudo cp -f "$FULL_ENV" "$ENV_FILE" 2>/dev/null || true
-          fi
+          echo "--- 2. ensure SMTP env vars (idempotent) ---"
           touch "$ENV_FILE"
           if ! grep -q "^SMTP_HOST=" "$ENV_FILE"; then
             printf '%s\n' \
@@ -84,12 +77,39 @@ jobs:
               'SMTP_USE_SSL=true' >> "$ENV_FILE"
           fi
           chmod 600 "$ENV_FILE"
-          # 硬性守卫：缺 DATABASE_URL 绝不允许换容器（否则 API 回落空 SQLite，线上不可用）
-          if ! grep -q "^DATABASE_URL=" "$ENV_FILE"; then
-            echo "ABORT: env-file 缺少 DATABASE_URL，拒绝换容器（会导致 API 回落空 SQLite）。"
-            echo "请确认 $FULL_ENV 存在且含 DATABASE_URL。"
+
+          echo "--- 2b. 必需业务配置校验（护栏：宁可不换容器，也不起一个没配置的） ---"
+          # 背景：$ENV_FILE 若只含 SMTP（例如当天新建），容器会缺 DATABASE_URL，
+          # app/core/database.py 会静默 fallback 到容器内 SQLite —— 服务看起来活着（/ready 也 ok），
+          # 但数据全空、登录鉴权失效。2026-09-24 线上故障即由此而来。
+          REQUIRED_KEYS="DATABASE_URL SUPABASE_URL SUPABASE_JWT_SECRET CORS_ORIGINS API_PREFIX"
+          MISSING=""
+          for k in $REQUIRED_KEYS; do
+            grep -q "^${k}=" "$ENV_FILE" || MISSING="$MISSING $k"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "env 缺少业务 key:$MISSING —— 从当前运行容器恢复"
+            if docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
+              docker inspect "$CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+                | grep -E "^(DATABASE_URL|SUPABASE_|CORS_ORIGINS|API_PREFIX|APP_ENV|FRONTEND_URL|SPARK_|XFYUN_|FINANCE_|OPENAI_|JD_AI_)" \
+                | sort -u > /tmp/envrecover.txt
+              # 现有文件优先，恢复项兜底（awk 保首次出现）
+              cat "$ENV_FILE" /tmp/envrecover.txt | grep -v '^$' | awk -F= '!seen[$1]++' > /tmp/envmerged.txt
+              mv /tmp/envmerged.txt "$ENV_FILE"
+              chmod 600 "$ENV_FILE"
+              echo "  recovered from container: $(wc -l < /tmp/envrecover.txt) 行 -> 合计 $(wc -l < "$ENV_FILE") 行"
+            fi
+          fi
+          MISSING=""
+          for k in $REQUIRED_KEYS; do
+            grep -q "^${k}=" "$ENV_FILE" || MISSING="$MISSING $k"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "ABORT: $ENV_FILE 仍缺少必需配置:$MISSING"
+            echo "请先把完整业务 env 写入该文件（DATABASE_URL 指向 Supabase PG）再重跑。"
             exit 1
           fi
+          echo "env 校验通过（$(wc -l < "$ENV_FILE") 行）"
 
           echo "--- 3. build new image ---"
           docker build -f "$HOTFIX/Dockerfile.hotfix" -t "career-os-api:$TAG" "$HOTFIX"
@@ -136,6 +156,23 @@ jobs:
             docker start "$CONTAINER" >/dev/null
             exit 1
           fi
+
+          echo "--- 6b. 校验真实数据库类型（防止静默 fallback 到 SQLite） ---"
+          # /ready 无法区分：SQLite 也能连通，postgres 检查同样返回 ok。
+          # 必须进容器确认真连到 Supabase PG，否则回滚。
+          DBCHECK=$(docker exec "$CONTAINER" /app/.venv/bin/python -c "from app.core.database import engine; print(engine.dialect.name, engine.url.host or 'local')" 2>/dev/null || echo "check-failed")
+          echo "db -> $DBCHECK"
+          case "$DBCHECK" in
+            postgresql\ *) echo "DB OK: $DBCHECK" ;;
+            *)
+              echo "ABORT: 容器没连上 Supabase PG（实际为 $DBCHECK）—— 业务数据会丢失，回滚"
+              docker logs --tail 40 "$CONTAINER" || true
+              docker rm -f "$CONTAINER" 2>/dev/null || true
+              docker rename "career-os-api-prev-$TAG" "$CONTAINER"
+              docker start "$CONTAINER" >/dev/null
+              exit 1
+              ;;
+          esac
 
           echo "--- 7. verify password-reset endpoint is live ---"
           RESP=$(curl -s -X POST http://127.0.0.1:8004/api/v1/auth/forgot-password \
