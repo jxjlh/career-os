@@ -169,7 +169,7 @@ export function LifeCameraPanel({
       if (!goalId) throw new Error("请先创建一个人生目标");
 
       setUploadState("uploading");
-      setUploadProgress(10);
+      setUploadProgress(8);
 
       const file = new File([capturedBlob], `camera-${Date.now()}.jpg`, { type: "image/jpeg" });
       const date = new Date();
@@ -189,19 +189,23 @@ export function LifeCameraPanel({
         watermarkOptions,
       );
 
-      setUploadProgress(50);
-      await createLifeRecord(goalId, {
-        file: watermarked,
-        content: content || undefined,
-        latitude: location?.latitude,
-        longitude: location?.longitude,
-        // 后端 life_records 没有独立 address 列，这里把「具体位置」存进 city 字段，
-        // 各处展示（详情、地图、时间轴）即可直接显示地名而不是经纬度。
-        city: placeText || undefined,
-        country: place?.country,
-        weather: weather?.weather,
-        altitude: location?.altitude ?? null,
-      });
+      setUploadProgress(12);
+      await createLifeRecord(
+        goalId,
+        {
+          file: watermarked,
+          content: content || undefined,
+          latitude: location?.latitude,
+          longitude: location?.longitude,
+          // 后端 life_records 没有独立 address 列，这里把「具体位置」存进 city 字段，
+          // 各处展示（详情、地图、时间轴）即可直接显示地名而不是经纬度。
+          city: placeText || undefined,
+          country: place?.country,
+          weather: weather?.weather,
+          altitude: location?.altitude ?? null,
+        },
+        (p) => setUploadProgress(Math.min(98, 12 + Math.round(p * 0.86))),
+      );
       setUploadProgress(100);
       setUploadState("success");
     },

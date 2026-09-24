@@ -11,6 +11,9 @@ from app.core.config import get_settings
 # 听力材料音频桶
 LISTENING_BUCKET = "listening-audio"
 
+# 进程内缓存已验证（存在且公开）的桶，避免每次上传都发 HTTP 建桶请求
+_VERIFIED_BUCKETS: set[str] = set()
+
 
 class StorageService:
     """存储服务, 支持 Supabase Storage 和本地回退."""
@@ -177,7 +180,13 @@ class StorageService:
         return f"{self.settings.supabase_url}/storage/v1/object/public/{bucket}/{path}"
 
     def _ensure_bucket(self, bucket: str) -> None:
-        """确保 Supabase Storage 桶存在且为公开；已存在时自动修补 public 状态."""
+        """确保 Supabase Storage 桶存在且为公开；已存在时自动修补 public 状态.
+
+        桶只需校验/创建一次：进程内缓存已验证的桶，后续上传直接跳过建桶请求，
+        避免每次上传都多一次到 Supabase 的网络往返。
+        """
+        if bucket in _VERIFIED_BUCKETS:
+            return
         url = f"{self.settings.supabase_url}/storage/v1/bucket"
         headers = {
             "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
@@ -197,6 +206,9 @@ class StorageService:
                 except Exception:
                     # 桶已存在且修补失败不阻断上传（可能本来就是 public）
                     pass
+                _VERIFIED_BUCKETS.add(bucket)
+            elif response.status_code in (200, 201):
+                _VERIFIED_BUCKETS.add(bucket)
             elif response.status_code >= 400:
                 raise RuntimeError(f"Supabase bucket setup failed: HTTP {response.status_code}")
 

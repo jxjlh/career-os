@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiUploadWithProgress } from "@/lib/api";
 
 // 媒体文件（图片/视频）同源加载，不再走外部后端
 const BACKEND_ORIGIN = "";
@@ -189,6 +189,7 @@ export async function createLifeRecord(
     weather?: string;
     altitude?: number | null;
   },
+  onProgress?: (percent: number) => void,
 ): Promise<{ id: string; goalId: string; status: string }> {
   const form = new FormData();
   form.append("file", payload.file);
@@ -200,9 +201,10 @@ export async function createLifeRecord(
   if (payload.country) form.append("country", payload.country);
   if (payload.weather) form.append("weather", payload.weather);
   if (payload.altitude != null) form.append("altitude", String(payload.altitude));
-  const res = await apiFetch<{ data: { id: string; goalId: string; status: string } }>(
+  const res = await apiUploadWithProgress<{ data: { id: string; goalId: string; status: string } }>(
     `/life/goals/${goalId}/records`,
-    { method: "POST", body: form },
+    form,
+    onProgress,
   );
   return res.data;
 }

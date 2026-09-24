@@ -123,6 +123,55 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 }
 
 /**
+ * 带真实上传进度的 multipart POST（用于图片/视频上传）。
+ * 通过 XMLHttpRequest 的 upload.onprogress 拿到真实百分比，替代写死的假进度。
+ */
+export async function apiUploadWithProgress<T>(
+  path: string,
+  formData: FormData,
+  onProgress?: (percent: number) => void,
+): Promise<T> {
+  const token = await getCachedToken();
+  const url = path.startsWith("/api/v1") ? path : `${API_BASE}${path}`;
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Authorization", token ? `Bearer ${token}` : "Bearer dev");
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+    }
+    xhr.onload = () => {
+      const ok = xhr.status >= 200 && xhr.status < 300;
+      let payload: any = null;
+      try {
+        payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        // ignore
+      }
+      if (ok) {
+        resolve(payload as T);
+        return;
+      }
+      if (xhr.status === 401) clearTokenCache();
+      const serverMsg = payload?.error?.message || payload?.detail?.message;
+      const serverCode = payload?.error?.code || payload?.detail?.code;
+      const localizedMsg = STATUS_MESSAGES[xhr.status] || `请求失败 (${xhr.status})`;
+      reject(new ApiError(serverMsg || localizedMsg, serverCode, xhr.status));
+    };
+    xhr.onerror = () =>
+      reject(
+        new ApiError(
+          "网络连接失败，请检查网络后重试；如果问题持续，请稍后再试。",
+          "NETWORK_ERROR",
+        ),
+      );
+    xhr.send(formData);
+  });
+}
+
+/**
  * 登录/注册成功后决定跳转目标：
  *  - 有 next 参数（来自 middleware 的回跳）→ 优先 next
  *  - 否则直接进入系统主界面；onboarding 是可选流程，不再强制

@@ -69,18 +69,29 @@ function enabled(opts: WatermarkOptions | undefined, key: keyof WatermarkOptions
  * 在照片底部叠加 LifeOS 水印条, 含日期/时间/地点/城市/天气/温度/海拔/GPS/Logo.
  * 用户可通过 options 关闭部分项. 生成失败时返回原文件, 不阻塞拍照流程.
  */
+/** 上传用目标最长边（像素）。原图超过此值会等比缩小，显著减小体积、加快上传与加载。 */
+export const UPLOAD_MAX_DIMENSION = 1600;
+
 export async function createWatermarkImage(
   file: File,
   meta: WatermarkMeta,
   options: WatermarkOptions = DEFAULT_WATERMARK_OPTIONS,
+  maxDimension: number = UPLOAD_MAX_DIMENSION,
 ): Promise<File> {
   const bitmap = await createImageBitmap(file);
+
+  // 等比缩小：限制最长边不超过 maxDimension，避免原图（尤其是相册大图）过大导致上传/加载慢
+  const longest = Math.max(bitmap.width, bitmap.height);
+  const scale = longest > maxDimension ? maxDimension / longest : 1;
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+
   const canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext("2d");
   if (!ctx) return file;
-  ctx.drawImage(bitmap, 0, 0);
+  ctx.drawImage(bitmap, 0, 0, w, h);
 
   const bandHeight = Math.max(120, Math.round(canvas.height * 0.16));
   const pad = Math.max(24, Math.round(canvas.width * 0.02));
@@ -144,7 +155,7 @@ export async function createWatermarkImage(
       } else {
         resolve(file);
       }
-    }, "image/jpeg", 0.92);
+    }, "image/jpeg", 0.85);
   });
 }
 
