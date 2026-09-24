@@ -26,6 +26,14 @@ def stable_word_id(book_code: str, spelling: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"career-os:word:{book_code}:{spelling.casefold()}"))
 
 
+# 种子数据缺失中文时填的占位串（历史导入遗留，库里曾有 4 万多条）
+PLACEHOLDER_MEANINGS = {"暂无释义", "暂无翻译", "暂无", "无", "—", "-", ""}
+
+
+def is_placeholder_meaning(meaning: str | None) -> bool:
+    return (meaning or "").strip() in PLACEHOLDER_MEANINGS
+
+
 def seed_word_books(db: Session) -> None:
     """幂等写入种子词库. 如果词书已存在但版本不同, 全量替换单词."""
     if not SEEDS_DIR.exists():
@@ -111,12 +119,16 @@ def seed_word_books(db: Session) -> None:
                     )
                     continue
                 word.spelling = spelling
-                word.phonetic = word_data.get("phonetic")
                 word.pos = word_data.get("pos")
-                word.meaning = word_data.get("meaning", "暂无释义")
                 word.example_en = word_data.get("example_en")
                 word.example_zh = word_data.get("example_zh")
                 word.sort_order = idx
+                # 释义：库里已有真实中文（人工校正或词典回填）时保留，不拿种子覆盖。
+                # 种子里大量词条 meaning 是 '暂无释义'，直接赋值会把已修好的数据冲掉。
+                if is_placeholder_meaning(word.meaning):
+                    word.meaning = word_data.get("meaning", "暂无释义")
+                if not (word.phonetic or "").strip():
+                    word.phonetic = word_data.get("phonetic")
 
             for start in range(0, len(new_mappings), 1000):
                 db.bulk_insert_mappings(Word, new_mappings[start : start + 1000])
