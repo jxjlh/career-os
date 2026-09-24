@@ -262,7 +262,7 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
   const [newToken, setNewToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
-  const quickUrl = newToken ? buildQuickUrl(newToken) : "";
+  const quickUrl = newToken ? buildQuickUrl(newToken, { steps: 8642 }) : "";
 
   const create = useMutation({
     mutationFn: () => healthApi.createToken("iPhone 快捷指令"),
@@ -382,7 +382,8 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
               <p className="mt-2 text-[10px] leading-relaxed text-text-tertiary">
                 拿不准配得对不对？<b>先在手机 Safari 里直接打开这条网址</b> —— 看到{" "}
                 <code className="rounded bg-surface px-1">{"{\"code\": 0}"}</code>{" "}
-                就说明服务器和令牌都没问题，剩下的只是快捷指令的事。
+                就说明服务器和令牌都没问题（<code className="rounded bg-surface px-1">steps=8642</code>{" "}
+                是示例数字，之后会被真实数据覆盖）。配快捷指令时，把它换成你的健康数据变量即可。
               </p>
             </>
           )}

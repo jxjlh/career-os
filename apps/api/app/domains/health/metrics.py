@@ -190,7 +190,7 @@ def quick_sync(
     if all(v is None for v in metrics):
         raise HTTPException(
             status_code=422,
-            detail={"code": "NO_METRIC", "message": "网址里至少要带一个指标，例如 ?steps=8642"},
+            detail={"code": "NO_METRIC", "message": "网址里还没有任何指标。在末尾加上 &steps=8642 这样的参数再打开试试"},
         )
     payload = HealthDayPayload(
         metric_date=metric_date,

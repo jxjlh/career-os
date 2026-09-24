@@ -13,6 +13,10 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
         start = time.monotonic()
         response = await call_next(request)
+        # 手机 Safari 直接打开 JSON 链接时，无 charset 会把中文显示成乱码
+        content_type = response.headers.get("content-type", "")
+        if content_type.startswith("application/json") and "charset" not in content_type:
+            response.headers["content-type"] = "application/json; charset=utf-8"
         response.headers["X-Request-Id"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
