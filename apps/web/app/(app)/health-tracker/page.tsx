@@ -262,7 +262,11 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
   const [newToken, setNewToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedTpl, setCopiedTpl] = useState(false);
+  // 含示例数字，用于浏览器一键自检
   const quickUrl = newToken ? buildQuickUrl(newToken, { steps: 8642 }) : "";
+  // 末尾留空的模板，用于粘进快捷指令后直接插变量
+  const quickUrlTemplate = newToken ? buildQuickUrl(newToken, { steps: "" }) : "";
 
   const create = useMutation({
     mutationFn: () => healthApi.createToken("iPhone 快捷指令"),
@@ -285,12 +289,12 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
     } catch {}
   };
 
-  const copyUrl = async () => {
-    if (!quickUrl) return;
+  const doCopy = async (text: string, set: (b: boolean) => void) => {
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(quickUrl);
-      setCopiedUrl(true);
-      setTimeout(() => setCopiedUrl(false), 1500);
+      await navigator.clipboard.writeText(text);
+      set(true);
+      setTimeout(() => set(false), 1500);
     } catch {}
   };
 
@@ -355,24 +359,42 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
 
         {/* 快捷指令：一条网址搞定 */}
         <div className="rounded-xl bg-surface-elevated p-4">
-          <p className="mb-2 text-[12px] font-medium text-text">iPhone 快捷指令：一条网址搞定</p>
+          <p className="mb-2 text-[12px] font-medium text-text">iPhone 快捷指令：每晚自动同步</p>
 
           {!newToken ? (
             <p className="rounded-lg bg-surface px-3 py-3 text-[11px] leading-relaxed text-text-tertiary">
-              先在左边点「生成新令牌」，这里会出现一条可以直接用的网址。
+              先在左边点「生成新令牌」，这里会出现两条可以直接用的网址。
             </p>
           ) : (
             <>
               <ol className="list-decimal space-y-1.5 pl-4 text-[11px] leading-relaxed text-text-secondary">
-                <li>点下面「复制」，拿到这条网址</li>
-                <li>iPhone 打开「快捷指令」→ 右上角「+」新建 → 添加动作 <b>获取 URL 内容</b></li>
-                <li>网址栏长按粘贴，方法保持 <b>GET</b> → 点右上角运行</li>
-                <li>回此页面刷新，今日卡片出现数字就成了</li>
+                <li>先复制下面的 <b>②自检网址</b>，在手机 Safari 打开，确认能通</li>
+                <li>iPhone「快捷指令」→「自动化」→ 右上角「+」→「创建个人自动化」→ 选 <b>特定时间</b>，设每晚 23:00</li>
+                <li>添加动作 <b>查找健康样本</b>：类型选「步数」，时间范围「今天」</li>
+                <li>再添加 <b>获取 URL 内容</b>：粘贴 <b>①模板网址</b>，把光标点到末尾{" "}
+                  <code className="rounded bg-surface px-1">steps=</code> 的后面，点键盘上方的变量按钮插入「健康样本」，
+                  并把属性选成 <b>「值」</b>
+                </li>
+                <li>下一步，<b>关掉「运行前询问」</b> → 完成。明早这页自动有数</li>
               </ol>
-              <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-surface p-2.5">
+
+              <p className="mt-3 text-[10px] font-medium text-text">① 模板网址（粘进快捷指令用，末尾留空等你插变量）</p>
+              <div className="mt-1 flex items-start gap-2 rounded-lg bg-surface p-2.5">
+                <code className="min-w-0 flex-1 break-all text-[10px] leading-relaxed text-text-secondary">{quickUrlTemplate}</code>
+                <button
+                  onClick={() => doCopy(quickUrlTemplate, setCopiedTpl)}
+                  className="flex shrink-0 items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] text-white"
+                >
+                  {copiedTpl ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  {copiedTpl ? "已复制" : "复制"}
+                </button>
+              </div>
+
+              <p className="mt-3 text-[10px] font-medium text-text">② 自检网址（含示例数字 8642，先在 Safari 打开试试）</p>
+              <div className="mt-1 flex items-start gap-2 rounded-lg bg-surface p-2.5">
                 <code className="min-w-0 flex-1 break-all text-[10px] leading-relaxed text-text-secondary">{quickUrl}</code>
                 <button
-                  onClick={copyUrl}
+                  onClick={() => doCopy(quickUrl, setCopiedUrl)}
                   className="flex shrink-0 items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] text-white"
                 >
                   {copiedUrl ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -380,10 +402,9 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
                 </button>
               </div>
               <p className="mt-2 text-[10px] leading-relaxed text-text-tertiary">
-                拿不准配得对不对？<b>先在手机 Safari 里直接打开这条网址</b> —— 看到{" "}
-                <code className="rounded bg-surface px-1">{"{\"code\": 0}"}</code>{" "}
-                就说明服务器和令牌都没问题（<code className="rounded bg-surface px-1">steps=8642</code>{" "}
-                是示例数字，之后会被真实数据覆盖）。配快捷指令时，把它换成你的健康数据变量即可。
+                ② 打开后看到 <code className="rounded bg-surface px-1">{"{\"code\": 0}"}</code>{" "}
+                就说明服务器和令牌都没问题，再配①的快捷指令心里有底。那 8642 是示例数字，
+                之后会被真实数据覆盖。
               </p>
             </>
           )}

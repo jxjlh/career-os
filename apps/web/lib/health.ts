@@ -105,7 +105,8 @@ export function buildQuickUrl(
 ): string {
   const params = new URLSearchParams({ token, source: "iphone" });
   Object.entries(metrics).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+    // 空字符串要保留：快捷指令模板需要 steps=（留空），方便用户把光标放末尾插入变量
+    if (v !== undefined && v !== null) params.set(k, String(v));
   });
   return `${siteApiBase()}/health/quick?${params.toString()}`;
 }
