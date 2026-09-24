@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
           python3 -m compileall -q apps/api/app
-          tar -czf api_app.tar.gz -C apps/api app
+          tar -czf api_app.tar.gz --exclude='._*' -C apps/api app
           ls -lh api_app.tar.gz
 
       - name: Upload + hotfix via SSH
@@ -58,7 +58,10 @@ jobs:
           tar -xzf /tmp/api_app.tar.gz -C "$HOTFIX/apps/api"
           rm -f /tmp/api_app.tar.gz
           find "$HOTFIX/apps/api/app" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
-          if command -v python3 >/dev/null 2>&1; then python3 -m compileall -q "$HOTFIX/apps/api/app"; fi
+          # 清理 macOS AppleDouble 残留（._*），避免 null bytes 干扰
+          find "$HOTFIX/apps/api" -name '._*' -delete 2>/dev/null || true
+          # 宿主机 python 版本可能低于容器内 3.13，无法解析 PEP695 泛型语法；
+          # 语法已由 runner 端 compileall + 镜像构建（python:3.13）双重保证，跳过宿主机校验
 
           echo "--- 2. ensure SMTP env vars (idempotent) ---"
           touch "$ENV_FILE"
