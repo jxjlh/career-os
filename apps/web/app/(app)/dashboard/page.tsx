@@ -500,7 +500,7 @@ function TodayHealthStrip() {
 
   if (!hasData) {
     return (
-      <Link href="/health" className="flex items-center justify-between rounded-xl bg-surface-elevated px-4 py-3 transition-colors hover:bg-primary/5">
+      <Link href="/health-tracker" className="flex items-center justify-between rounded-xl bg-surface-elevated px-4 py-3 transition-colors hover:bg-primary/5">
         <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
           <Heart className="h-4 w-4 text-rose-500/70" />
           还没有今日健康数据，连接手机后自动同步到这里
@@ -511,7 +511,7 @@ function TodayHealthStrip() {
   }
 
   return (
-    <Link href="/health" className="block">
+    <Link href="/health-tracker" className="block">
       <div className="mb-3 flex items-center justify-between">
         <span className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
           今日健康
