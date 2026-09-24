@@ -65,7 +65,14 @@ jobs:
           # 宿主机 python 版本可能低于容器内 3.13，无法解析 PEP695 泛型语法；
           # 语法已由 runner 端 compileall + 镜像构建（python:3.13）双重保证，跳过宿主机校验
 
-          echo "--- 2. ensure SMTP env vars (idempotent) ---"
+          echo "--- 2. build env file from production env (idempotent) ---"
+          # 复用生产完整 env（DATABASE_URL / SUPABASE_* / AI keys ...）。
+          # 只写 SMTP 会让容器缺 DATABASE_URL → 回落空 SQLite → 全站数据读不到。
+          # ⚠️ 曾因此打挂线上：2026-09-24 hotfix 只写 SMTP，容器无 DATABASE_URL → SQLite 空库。
+          FULL_ENV="$APP_DIR/api-env.txt"
+          if [ -f "$FULL_ENV" ]; then
+            cp -f "$FULL_ENV" "$ENV_FILE" 2>/dev/null || sudo cp -f "$FULL_ENV" "$ENV_FILE" 2>/dev/null || true
+          fi
           touch "$ENV_FILE"
           if ! grep -q "^SMTP_HOST=" "$ENV_FILE"; then
             printf '%s\n' \
@@ -77,6 +84,12 @@ jobs:
               'SMTP_USE_SSL=true' >> "$ENV_FILE"
           fi
           chmod 600 "$ENV_FILE"
+          # 硬性守卫：缺 DATABASE_URL 绝不允许换容器（否则 API 回落空 SQLite，线上不可用）
+          if ! grep -q "^DATABASE_URL=" "$ENV_FILE"; then
+            echo "ABORT: env-file 缺少 DATABASE_URL，拒绝换容器（会导致 API 回落空 SQLite）。"
+            echo "请确认 $FULL_ENV 存在且含 DATABASE_URL。"
+            exit 1
+          fi
 
           echo "--- 3. build new image ---"
           docker build -f "$HOTFIX/Dockerfile.hotfix" -t "career-os-api:$TAG" "$HOTFIX"
