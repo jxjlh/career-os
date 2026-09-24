@@ -1,5 +1,6 @@
-import { ApiError, apiFetch, API_BASE } from "@/lib/api";
+import { apiFetch, apiUploadWithProgress, API_BASE } from "@/lib/api";
 import { getAccessToken, isSupabaseConfigured } from "@/lib/supabase";
+import { compressImageFile } from "@/components/life/watermark-canvas";
 
 // ── 心情定义 ────────────────────────────────────────────────────────
 export const MOODS = [
@@ -165,33 +166,17 @@ export const journalApi = {
       method: "DELETE",
     }),
 
-  uploadImage: async (file: File): Promise<string> => {
+  uploadImage: async (file: File, onProgress?: (percent: number) => void): Promise<string> => {
+    // 先客户端压缩（最长边 1600px + JPEG 0.85），减小体积、加快上传与回显
+    const compressed = await compressImageFile(file);
     const formData = new FormData();
-    formData.append("file", file);
-
-    const token = isSupabaseConfigured ? await getAccessToken() :
-      typeof window !== "undefined" ? localStorage.getItem("career_os_token") : null;
-
-    const url = `${API_BASE}${API}/images`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: token ? `Bearer ${token}` : "Bearer dev" },
-      body: formData,
-    });
-
-    if (!res.ok) {
-      let message = `上传失败 (${res.status})`;
-      try {
-        const payload = await res.json() as { detail?: { message?: string }; error?: { message?: string } };
-        message = payload.error?.message || payload.detail?.message || message;
-      } catch {
-        // 保留状态码提示
-      }
-      throw new ApiError(message, undefined, res.status);
-    }
-
-    const data = await res.json() as { data: { url: string } };
-    return data.data.url;
+    formData.append("file", compressed);
+    const res = await apiUploadWithProgress<{ data: { url: string } }>(
+      `${API}/images`,
+      formData,
+      onProgress,
+    );
+    return res.data.url;
   },
 
   // 导出小记为 Markdown (支持按日期范围或按周)

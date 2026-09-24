@@ -159,6 +159,39 @@ export async function createWatermarkImage(
   });
 }
 
+/**
+ * 纯压缩（不含水印）：等比缩小到最长边 maxDimension，输出 JPEG quality。
+ * 用于日记等不需要水印的图片上传，减小体积、加快上传与回显。
+ * 生成失败时返回原文件，不阻塞上传流程。
+ */
+export async function compressImageFile(
+  file: File,
+  maxDimension: number = UPLOAD_MAX_DIMENSION,
+  quality: number = 0.85,
+): Promise<File> {
+  const bitmap = await createImageBitmap(file);
+  const longest = Math.max(bitmap.width, bitmap.height);
+  const scale = longest > maxDimension ? maxDimension / longest : 1;
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return file;
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(new File([blob], file.name, { type: "image/jpeg" }));
+        else resolve(file);
+      },
+      "image/jpeg",
+      quality,
+    );
+  });
+}
+
 function buildLocationLine(meta: WatermarkMeta, options: WatermarkOptions): string {
   const parts: string[] = [];
   // 目标标题始终作为 LifeOS 身份的一部分展示

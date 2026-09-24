@@ -56,6 +56,7 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
   const [tags, setTags] = useState<string[]>([]);
   const [photos, setPhotos] = useState<string[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   useEffect(() => {
     if (!previewUrl) return;
@@ -376,7 +377,13 @@ export function JournalEditor({ date, onSaved }: JournalEditorProps) {
               ) : (
                 <ImagePlus className="h-4 w-4" />
               )}
-              <span>{uploadImageMutation.isPending ? "上传中" : "添加照片"}</span>
+              <span>
+                {uploadImageMutation.isPending
+                  ? uploadProgress != null
+                    ? `上传 ${uploadProgress}%`
+                    : "上传中"
+                  : "添加照片"}
+              </span>
             </button>
 
             <div className="flex flex-wrap gap-1.5">
