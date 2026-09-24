@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui";
-import { healthApi, localToday, SOURCE_LABELS, formatNumber, formatSleep, type HealthDay } from "@/lib/health";
+import { buildQuickUrl, healthApi, localToday, SOURCE_LABELS, formatNumber, formatSleep, type HealthDay } from "@/lib/health";
 
 type Envelope = { data: any };
 
@@ -261,6 +261,8 @@ function ManualForm({ onSaved }: { onSaved: () => void }) {
 function SyncSettings({ status, onChanged }: { status: any; onChanged: () => void }) {
   const [newToken, setNewToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const quickUrl = newToken ? buildQuickUrl(newToken) : "";
 
   const create = useMutation({
     mutationFn: () => healthApi.createToken("iPhone 快捷指令"),
@@ -280,6 +282,15 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
       await navigator.clipboard.writeText(newToken);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
+
+  const copyUrl = async () => {
+    if (!quickUrl) return;
+    try {
+      await navigator.clipboard.writeText(quickUrl);
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 1500);
     } catch {}
   };
 
@@ -342,28 +353,53 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
           )}
         </div>
 
-        {/* 快捷指令配置步骤 */}
+        {/* 快捷指令：一条网址搞定 */}
         <div className="rounded-xl bg-surface-elevated p-4">
-          <p className="mb-2 text-[12px] font-medium text-text">iPhone 快捷指令配置（约 2 分钟）</p>
-          <ol className="list-decimal space-y-1.5 pl-4 text-[11px] leading-relaxed text-text-secondary">
-            <li>先点「生成新令牌」并复制</li>
-            <li>打开「快捷指令」App → 自动化 → 新建「个人自动化」→ 选「特定时间」（建议 23:30）</li>
-            <li>添加动作：<b>查找健康细节</b>（类型选「步数」，时间范围「今天」）</li>
-            <li>再添加动作：<b>获取 URL 内容</b>，URL 填 <code className="rounded bg-surface px-1">https://growlog.club/api/v1/health/sync</code>，方法 POST，头部加 <code className="rounded bg-surface px-1">X-Sync-Token</code> = 刚才的令牌，请求体（JSON）按页面提示填写</li>
-            <li>关闭「运行前询问」，完成 —— 每晚自动把当天步数推到这里</li>
-          </ol>
-          <p className="mt-2 text-[10px] text-text-tertiary">
-            睡眠、心率等指标同理，每个指标一个「查找健康细节」动作。下面是可直接粘贴的请求体模板：
+          <p className="mb-2 text-[12px] font-medium text-text">iPhone 快捷指令：一条网址搞定</p>
+
+          {!newToken ? (
+            <p className="rounded-lg bg-surface px-3 py-3 text-[11px] leading-relaxed text-text-tertiary">
+              先在左边点「生成新令牌」，这里会出现一条可以直接用的网址。
+            </p>
+          ) : (
+            <>
+              <ol className="list-decimal space-y-1.5 pl-4 text-[11px] leading-relaxed text-text-secondary">
+                <li>点下面「复制」，拿到这条网址</li>
+                <li>iPhone 打开「快捷指令」→ 右上角「+」新建 → 添加动作 <b>获取 URL 内容</b></li>
+                <li>网址栏长按粘贴，方法保持 <b>GET</b> → 点右上角运行</li>
+                <li>回此页面刷新，今日卡片出现数字就成了</li>
+              </ol>
+              <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-surface p-2.5">
+                <code className="min-w-0 flex-1 break-all text-[10px] leading-relaxed text-text-secondary">{quickUrl}</code>
+                <button
+                  onClick={copyUrl}
+                  className="flex shrink-0 items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] text-white"
+                >
+                  {copiedUrl ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  {copiedUrl ? "已复制" : "复制"}
+                </button>
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-text-tertiary">
+                拿不准配得对不对？<b>先在手机 Safari 里直接打开这条网址</b> —— 看到{" "}
+                <code className="rounded bg-surface px-1">{"{\"code\": 0}"}</code>{" "}
+                就说明服务器和令牌都没问题，剩下的只是快捷指令的事。
+              </p>
+            </>
+          )}
+
+          <p className="mt-3 text-[11px] font-medium text-text">网址后面可以挂这些参数</p>
+          <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-text-secondary">
+            <span><code className="rounded bg-surface px-1">steps</code> 步数</span>
+            <span><code className="rounded bg-surface px-1">sleep_minutes</code> 睡眠分钟</span>
+            <span><code className="rounded bg-surface px-1">resting_hr</code> 静息心率</span>
+            <span><code className="rounded bg-surface px-1">distance_km</code> 距离公里</span>
+            <span><code className="rounded bg-surface px-1">active_energy_kcal</code> 活动千卡</span>
+            <span><code className="rounded bg-surface px-1">exercise_minutes</code> 锻炼分钟</span>
+          </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-text-tertiary">
+            例：<code className="rounded bg-surface px-1">…&amp;steps=8642&amp;sleep_minutes=420</code>。
+            先用步数跑通，再一点点加别的。
           </p>
-          <pre className="mt-2 overflow-x-auto rounded-lg bg-surface p-2.5 text-[10px] leading-relaxed text-text-secondary">{`{
-  "days": [{
-    "metric_date": "今天(自动)",
-    "steps": 步数变量的数字,
-    "sleep_minutes": 睡眠分钟数,
-    "resting_hr": 静息心率,
-    "source": "iphone"
-  }]
-}`}</pre>
         </div>
       </div>
     </div>

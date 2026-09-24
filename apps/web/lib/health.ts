@@ -88,3 +88,24 @@ export function formatNumber(v: number | null, unit = ""): string {
   if (v == null) return "--";
   return `${v.toLocaleString("zh-CN")}${unit}`;
 }
+
+/** 站点自身的 API 根地址（生产走同源代理，可直接给手机用） */
+export function siteApiBase(): string {
+  if (typeof window === "undefined") return "/api/v1";
+  return `${window.location.origin}/api/v1`;
+}
+
+/**
+ * 拼一条「极简同步」网址：GET /health/quick，令牌与指标都走 query。
+ * 目的：让 iPhone 快捷指令只需要一条网址，不必组装 JSON。
+ */
+export function buildQuickUrl(
+  token: string,
+  metrics: Partial<Record<string, number | string>> = {},
+): string {
+  const params = new URLSearchParams({ token, source: "iphone" });
+  Object.entries(metrics).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+  });
+  return `${siteApiBase()}/health/quick?${params.toString()}`;
+}

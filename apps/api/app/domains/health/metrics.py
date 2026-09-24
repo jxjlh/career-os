@@ -80,13 +80,20 @@ def _parse_date(value: str | None) -> date:
 def _user_from_sync_token(
     db: Annotated[Session, Depends(get_db)],
     x_sync_token: Annotated[str | None, Header()] = None,
+    token_query: Annotated[str | None, Query(alias="token")] = None,
 ) -> Profile:
-    if not x_sync_token:
+    """设备侧鉴权。
+
+    正式场景（快捷指令）用 X-Sync-Token 头；
+    首次在手机浏览器里直接点链接验证時，允许用 ?token= 兜底。
+    """
+    raw = x_sync_token or token_query
+    if not raw:
         raise HTTPException(
             status_code=401,
-            detail={"code": "UNAUTHORIZED", "message": "Missing X-Sync-Token header"},
+            detail={"code": "UNAUTHORIZED", "message": "缺少 X-Sync-Token 头或 ?token= 参数"},
         )
-    token_hash = hashlib.sha256(x_sync_token.encode()).hexdigest()
+    token_hash = hashlib.sha256(raw.encode()).hexdigest()
     row = (
         db.query(HealthSyncToken)
         .filter(HealthSyncToken.token_hash == token_hash, HealthSyncToken.revoked_at.is_(None))
@@ -156,6 +163,48 @@ def sync_health_data(
     results = [_upsert_day(db, user.id, day) for day in body.days]
     db.commit()
     return {"code": 0, "message": "ok", "data": {"results": results}}
+
+
+# ── 极简同步：一个 URL 搞定 ────────────────────────────────────────
+# 给 iPhone 快捷指令 / 手机浏览器书签用，不必组装 JSON 或词典。
+# 鉴权复用 X-Sync-Token 头，也允许 ?token= 兜底（方便先在浏览器里点一下验证）。
+
+@router.get("/quick")
+def quick_sync(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[Profile, Depends(_user_from_sync_token)],
+    steps: Annotated[int | None, Query(ge=0)] = None,
+    distance_km: Annotated[float | None, Query(ge=0)] = None,
+    active_energy_kcal: Annotated[float | None, Query(ge=0)] = None,
+    exercise_minutes: Annotated[int | None, Query(ge=0)] = None,
+    sleep_minutes: Annotated[int | None, Query(ge=0)] = None,
+    resting_hr: Annotated[int | None, Query(ge=20, le=250)] = None,
+    metric_date: Annotated[str | None, Query()] = None,
+    source: Annotated[str, Query()] = "iphone",
+) -> dict:
+    """把 GET 参数当成一天的指标写入。
+
+    例：/health/quick?steps=8642&sleep_minutes=420
+    """
+    metrics = (steps, distance_km, active_energy_kcal, exercise_minutes, sleep_minutes, resting_hr)
+    if all(v is None for v in metrics):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "NO_METRIC", "message": "网址里至少要带一个指标，例如 ?steps=8642"},
+        )
+    payload = HealthDayPayload(
+        metric_date=metric_date,
+        steps=steps,
+        distance_km=distance_km,
+        active_energy_kcal=active_energy_kcal,
+        exercise_minutes=exercise_minutes,
+        sleep_minutes=sleep_minutes,
+        resting_hr=resting_hr,
+        source=source,
+    )
+    result = _upsert_day(db, user.id, payload)
+    db.commit()
+    return {"code": 0, "message": "ok", "data": result}
 
 
 # ── 手动补录（页面表单，登录鉴权；安卓那台走这里）────────────────
