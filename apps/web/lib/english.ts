@@ -96,6 +96,30 @@ export const DIFFICULTY_LABELS: Record<string, string> = {
   hard: "困难",
 };
 
+/**
+ * 占位释义判定：词库导入时缺失的中文被填成 '暂无释义' 这类字符串，
+ * 不是真释义。全站统一用它决定是显示释义还是显示「待补充」。
+ */
+const PLACEHOLDER_MEANINGS = new Set([
+  "暂无释义",
+  "暂无翻译",
+  "暂无",
+  "无",
+  "—",
+  "-",
+  "",
+]);
+
+export function isPlaceholderMeaning(meaning?: string | null): boolean {
+  const value = (meaning ?? "").trim();
+  return value === "" || PLACEHOLDER_MEANINGS.has(value);
+}
+
+/** 释义展示：占位符返回 null，由调用方决定空态文案 */
+export function displayMeaning(meaning?: string | null): string | null {
+  return isPlaceholderMeaning(meaning) ? null : (meaning ?? "").trim();
+}
+
 /** 时长格式化：秒 → m:ss（注意分钟要向下取整，否则 30 秒会被显示成 1:30） */
 export function formatDuration(seconds?: number | null) {
   if (!seconds || seconds <= 0) return "--:--";

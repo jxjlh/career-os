@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button, Card, Input } from "@/components/ui";
-import { englishApi, type Word, type WordBook } from "@/lib/english";
+import { englishApi, displayMeaning, type Word, type WordBook } from "@/lib/english";
 
 const PAGE_SIZE = 500;
 
@@ -92,7 +92,7 @@ export default function WordCatalogPage() {
       <Card className="overflow-hidden">
         <div className="grid grid-cols-[48px_minmax(110px,0.8fr)_minmax(100px,0.6fr)_minmax(180px,1.4fr)] gap-3 border-b border-border bg-surface-muted/50 px-4 py-3 text-xs font-semibold text-muted"><span>#</span><span>单词</span><span>词性/音标</span><span>释义</span></div>
         <div className="divide-y divide-border">
-          {visibleWords.map((word) => <div key={word.id} className="grid grid-cols-[48px_minmax(110px,0.8fr)_minmax(100px,0.6fr)_minmax(180px,1.4fr)] gap-3 px-4 py-3 text-sm"><span className="text-xs text-muted">{words.indexOf(word) + 1}</span><span className="font-semibold">{word.spelling}</span><span className="text-xs text-muted">{[word.pos, word.phonetic].filter(Boolean).join(" · ") || "—"}</span><span className="text-text-secondary">{word.meaning || "—"}{word.exampleEn && <span className="mt-1 block text-xs text-muted">{word.exampleEn}</span>}</span></div>)}
+          {visibleWords.map((word) => <div key={word.id} className="grid grid-cols-[48px_minmax(110px,0.8fr)_minmax(100px,0.6fr)_minmax(180px,1.4fr)] gap-3 px-4 py-3 text-sm"><span className="text-xs text-muted">{words.indexOf(word) + 1}</span><span className="font-semibold">{word.spelling}</span><span className="text-xs text-muted">{[word.pos, word.phonetic].filter(Boolean).join(" · ") || "—"}</span><span className="text-text-secondary">{displayMeaning(word.meaning) ?? <span className="text-text-tertiary/70">释义待补充</span>}{word.exampleEn && <span className="mt-1 block text-xs text-muted">{word.exampleEn}</span>}</span></div>)}
           {visibleWords.length === 0 && <div className="p-8 text-center text-sm text-muted">没有匹配的单词。</div>}
         </div>
       </Card>

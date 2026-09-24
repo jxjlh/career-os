@@ -17,7 +17,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { Button, Card } from "@/components/ui";
-import { englishApi, speak, type Word } from "@/lib/english";
+import { englishApi, speak, displayMeaning, type Word } from "@/lib/english";
 
 type StudyMode = "card" | "dictation";
 type DictationStep = "listen" | "typing" | "result";
@@ -258,6 +258,7 @@ function StudyContent() {
   }
 
   const word = queue[index]!;
+  const meaningText = displayMeaning(word.meaning);
   const progress = ((index + 1) / queue.length) * 100;
 
   return (
@@ -380,7 +381,14 @@ function StudyContent() {
                       {word.pos}
                     </span>
                   )}
-                  <p className="mt-1 text-base leading-relaxed text-text">{word.meaning}</p>
+                  {meaningText ? (
+                    <p className="mt-1 text-base leading-relaxed text-text">{meaningText}</p>
+                  ) : (
+                    <p className="mt-1 text-base leading-relaxed text-text-tertiary">
+                      释义待补充
+                      <span className="ml-1 text-xs text-text-tertiary/70">（词库尚未收录该词中文）</span>
+                    </p>
+                  )}
                 </div>
 
                 {/* 例句 + 写句子按钮 */}
@@ -558,16 +566,23 @@ function StudyContent() {
                 autoFocus
               />
 
-              {showAnswer && (
+              {showAnswer ? (
                 <div className="rounded-[10px] bg-surface-muted/50 p-3 text-center">
                   <p className="text-xs text-text-tertiary mb-1">提示</p>
-                  <p className="text-sm text-text">{word.spelling}</p>
+                  <p className="text-sm font-semibold text-text">{word.spelling}</p>
+                  {meaningText && (
+                    <p className="mt-1 text-xs text-text-secondary">{meaningText}</p>
+                  )}
                 </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowAnswer(true)}
+                  className="w-full rounded-[10px] border border-dashed border-border-subtle bg-surface/40 py-2.5 text-xs text-muted transition-colors hover:border-primary/40 hover:bg-surface-elevated"
+                >
+                  卡住了？显示中文提示
+                </button>
               )}
-
-              <div className="rounded-[10px] bg-surface-elevated/60 p-3 border border-border-subtle/40">
-                <p className="text-xs text-text-tertiary mb-1">{word.pos} {word.meaning}</p>
-              </div>
 
               <div className="flex gap-2">
                 <Button
@@ -619,7 +634,16 @@ function StudyContent() {
                 {word.phonetic && (
                   <p className="text-sm text-text-tertiary mt-1">{word.phonetic}</p>
                 )}
-                <p className="mt-2 text-sm text-text">{word.pos} {word.meaning}</p>
+                <p className="mt-2 text-sm text-text">
+                  {meaningText ? (
+                    <>
+                      {word.pos && <span className="mr-1.5 text-text-tertiary">{word.pos}</span>}
+                      {meaningText}
+                    </>
+                  ) : (
+                    <span className="text-text-tertiary">释义待补充</span>
+                  )}
+                </p>
               </div>
 
               {/* 例句 + 写句子 */}
