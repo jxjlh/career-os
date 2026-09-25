@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui";
-import { buildQuickUrl, healthApi, localToday, SOURCE_LABELS, formatNumber, formatSleep, type HealthDay } from "@/lib/health";
+import { buildQuickUrl, healthApi, localToday, siteApiBase, SOURCE_LABELS, formatNumber, formatSleep, type HealthDay } from "@/lib/health";
 
 type Envelope = { data: any };
 
@@ -265,9 +265,12 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
   const [copiedTpl, setCopiedTpl] = useState(false);
   // 含示例数字，用于浏览器一键自检
   const quickUrl = newToken ? buildQuickUrl(newToken, { steps: 8642 }) : "";
-  // 末尾留空的模板，用于粘进快捷指令后直接插变量。
-  // ⚠️ buildQuickUrl 会跳过空值，所以这里显式补 "&steps="，让用户一眼看到变量该插在哪。
-  const quickUrlTemplate = newToken ? buildQuickUrl(newToken) + "&steps=" : "";
+  // 模板网址：把要同步的指标一次性列全（值留空），粘进快捷指令后逐个插变量即可，
+  // 不需要用户自己敲参数名。服务器会把空占位当「没给」，不影响其它指标。
+  const quickUrlTemplate = newToken
+    ? `${siteApiBase()}/health/quick?token=${encodeURIComponent(newToken)}`
+      + "&source=iphone&steps=&sleep_minutes=&resting_hr="
+    : "";
 
   const create = useMutation({
     mutationFn: () => healthApi.createToken("iPhone 快捷指令"),
@@ -386,14 +389,14 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
               <div className="mt-2 rounded-lg bg-surface p-2.5">
                 <p className="text-[10px] font-medium text-text">想再加「睡眠 / 静息心率」</p>
                 <p className="mt-1 text-[10px] leading-relaxed text-text-tertiary">
-                  都在同一条捷径里继续加动作，网址末尾继续挂参数：
+                  ① 模板网址里参数名已经列好了，你只要把变量插进对应的 <b>=</b> 后面，不用自己敲：
                 </p>
                 <p className="mt-1.5 text-[10px] leading-relaxed text-text-secondary">
-                  · <b>静息心率</b> 挂 <code className="rounded bg-surface px-1">resting_hr=</code>
+                  · <code className="rounded bg-surface px-1">resting_hr=</code> ← 静息心率
                   ：「查找健康样本」选心率(静息)、时间「今天」；「计算统计信息」选 <b>平均</b>
                 </p>
                 <p className="mt-1 text-[10px] leading-relaxed text-text-secondary">
-                  · <b>睡眠</b> 挂 <code className="rounded bg-surface px-1">sleep_minutes=</code>
+                  · <code className="rounded bg-surface px-1">sleep_minutes=</code> ← 睡眠
                   ：「查找健康样本」选睡眠、时间选 <b>昨天</b>（跨天，选今天抓不到昨晚那觉）；
                   「计算统计信息」选 <b>总和</b>
                 </p>

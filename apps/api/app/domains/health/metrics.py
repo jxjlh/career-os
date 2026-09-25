@@ -173,12 +173,14 @@ def sync_health_data(
 def quick_sync(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[Profile, Depends(_user_from_sync_token)],
-    steps: Annotated[int | None, Query()] = None,
-    distance_km: Annotated[float | None, Query()] = None,
-    active_energy_kcal: Annotated[float | None, Query()] = None,
-    exercise_minutes: Annotated[int | None, Query()] = None,
-    sleep_minutes: Annotated[int | None, Query()] = None,
-    resting_hr: Annotated[int | None, Query()] = None,
+    # 全部按 str 接收，再自行清洗：模板网址里「没插变量的空占位」（如 steps=）
+    # 若交给 FastAPI 按 int 解析会立刻 422，把同一次请求里其它有效指标一起废掉。
+    steps: Annotated[str | None, Query()] = None,
+    distance_km: Annotated[str | None, Query()] = None,
+    active_energy_kcal: Annotated[str | None, Query()] = None,
+    exercise_minutes: Annotated[str | None, Query()] = None,
+    sleep_minutes: Annotated[str | None, Query()] = None,
+    resting_hr: Annotated[str | None, Query()] = None,
     metric_date: Annotated[str | None, Query()] = None,
     source: Annotated[str, Query()] = "iphone",
 ) -> dict:
@@ -188,6 +190,7 @@ def quick_sync(
 
     宽容策略——设备端（快捷指令）算出来的数值经常不规整，宁可修正也不要整条请求
     失败，否则一个异常的心率值会把同时传上来的步数一起丢掉：
+    - 空字符串当「没给」处理（模板网址里留空、还没插变量的占位）
     - 睡眠：Apple Health 的时长样本经「计算统计信息」求和后单位是**秒**，
       超过 1440 一律按秒处理并换算成分钟（人不可能睡 24 小时以上）
     - 其余指标超出人体合理区间时只丢弃该字段，其它字段照常写入
@@ -196,8 +199,11 @@ def quick_sync(
     def _clean(v, lo: float, hi: float, cast):
         if v is None:
             return None
+        s = str(v).strip()
+        if not s:  # 空占位，跳过
+            return None
         try:
-            f = float(v)
+            f = float(s)
         except (TypeError, ValueError):
             return None
         return cast(f) if lo <= f <= hi else None
@@ -214,9 +220,10 @@ def quick_sync(
         if got is not None:
             cleaned[name] = got
 
-    if sleep_minutes is not None:
+    sleep_raw = str(sleep_minutes).strip() if sleep_minutes is not None else ""
+    if sleep_raw:
         try:
-            sm: float | None = float(sleep_minutes)
+            sm: float | None = float(sleep_raw)
         except (TypeError, ValueError):
             sm = None
         if sm is not None:
