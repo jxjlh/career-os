@@ -265,8 +265,9 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
   const [copiedTpl, setCopiedTpl] = useState(false);
   // 含示例数字，用于浏览器一键自检
   const quickUrl = newToken ? buildQuickUrl(newToken, { steps: 8642 }) : "";
-  // 末尾留空的模板，用于粘进快捷指令后直接插变量
-  const quickUrlTemplate = newToken ? buildQuickUrl(newToken, { steps: "" }) : "";
+  // 末尾留空的模板，用于粘进快捷指令后直接插变量。
+  // ⚠️ buildQuickUrl 会跳过空值，所以这里显式补 "&steps="，让用户一眼看到变量该插在哪。
+  const quickUrlTemplate = newToken ? buildQuickUrl(newToken) + "&steps=" : "";
 
   const create = useMutation({
     mutationFn: () => healthApi.createToken("iPhone 快捷指令"),
@@ -369,14 +370,25 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
             <>
               <ol className="list-decimal space-y-1.5 pl-4 text-[11px] leading-relaxed text-text-secondary">
                 <li>先复制下面的 <b>②自检网址</b>，在手机 Safari 打开，确认能通</li>
-                <li>iPhone「快捷指令」→「自动化」→ 右上角「+」→「创建个人自动化」→ 选 <b>特定时间</b>，设每晚 23:00</li>
-                <li>添加动作 <b>查找健康样本</b>：类型选「步数」，时间范围「今天」</li>
-                <li>再添加 <b>获取 URL 内容</b>：粘贴 <b>①模板网址</b>，把光标点到末尾{" "}
-                  <code className="rounded bg-surface px-1">steps=</code> 的后面，点键盘上方的变量按钮插入「健康样本」，
-                  并把属性选成 <b>「值」</b>
+                <li>iPhone「快捷指令」→ 底部切到 <b>「快捷指令」</b>标签（不是「自动化」）→ 右上角「+」新建</li>
+                <li>添加动作 <b>查找健康样本</b>：类型选「步数」，时间选「今天」</li>
+                <li>再加动作 <b>计算统计信息</b>：统计类型选 <b>总和</b>（这步才把一天的记录变成"今天走了多少步"这个数字）</li>
+                <li>加动作 <b>获取 URL 内容</b>：粘贴 <b>①模板网址</b>，光标停在末尾{" "}
+                  <code className="rounded bg-surface px-1">steps=</code> 后面，点键盘上方变量栏里的 <b>「统计结果」</b>；
+                  方法保持 <b>GET</b>
                 </li>
-                <li>下一步，<b>关掉「运行前询问」</b> → 完成。明早这页自动有数</li>
+                <li>点右下角 ▶ 运行 → 本页刷新出现数字就成功了</li>
               </ol>
+              <p className="mt-2 text-[10px] leading-relaxed text-text-tertiary">
+                <b>要每天自动</b>：自动化 →「特定时间」→ 动作选「运行快捷指令」→ 指向刚建的这条 → 关掉「运行前询问」。
+                注意手机锁屏时 iOS 不允许读健康数据，时间建议设在您常在用手机的时段。
+              </p>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-text-tertiary">
+                <b>想加睡眠 / 心率</b>：在模板网址末尾继续接{" "}
+                <code className="rounded bg-surface px-1">sleep_minutes=</code>、{" "}
+                <code className="rounded bg-surface px-1">resting_hr=</code>，
+                每个指标各配一组「查找健康样本 + 计算统计信息」，再各自插入变量。
+              </p>
 
               <p className="mt-3 text-[10px] font-medium text-text">① 模板网址（粘进快捷指令用，末尾留空等你插变量）</p>
               <div className="mt-1 flex items-start gap-2 rounded-lg bg-surface p-2.5">
