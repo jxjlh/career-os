@@ -372,7 +372,7 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
                 <li>先复制下面的 <b>②自检网址</b>，在手机 Safari 打开，确认能通</li>
                 <li>iPhone「快捷指令」→ 底部切到 <b>「快捷指令」</b>标签（不是「自动化」）→ 右上角「+」新建</li>
                 <li>添加动作 <b>查找健康样本</b>：类型选「步数」，时间选「今天」</li>
-                <li>再加动作 <b>计算统计信息</b>：统计类型选 <b>总和</b>（这步才把一天的记录变成"今天走了多少步"这个数字）</li>
+                <li>再加动作 <b>计算统计信息</b>：统计类型选 <b>总和</b>（这步才把一天的记录变成「今天走了多少步」这个数字）</li>
                 <li>加动作 <b>获取 URL 内容</b>：粘贴 <b>①模板网址</b>，光标停在末尾{" "}
                   <code className="rounded bg-surface px-1">steps=</code> 后面，点键盘上方变量栏里的 <b>「统计结果」</b>；
                   方法保持 <b>GET</b>
