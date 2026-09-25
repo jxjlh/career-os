@@ -173,38 +173,72 @@ def sync_health_data(
 def quick_sync(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[Profile, Depends(_user_from_sync_token)],
-    steps: Annotated[int | None, Query(ge=0)] = None,
-    distance_km: Annotated[float | None, Query(ge=0)] = None,
-    active_energy_kcal: Annotated[float | None, Query(ge=0)] = None,
-    exercise_minutes: Annotated[int | None, Query(ge=0)] = None,
-    sleep_minutes: Annotated[int | None, Query(ge=0)] = None,
-    resting_hr: Annotated[int | None, Query(ge=20, le=250)] = None,
+    steps: Annotated[int | None, Query()] = None,
+    distance_km: Annotated[float | None, Query()] = None,
+    active_energy_kcal: Annotated[float | None, Query()] = None,
+    exercise_minutes: Annotated[int | None, Query()] = None,
+    sleep_minutes: Annotated[int | None, Query()] = None,
+    resting_hr: Annotated[int | None, Query()] = None,
     metric_date: Annotated[str | None, Query()] = None,
     source: Annotated[str, Query()] = "iphone",
 ) -> dict:
     """把 GET 参数当成一天的指标写入。
 
     例：/health/quick?steps=8642&sleep_minutes=420
+
+    宽容策略——设备端（快捷指令）算出来的数值经常不规整，宁可修正也不要整条请求
+    失败，否则一个异常的心率值会把同时传上来的步数一起丢掉：
+    - 睡眠：Apple Health 的时长样本经「计算统计信息」求和后单位是**秒**，
+      超过 1440 一律按秒处理并换算成分钟（人不可能睡 24 小时以上）
+    - 其余指标超出人体合理区间时只丢弃该字段，其它字段照常写入
+    - 全部字段都不合格才返回 422
     """
-    metrics = (steps, distance_km, active_energy_kcal, exercise_minutes, sleep_minutes, resting_hr)
-    if all(v is None for v in metrics):
+    def _clean(v, lo: float, hi: float, cast):
+        if v is None:
+            return None
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return cast(f) if lo <= f <= hi else None
+
+    cleaned: dict[str, int | float] = {}
+    for name, val, lo, hi, cast in (
+        ("steps", steps, 0, 200000, int),
+        ("distance_km", distance_km, 0, 500, float),
+        ("active_energy_kcal", active_energy_kcal, 0, 20000, float),
+        ("exercise_minutes", exercise_minutes, 0, 1440, int),
+        ("resting_hr", resting_hr, 20, 250, int),
+    ):
+        got = _clean(val, lo, hi, cast)
+        if got is not None:
+            cleaned[name] = got
+
+    if sleep_minutes is not None:
+        try:
+            sm: float | None = float(sleep_minutes)
+        except (TypeError, ValueError):
+            sm = None
+        if sm is not None:
+            if 1440 < sm <= 86400:  # 设备端给的是秒
+                sm = sm / 60.0
+            if 0 <= sm <= 1440:
+                cleaned["sleep_minutes"] = int(round(sm))
+
+    if not cleaned:
         raise HTTPException(
             status_code=422,
-            detail={"code": "NO_METRIC", "message": "网址里还没有任何指标。在末尾加上 &steps=8642 这样的参数再打开试试"},
+            detail={
+                "code": "NO_METRIC",
+                "message": "没有可用的指标值。在网址末尾加上 &steps=8642 这样的参数再试",
+            },
         )
-    payload = HealthDayPayload(
-        metric_date=metric_date,
-        steps=steps,
-        distance_km=distance_km,
-        active_energy_kcal=active_energy_kcal,
-        exercise_minutes=exercise_minutes,
-        sleep_minutes=sleep_minutes,
-        resting_hr=resting_hr,
-        source=source,
-    )
+
+    payload = HealthDayPayload(metric_date=metric_date, source=source, **cleaned)
     result = _upsert_day(db, user.id, payload)
     db.commit()
-    return {"code": 0, "message": "ok", "data": result}
+    # accepted 回显真正写入的字段，便于排查设备端算错（如睡眠给了秒）
+    return {"code": 0, "message": "ok", "data": {**result, "accepted": sorted(cleaned.keys())}}
 
 
 # ── 手动补录（页面表单，登录鉴权；安卓那台走这里）────────────────

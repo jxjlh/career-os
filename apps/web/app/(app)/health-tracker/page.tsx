@@ -383,12 +383,24 @@ function SyncSettings({ status, onChanged }: { status: any; onChanged: () => voi
                 <b>要每天自动</b>：自动化 →「特定时间」→ 动作选「运行快捷指令」→ 指向刚建的这条 → 关掉「运行前询问」。
                 注意手机锁屏时 iOS 不允许读健康数据，时间建议设在您常在用手机的时段。
               </p>
-              <p className="mt-1.5 text-[10px] leading-relaxed text-text-tertiary">
-                <b>想加睡眠 / 心率</b>：在模板网址末尾继续接{" "}
-                <code className="rounded bg-surface px-1">sleep_minutes=</code>、{" "}
-                <code className="rounded bg-surface px-1">resting_hr=</code>，
-                每个指标各配一组「查找健康样本 + 计算统计信息」，再各自插入变量。
-              </p>
+              <div className="mt-2 rounded-lg bg-surface p-2.5">
+                <p className="text-[10px] font-medium text-text">想再加「睡眠 / 静息心率」</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-text-tertiary">
+                  都在同一条捷径里继续加动作，网址末尾继续挂参数：
+                </p>
+                <p className="mt-1.5 text-[10px] leading-relaxed text-text-secondary">
+                  · <b>静息心率</b> 挂 <code className="rounded bg-surface px-1">resting_hr=</code>
+                  ：「查找健康样本」选心率(静息)、时间「今天」；「计算统计信息」选 <b>平均</b>
+                </p>
+                <p className="mt-1 text-[10px] leading-relaxed text-text-secondary">
+                  · <b>睡眠</b> 挂 <code className="rounded bg-surface px-1">sleep_minutes=</code>
+                  ：「查找健康样本」选睡眠、时间选 <b>昨天</b>（跨天，选今天抓不到昨晚那觉）；
+                  「计算统计信息」选 <b>总和</b>
+                </p>
+                <p className="mt-1.5 text-[10px] leading-relaxed text-text-tertiary">
+                  睡眠算出来是「秒」，服务器会自动换算成分钟，不用你在手机上处理。
+                </p>
+              </div>
 
               <p className="mt-3 text-[10px] font-medium text-text">① 模板网址（粘进快捷指令用，末尾留空等你插变量）</p>
               <div className="mt-1 flex items-start gap-2 rounded-lg bg-surface p-2.5">
