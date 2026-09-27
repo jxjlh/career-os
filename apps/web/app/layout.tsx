@@ -56,10 +56,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
     >
       <head>
-        <link rel="preconnect" href="https://fonts.bunny.net" />
+        {/* 字体已本地化（/fonts/*.woff2，见 globals.css）—— 不再请求境外 fonts.bunny.net，
+            避免国内弱网下渲染阻塞白屏。 */}
         <link
-          href="https://fonts.bunny.net/css?family=outfit:400,500,600,700,800|plus-jakarta-sans:400,500,600,700"
-          rel="stylesheet"
+          rel="preload"
+          href="/fonts/outfit-latin-600.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="preload"
+          href="/fonts/plus-jakarta-sans-latin-500.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
         />
       </head>
       <body>
