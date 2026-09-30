@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  BookOpen,
   Compass,
   Home,
+  Images,
   MapPin,
   Menu,
   Moon,
@@ -145,13 +147,15 @@ function FloatingNav({ isActive }: { isActive: (href: string) => boolean }) {
   const items = [
     { href: "/dashboard", icon: Home, key: "dashboard" },
     { href: "/journal", icon: NotebookPen, key: "journal" },
+    { href: "/english", icon: BookOpen, key: "english" },
+    { href: "/life/records", icon: Images, key: "lifeRecords" },
     { href: "/journal/companion", icon: null, key: "aiCompanion", isAI: true },
     { href: "/settings", icon: MoreHorizontal, key: "settings" },
   ];
 
   return (
     <nav
-      className="fixed bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border-subtle bg-surface/90 px-3 py-2 shadow-soft backdrop-blur-xl md:hidden"
+      className="fixed bottom-3 left-1/2 z-30 flex max-w-[calc(100vw-1.5rem)] -translate-x-1/2 items-center gap-1 rounded-full border border-border-subtle bg-surface/90 px-2.5 py-2 shadow-soft backdrop-blur-xl md:hidden"
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
       {items.map(({ href, icon: Icon, key, isAI }) => {

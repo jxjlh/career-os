@@ -11,6 +11,9 @@ from app.core.config import get_settings
 # 听力材料音频桶
 LISTENING_BUCKET = "listening-audio"
 
+# 座右铭背景图桶
+MOTTO_BUCKET = "life-motto"
+
 # 进程内缓存已验证（存在且公开）的桶，避免每次上传都发 HTTP 建桶请求
 _VERIFIED_BUCKETS: set[str] = set()
 
@@ -147,6 +150,33 @@ class StorageService:
                 raise RuntimeError("云端存储上传失败，请稍后重试") from exc
             return self._upload_local(path, content)
 
+    def upload_motto_background(self, content: bytes, user_id: str, ext: str = ".jpg") -> str:
+        """上传座右铭背景图, 返回公共 URL.
+
+        路径: motto/{user_id}/{timestamp}.jpg, 桶: life-motto
+        """
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+        if ext.lower() not in (".jpg", ".jpeg", ".png", ".webp"):
+            ext = ".jpg"
+        path = f"motto/{user_id}/{timestamp}{ext}"
+
+        if len(content) > 4 * 1024 * 1024:
+            raise ValueError("背景图过大，请上传 4MB 以内的图片")
+        content_type = self._guess_content_type(ext)
+
+        if not self._supabase_configured():
+            if self._cloud_storage_required():
+                raise RuntimeError("云端存储尚未配置，无法保存背景图")
+            return self._upload_local(path, content)
+
+        try:
+            self._ensure_bucket(MOTTO_BUCKET)
+            return self._upload_supabase(path, content, content_type, bucket=MOTTO_BUCKET)
+        except Exception as exc:
+            if self._cloud_storage_required():
+                raise RuntimeError("背景图上传失败，请稍后重试") from exc
+            return self._upload_local(path, content)
+
     def _supabase_configured(self) -> bool:
         """检查 Supabase 是否完整配置."""
         return bool(
@@ -264,6 +294,8 @@ class StorageService:
                 bucket = "avatars"
             elif path.startswith("listening/"):
                 bucket = LISTENING_BUCKET
+            elif path.startswith("motto/"):
+                bucket = MOTTO_BUCKET
             else:
                 bucket = "chat-images"
             # 返回永久公开 URL (桶创建时已设为 public: True)

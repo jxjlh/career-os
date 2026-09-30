@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { Sparkles, Heart, CheckCircle2, Circle, Quote, Image, Pencil, Loader2, CalendarDays, Footprints, Moon, Activity, Flame } from "lucide-react";
+import { Sparkles, Heart, CheckCircle2, Circle, Quote, Loader2, CalendarDays, Footprints, Moon, Activity, Flame } from "lucide-react";
 
+import { MottoBanner } from "@/components/motto-banner";
 import { Button } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
 import {
@@ -458,8 +459,6 @@ function DailyJournal() {
   );
 }
 
-const MOTTO_STORAGE_KEY = "career_os_motto";
-
 const SOURCE_LABELS: Record<string, string> = {
   apple_watch: "Apple Watch",
   iphone: "iPhone",
@@ -537,194 +536,5 @@ function TodayHealthStrip() {
         })}
       </div>
     </Link>
-  );
-}
-
-const DEFAULT_MOTTO = "持续成长，每一天都在遇见更好的自己";
-const MOTTO_COLORS = ["#FFFFFF", "#1A1A1A", "#5B9DFF", "#C49A5C", "#F5F8FF"];
-const MOTTO_SIZES = [
-  { label: "小", value: 18 },
-  { label: "中", value: 24 },
-  { label: "大", value: 32 },
-];
-
-function MottoBanner() {
-  const [text, setText] = useState(DEFAULT_MOTTO);
-  const [bgImage, setBgImage] = useState<string | null>(null);
-  const [color, setColor] = useState("#FFFFFF");
-  const [fontSize, setFontSize] = useState(24);
-  const [editing, setEditing] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(MOTTO_STORAGE_KEY);
-      if (saved) {
-        const data = JSON.parse(saved);
-        if (typeof data.text === "string" && data.text.trim()) setText(data.text);
-        if (typeof data.image === "string") setBgImage(data.image);
-        if (typeof data.color === "string") setColor(data.color);
-        if (typeof data.fontSize === "number") setFontSize(data.fontSize);
-      }
-    } catch {}
-  }, []);
-
-  const persist = (next: { text: string; image: string | null; color: string; fontSize: number }) => {
-    setText(next.text);
-    setBgImage(next.image);
-    setColor(next.color);
-    setFontSize(next.fontSize);
-    try {
-      localStorage.setItem(MOTTO_STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // localStorage 写入失败（常见原因：图片过大超出 ~5MB 限额）
-      alert("保存失败：背景图过大，请换一张较小的图片（建议 2MB 以内）");
-    }
-  };
-
-  // 上传背景图：blob URL 直读 + canvas 压缩（max 1280px、JPEG 0.8），比 FileReader base64 快数倍
-  const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const blobUrl = URL.createObjectURL(file);
-    const img = new window.Image();
-    img.onload = () => {
-      const MAX_W = 1280;
-      const scale = Math.min(1, MAX_W / img.width);
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      const ctx = canvas.getContext("2d");
-      let out: string;
-      if (ctx) {
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        out = canvas.toDataURL("image/jpeg", 0.8);
-      } else {
-        out = blobUrl;
-      }
-      URL.revokeObjectURL(blobUrl);
-      persist({ text, image: out, color, fontSize });
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(blobUrl);
-      alert("图片读取失败，请换一张试试");
-    };
-    img.src = blobUrl;
-  };
-
-  return (
-    <div className="relative overflow-hidden rounded-2xl border border-border-subtle shadow-sm">
-      {/* 背景图 / 默认渐变 */}
-      {bgImage ? (
-        <img
-          src={bgImage}
-          alt="座右铭背景"
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[#5B9DFF] via-[#3D7EDB] to-[#1E3A5F]" />
-      )}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
-
-      {/* 座右铭文字（应用自定义颜色 + 字号） */}
-      <div className="relative flex min-h-[224px] flex-col justify-end p-6 sm:min-h-[240px]">
-        <p
-          className="font-display font-bold leading-snug tracking-tight drop-shadow-sm"
-          style={{ color, fontSize }}
-        >
-          {text}
-        </p>
-        <p className="mt-2 text-[12px] text-white/70">我的座右铭</p>
-      </div>
-
-      {/* 编辑按钮 */}
-      <button
-        onClick={() => setEditing((v) => !v)}
-        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
-        aria-label="编辑座右铭"
-      >
-        <Pencil className="h-4 w-4" />
-      </button>
-
-      {/* 编辑面板 */}
-      {editing && (
-        <div className="absolute inset-x-0 bottom-0 z-10 space-y-3 border-t border-white/15 bg-black/60 p-4 backdrop-blur-xl">
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="h-20 w-full resize-none rounded-lg border border-white/20 bg-white/10 p-3 text-[13px] text-white placeholder-white/50 outline-none"
-            placeholder="写下你的座右铭"
-          />
-
-          {/* 字体颜色 */}
-          <div className="flex items-center gap-2">
-            <span className="w-8 shrink-0 text-[12px] text-white/70">颜色</span>
-            {MOTTO_COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => setColor(c)}
-                className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${
-                  color === c ? "border-white" : "border-transparent"
-                }`}
-                style={{ backgroundColor: c }}
-                aria-label={`颜色 ${c}`}
-              />
-            ))}
-            <input
-              type="color"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-              className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent"
-              aria-label="自定义颜色"
-            />
-          </div>
-
-          {/* 字体大小 */}
-          <div className="flex items-center gap-2">
-            <span className="w-8 shrink-0 text-[12px] text-white/70">字号</span>
-            {MOTTO_SIZES.map((s) => (
-              <button
-                key={s.value}
-                onClick={() => setFontSize(s.value)}
-                className={`rounded-md px-3 py-1 text-[12px] transition-colors ${
-                  fontSize === s.value
-                    ? "bg-white/25 text-white"
-                    : "bg-white/10 text-white/70 hover:bg-white/15"
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center justify-between">
-            <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-white/80 hover:text-white">
-              <Image className="h-4 w-4" />
-              更换背景图
-              <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
-            </label>
-            <div className="flex items-center gap-3">
-              {bgImage && (
-                <button
-                  onClick={() => persist({ text, image: null, color, fontSize })}
-                  className="text-[12px] text-white/70 hover:text-white"
-                >
-                  移除背景
-                </button>
-              )}
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => {
-                  persist({ text, image: bgImage, color, fontSize });
-                  setEditing(false);
-                }}
-              >
-                保存
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }

@@ -60,6 +60,7 @@ def ensure_columns() -> None:
         },
         "user_profiles": {
             "life_motto": "VARCHAR(300)",
+            "life_motto_style": "TEXT",
         },
         "user_skills": {
             "learning_status": "VARCHAR(16) DEFAULT 'learning'",

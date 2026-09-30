@@ -56,7 +56,7 @@ def _ensure_all_storage_buckets_public() -> None:
     try:
         from app.services.storage import StorageService
         svc = StorageService()
-        for bucket in ("avatars", "chat-images", "journal-images"):
+        for bucket in ("avatars", "chat-images", "journal-images", "life-motto"):
             try:
                 svc._ensure_bucket(bucket)
                 logger.info("storage bucket '%s' ensured public", bucket)

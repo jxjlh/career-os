@@ -6,8 +6,8 @@ import Link from "next/link";
 import { useEffect, useRef } from "react";
 
 import { LifeRecordEmpty } from "@/components/life/life-record-empty";
+import { LifeRecordGoalGroups } from "@/components/life/life-record-goal-groups";
 import { LifeRecordSkeleton } from "@/components/life/life-record-skeleton";
-import { LifeRecordTimeline } from "@/components/life/life-record-timeline";
 import { Button } from "@/components/ui";
 import { getLifeRecords } from "@/lib/life";
 
@@ -50,7 +50,9 @@ export default function LifeRecordsPage() {
         </Link>
         <div>
           <h1 className="text-xl font-semibold">我的人生记录</h1>
-          <p className="text-[13px] text-muted">{query.data?.pages[0]?.total ?? 0} 个瞬间</p>
+          <p className="text-[13px] text-muted">
+            {query.data?.pages[0]?.total ?? 0} 个瞬间 · 按目标折叠
+          </p>
         </div>
       </div>
 
@@ -65,7 +67,7 @@ export default function LifeRecordsPage() {
         </div>
       )}
       {query.isSuccess && records.length === 0 && <LifeRecordEmpty />}
-      {records.length > 0 && <LifeRecordTimeline records={records} />}
+      {records.length > 0 && <LifeRecordGoalGroups records={records} />}
 
       <div ref={sentinelRef} className="flex justify-center py-6">
         {query.isFetchingNextPage && <Loader2 className="h-5 w-5 animate-spin text-muted" />}

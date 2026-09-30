@@ -65,6 +65,9 @@ class UserProfile(Base):
     interests: Mapped[list[str]] = mapped_column(JSON, default=list)
     career_direction: Mapped[str | None] = mapped_column(String(200))
     life_motto: Mapped[str | None] = mapped_column(String(300))
+    # 座右铭的富文本样式（片段数组 JSON + 背景图 URL），用于首页/人生目标页跨设备同步。
+    # 只存纯文本的 life_motto 上限 300 字，装不下分段颜色字号和背景图。
+    life_motto_style: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow)
 

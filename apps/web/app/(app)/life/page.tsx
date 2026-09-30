@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MapPin, PencilLine, RefreshCw, Sparkles, X } from "lucide-react";
+import { MapPin, RefreshCw, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -9,8 +9,8 @@ import { CheckinStreakCard } from "@/components/life/checkin-streak-card";
 import { LifeGoalBoard } from "@/components/life/life-goal-board";
 import { LifeMapClient } from "@/components/life/map/life-map-client";
 import { MapTimeline } from "@/components/life/map/map-timeline";
-import { Button, Card, Input, Skeleton } from "@/components/ui";
-import { apiFetch } from "@/lib/api";
+import { MottoBanner } from "@/components/motto-banner";
+import { Button, Card, Skeleton } from "@/components/ui";
 import { getLifeGoals, getGoalSuggestions, createLifeGoal, type GoalSuggestion } from "@/lib/life";
 import { getLifeMap } from "@/lib/life-map";
 
@@ -18,14 +18,8 @@ const SUGGESTIONS_HIDDEN_KEY = "life-goal-suggestions-hidden";
 
 export default function LifeGoalsPage() {
   const queryClient = useQueryClient();
-  const [editingMotto, setEditingMotto] = useState(false);
-  const [motto, setMotto] = useState("");
   const [suggestionsHidden, setSuggestionsHidden] = useState(false);
 
-  const profile = useQuery({
-    queryKey: ["life-profile"],
-    queryFn: () => apiFetch<{ data: any }>("/profile"),
-  });
   const goals = useQuery({
     queryKey: ["life-goals"],
     queryFn: getLifeGoals,
@@ -42,22 +36,6 @@ export default function LifeGoalsPage() {
   useEffect(() => {
     setSuggestionsHidden(localStorage.getItem(SUGGESTIONS_HIDDEN_KEY) === "1");
   }, []);
-
-  useEffect(() => {
-    if (profile.data?.data?.lifeMotto) setMotto(profile.data.data.lifeMotto);
-  }, [profile.data]);
-
-  const saveMotto = useMutation({
-    mutationFn: () =>
-      apiFetch("/profile", {
-        method: "PUT",
-        body: JSON.stringify({ lifeMotto: motto }),
-      }),
-    onSuccess: () => {
-      setEditingMotto(false);
-      queryClient.invalidateQueries({ queryKey: ["life-profile"] });
-    },
-  });
 
   const quickAdd = useMutation({
     mutationFn: (item: GoalSuggestion) =>
@@ -84,7 +62,7 @@ export default function LifeGoalsPage() {
     setSuggestionsHidden(true);
   };
 
-  if (goals.isLoading || profile.isLoading) {
+  if (goals.isLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-20" />
@@ -115,39 +93,8 @@ export default function LifeGoalsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      {/* 人生格言 */}
-      <Card className="overflow-hidden">
-        <div className="relative bg-gradient-to-r from-primary/12 via-accent/8 to-transparent p-5 sm:p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">人生格言</p>
-              {editingMotto ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Input
-                    value={motto}
-                    onChange={(e) => setMotto(e.target.value)}
-                    placeholder="写下你的人生格言..."
-                    className="max-w-md"
-                  />
-                  <Button size="sm" onClick={() => saveMotto.mutate()} disabled={saveMotto.isPending}>
-                    保存
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditingMotto(false)}>
-                    取消
-                  </Button>
-                </div>
-              ) : (
-                <p className="mt-1.5 text-lg font-semibold leading-snug sm:text-xl">
-                  {motto || "给自己一句人生格言，让每个目标都有方向。"}
-                </p>
-              )}
-            </div>
-            <Button variant="ghost" size="icon" onClick={() => setEditingMotto((v) => !v)} aria-label="编辑格言">
-              <PencilLine className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </Card>
+      {/* 人生格言：与首页「座右铭」同一个组件、同一份数据，可选中部分文字改颜色 / 字号 */}
+      <MottoBanner />
 
       <CheckinStreakCard />
 

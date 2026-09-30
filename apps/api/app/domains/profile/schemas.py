@@ -39,3 +39,28 @@ class ProfileResponse(BaseModel):
     lifeMotto: str | None
     createdAt: str | None
     updatedAt: str | None
+
+
+class MottoSegment(BaseModel):
+    """座右铭的一个文字片段：可以带自己的颜色 / 字号，没带就继承默认。
+
+    单个片段不设 300 上限（整段就是一段时也会超），总长度由 service 统一校验，
+    这样超长返回的是 MOTTO_TOO_LONG 而不是 Pydantic 的 422 detail。
+    """
+
+    t: str = Field(max_length=1000)
+    c: str | None = Field(default=None, max_length=32)
+    s: int | None = Field(default=None, ge=8, le=200)
+
+
+class MottoStyleIn(BaseModel):
+    segs: list[MottoSegment] = Field(default_factory=list, max_length=200)
+    # 前端可能直接传 data URL（后端会落到对象存储换成公开 URL），
+    # 也可能是已有的 http(s) / /media 路径。
+    image: str | None = None
+
+
+class MottoStyleOut(BaseModel):
+    segs: list[MottoSegment]
+    image: str | None
+    updatedAt: str | None
